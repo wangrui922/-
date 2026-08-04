@@ -13,6 +13,7 @@
     * exercise —— 修复题 / 迁移题生成（T03·3.4）。
     * file     —— 题目照片上传与读取（T03·3.4）。
     * profile  —— 学习画像看板：掌握度 / 错因分布 / 练习推荐（T04·B8）。
+    * report   —— 家长周报告：生成 / 公开分享 / 历史列表（Epic6 · T4/T5）。
 
 后续里程碑（task / parent / admin 等）只需在此追加
 ``api_router.include_router(xxx.router)`` 即可。
@@ -22,7 +23,17 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api import auth, chat, exercise, file, health, mistake, profile, student
+from app.api import (
+    auth,
+    chat,
+    exercise,
+    file,
+    health,
+    mistake,
+    profile,
+    report,
+    student,
+)
 
 #: 所有业务路由统一挂在 ``/api`` 前缀下
 api_router = APIRouter(prefix="/api", tags=["api"])
@@ -40,6 +51,9 @@ api_router.include_router(file.router)
 
 # ---- T04 · 学习画像看板 -----------------------------------------------------
 api_router.include_router(profile.router)
+
+# ---- Epic6 · 家长周报（生成 / 公开分享 / 历史）------------------------------
+api_router.include_router(report.router)
 
 
 __all__ = ["api_router"]

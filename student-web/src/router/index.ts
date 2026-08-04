@@ -47,6 +47,12 @@ const routes: RouteRecordRaw[] = [
       },
     ],
   },
+  {
+    path: '/r/:token',
+    name: 'share-report',
+    component: () => import('@/views/report/ShareReport.vue'),
+    meta: { public: true, title: '家长周报' },
+  },
   { path: '/:pathMatch(.*)*', redirect: { name: 'dashboard' } },
 ]
 

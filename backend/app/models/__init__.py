@@ -15,6 +15,7 @@ from app.models.content import Answer, KnowledgePoint, Question
 from app.models.learning import Attempt, LearningTask, Mistake, StudentProfile
 from app.models.ai import AiMessage, AiSession
 from app.models.student_mastery import StudentMastery
+from app.models.weekly_report import WeeklyReport
 
 #: 声明式元数据（供建表 / 迁移使用）
 metadata = Base.metadata
@@ -36,6 +37,8 @@ __all__ = [
     "LearningTask",
     # 画像域（T04）
     "StudentMastery",
+    # 家长周报域（Epic6）
+    "WeeklyReport",
     # AI 域
     "AiSession",
     "AiMessage",
