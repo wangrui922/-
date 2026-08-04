@@ -1,0 +1,82 @@
+{
+  "knowledgePoints": [
+    {
+      "code": "KP_CALC",
+      "name": "计算",
+      "sort": 10,
+      "description": "四则运算、口算笔算、简便运算与运算定律"
+    },
+    {
+      "code": "KP_EQUATION",
+      "name": "方程",
+      "sort": 20,
+      "description": "用字母表示数、解方程与列方程解决问题"
+    },
+    {
+      "code": "KP_WORD",
+      "name": "应用题",
+      "sort": 30,
+      "description": "文字情境题，考察审题与数量关系建模"
+    },
+    {
+      "code": "KP_FRACTION",
+      "name": "分数",
+      "sort": 40,
+      "description": "分数的意义、性质、四则运算与分数应用"
+    },
+    {
+      "code": "KP_DECIMAL",
+      "name": "小数",
+      "sort": 50,
+      "description": "小数的意义、性质与小数四则运算"
+    },
+    {
+      "code": "KP_PERCENT",
+      "name": "百分数",
+      "sort": 60,
+      "description": "百分数意义、折扣税率利率与百分数应用"
+    },
+    {
+      "code": "KP_RATIO",
+      "name": "比例",
+      "sort": 70,
+      "description": "比、比例、正反比例与按比分配"
+    },
+    {
+      "code": "KP_GEOMETRY",
+      "name": "几何",
+      "sort": 80,
+      "description": "周长面积体积等度量计算"
+    },
+    {
+      "code": "KP_SHAPE",
+      "name": "图形",
+      "sort": 90,
+      "description": "图形的认识、位置与变换、观察物体"
+    },
+    {
+      "code": "KP_STATISTICS",
+      "name": "统计",
+      "sort": 100,
+      "description": "数据收集整理、统计图表与平均数"
+    },
+    {
+      "code": "KP_UNIT",
+      "name": "单位换算",
+      "sort": 110,
+      "description": "长度重量面积体积时间货币单位换算"
+    },
+    {
+      "code": "KP_NUMBER_THEORY",
+      "name": "数论",
+      "sort": 120,
+      "description": "因数倍数、质数合数、公因数公倍数"
+    },
+    {
+      "code": "KP_MIXED",
+      "name": "综合",
+      "sort": 900,
+      "description": "跨知识点综合题与思维拓展题"
+    }
+  ]
+}

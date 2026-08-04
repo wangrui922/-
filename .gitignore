@@ -1,0 +1,88 @@
+# ---------- 环境与密钥 ----------
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.eggs/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ---------- 数据库 / 运行时产物 ----------
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+dev.db
+backend/dev.db
+backend/tests/*.db
+backend/storage/
+pgdata/
+
+# ---------- Node / 前端 ----------
+node_modules/
+.pnpm-store/
+.vite/
+*.local
+student-web/dist/
+parent-web/dist/
+admin-web/dist/
+
+# ---------- 编辑器 / 系统 ----------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---------- 日志 ----------
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ---------- 历史备份（V3 单文件时代）----------
+index.html.bak
+index.html.bak2
+
+# ---------- 2026-08-04 迁移收口补丁 ----------
+# 前端根目录调试垃圾（保留在磁盘，不进仓库历史）
+student-web/_*.txt
+student-web/check*.txt
+student-web/diag*.txt
+student-web/distout.txt
+student-web/fail.txt
+student-web/mirror.txt
+student-web/netdiag.txt
+student-web/nm*.txt
+student-web/nodedl.*
+student-web/npmfetch.txt
+student-web/npmview*.txt
+student-web/status.txt
+student-web/dist-*/
+# 后端运行时产物（SQLite / 测试库 / 报告）
+*.db-shm
+*.db-wal
+test_verify.db*
+pytest-full.xml
+# 部署/函数依赖
+.edgeone/
+cloud-functions/**/node_modules/

@@ -1,0 +1,314 @@
+"""登录与令牌服务（T02 · 2.1）。
+
+流程（``POST /api/auth/login``）：
+    1. 校验手机号格式（非法 → 400）；
+    2. 校验验证码：
+       - dev / test 环境且 code == ``settings.dev_sms_code``（默认 ``000000``）→ 直接放行；
+       - 否则交给 ``app.services.sms``（V4.1 未接真通道，非 mock 会抛 NotImplementedError → 500）；
+       - 校验不通过 → 401；
+    3. 首次登录自动建账号：``users(role=student)`` + ``students`` + ``student_profile``；
+    4. 签发 access(2h) / refresh(30d)，payload ``{sub: user_id, role, sid: student_id|null}``。
+
+事务：本模块只 ``flush``，``commit`` 交给 ``app.db.get_db`` 依赖收口。
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from typing import Any, Dict, Optional, Tuple
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.core.response import ApiError, CODE_BAD_REQUEST, CODE_FORBIDDEN, CODE_SERVER_ERROR, CODE_UNAUTHORIZED
+from app.core.security import (
+    ROLE_STUDENT,
+    TOKEN_TYPE_REFRESH,
+    VALID_ROLES,
+    create_access_token,
+    create_refresh_token,
+    verify_token,
+)
+from app.models import Student, StudentProfile, User
+from app.models.base import utcnow
+from app.services import sms
+
+logger = logging.getLogger("app.services.auth")
+
+#: 新学生默认年级（老板拍板：注册不弹年级选择，进档案页再改）
+DEFAULT_GRADE: int = 1
+#: 新学生默认学段
+DEFAULT_STAGE: str = "primary"
+#: 账号状态
+USER_STATUS_ACTIVE: str = "active"
+USER_STATUS_FROZEN: str = "frozen"
+
+
+# ==================================================================== 验证码
+def _is_dev_bypass(code: str) -> bool:
+    """dev/test 环境的万能码放行判定。"""
+    if not settings.is_dev:
+        return False
+    expected = (settings.dev_sms_code or "").strip()
+    return bool(expected) and (code or "").strip() == expected
+
+
+def verify_login_code(phone: str, code: str) -> None:
+    """校验登录验证码，不通过直接抛 ``ApiError``。
+
+    Args:
+        phone: 手机号（已保证格式合法）。
+        code: 用户提交的验证码。
+
+    Raises:
+        ApiError: 401 验证码错误；500 短信通道未接入。
+    """
+    if _is_dev_bypass(code):
+        logger.info("[auth] dev 万能码放行: phone=%s", phone)
+        return
+
+    try:
+        passed = sms.verify_code(phone, code)
+    except NotImplementedError as exc:
+        logger.error("[auth] 短信通道未接入: %s", exc)
+        raise ApiError(CODE_SERVER_ERROR, "短信验证码服务尚未接入，请使用开发环境万能码登录") from exc
+
+    if not passed:
+        raise ApiError(CODE_UNAUTHORIZED, "验证码错误或已失效")
+
+
+# ==================================================================== 账号
+def get_user_by_phone(session: Session, phone: str) -> Optional[User]:
+    """按手机号查未软删的账号。"""
+    return session.execute(
+        select(User).where(User.phone == phone, User.deleted_at.is_(None))
+    ).scalar_one_or_none()
+
+
+def get_student_by_user_id(session: Session, user_id: uuid.UUID) -> Optional[Student]:
+    """按账号 id 查学生档案。"""
+    return session.execute(
+        select(Student).where(Student.user_id == user_id)
+    ).scalar_one_or_none()
+
+
+def ensure_student_profile(session: Session, student: Student) -> StudentProfile:
+    """保证学生画像行存在（幂等）。"""
+    profile = session.execute(
+        select(StudentProfile).where(StudentProfile.student_id == student.id)
+    ).scalar_one_or_none()
+    if profile is not None:
+        return profile
+
+    profile = StudentProfile(
+        student_id=student.id,
+        mastery={},
+        weak_points=[],
+        learning_style={},
+    )
+    session.add(profile)
+    session.flush()
+    return profile
+
+
+def register_student(session: Session, phone: str) -> Tuple[User, Student]:
+    """首次登录自动建号：user(role=student) + student + student_profile。
+
+    Args:
+        session: 数据库会话。
+        phone: 手机号（唯一）。
+
+    Returns:
+        ``(User, Student)`` 元组。
+    """
+    user = User(
+        phone=phone,
+        nickname=f"同学{phone[-4:]}",
+        role=ROLE_STUDENT,
+        status=USER_STATUS_ACTIVE,
+    )
+    session.add(user)
+    session.flush()  # 拿到 user.id
+
+    student = Student(
+        user_id=user.id,
+        grade=DEFAULT_GRADE,
+        stage=DEFAULT_STAGE,
+        goal=None,
+    )
+    session.add(student)
+    session.flush()  # 拿到 student.id
+
+    ensure_student_profile(session, student)
+    logger.info("[auth] 新用户注册: phone=%s user_id=%s student_id=%s", phone, user.id, student.id)
+    return user, student
+
+
+def get_or_create_user(session: Session, phone: str) -> Tuple[User, Optional[Student], bool]:
+    """取账号；不存在则按学生角色自动注册。
+
+    Returns:
+        ``(User, Student|None, is_new)``；家长/管理员角色没有 student 行。
+    """
+    user = get_user_by_phone(session, phone)
+    if user is None:
+        user, student = register_student(session, phone)
+        return user, student, True
+
+    if user.status == USER_STATUS_FROZEN:
+        raise ApiError(CODE_FORBIDDEN, "账号已被冻结，请联系管理员")
+
+    student = get_student_by_user_id(session, user.id) if user.role == ROLE_STUDENT else None
+    if user.role == ROLE_STUDENT and student is None:
+        # 兜底：历史脏数据（有 user 无 student）自动补齐
+        student = Student(user_id=user.id, grade=DEFAULT_GRADE, stage=DEFAULT_STAGE)
+        session.add(student)
+        session.flush()
+        ensure_student_profile(session, student)
+    return user, student, False
+
+
+# ==================================================================== 令牌
+def build_token_payload(user: User, student: Optional[Student]) -> Dict[str, Any]:
+    """按硬约定签发 access + refresh，并回传对外的 camelCase 载荷。
+
+    返回体同时提供 ``access``/``refresh``（T02 契约字段）与
+    ``accessToken``/``refreshToken``（T01 ``create_token_pair`` 约定字段），
+    两套键指向同一对令牌，方便前端任一写法都能跑通。
+    """
+    sid = str(student.id) if student is not None else None
+    access = create_access_token(sub=user.id, role=user.role, sid=sid)
+    refresh = create_refresh_token(sub=user.id, role=user.role, sid=sid)
+    return {
+        "access": access,
+        "refresh": refresh,
+        "accessToken": access,
+        "refreshToken": refresh,
+        "tokenType": "Bearer",
+        "expiresIn": settings.access_token_expire_minutes * 60,
+    }
+
+
+def build_user_brief(user: User, student: Optional[Student]) -> Dict[str, Any]:
+    """登录返回的用户摘要（camelCase）。"""
+    return {
+        "userId": str(user.id),
+        "studentId": str(student.id) if student is not None else None,
+        "phone": user.phone,
+        "nickname": user.nickname,
+        "avatarUrl": user.avatar_url,
+        "role": user.role,
+        "grade": student.grade if student is not None else None,
+        "stage": student.stage if student is not None else None,
+    }
+
+
+# ==================================================================== 用例
+def login_by_code(session: Session, phone: str, code: str) -> Dict[str, Any]:
+    """手机号 + 验证码登录（首次登录自动注册）。
+
+    Args:
+        session: 数据库会话。
+        phone: 手机号。
+        code: 验证码（dev 环境用 ``000000``）。
+
+    Returns:
+        ``{access, refresh, accessToken, refreshToken, tokenType, expiresIn, isNewUser, user}``。
+
+    Raises:
+        ApiError: 400 手机号非法；401 验证码错误；403 账号冻结；500 短信通道未接入。
+    """
+    normalized_phone = (phone or "").strip()
+    if not sms.is_valid_phone(normalized_phone):
+        raise ApiError(CODE_BAD_REQUEST, "手机号格式不正确")
+
+    verify_login_code(normalized_phone, code)
+
+    user, student, is_new = get_or_create_user(session, normalized_phone)
+    user.last_login_at = utcnow()
+    session.flush()
+
+    payload = build_token_payload(user, student)
+    payload["isNewUser"] = is_new
+    payload["user"] = build_user_brief(user, student)
+    return payload
+
+
+def refresh_tokens(session: Session, refresh_token: str) -> Dict[str, Any]:
+    """用 refresh token 换一对新令牌。
+
+    Args:
+        session: 数据库会话。
+        refresh_token: 30 天有效期的刷新令牌。
+
+    Returns:
+        与 ``login_by_code`` 同构的令牌载荷（不含 ``isNewUser``）。
+
+    Raises:
+        ApiError: 401 令牌无效/过期或账号不存在；403 账号冻结。
+    """
+    payload = verify_token(refresh_token, expected_type=TOKEN_TYPE_REFRESH)
+
+    try:
+        user_id = uuid.UUID(str(payload.get("sub")))
+    except (TypeError, ValueError) as exc:
+        raise ApiError(CODE_UNAUTHORIZED, "访问令牌无效") from exc
+
+    user = session.get(User, user_id)
+    if user is None or user.deleted_at is not None:
+        raise ApiError(CODE_UNAUTHORIZED, "账号不存在或已注销")
+    if user.status == USER_STATUS_FROZEN:
+        raise ApiError(CODE_FORBIDDEN, "账号已被冻结，请联系管理员")
+    if user.role not in VALID_ROLES:
+        raise ApiError(CODE_UNAUTHORIZED, "账号角色异常")
+
+    student = get_student_by_user_id(session, user.id) if user.role == ROLE_STUDENT else None
+    result = build_token_payload(user, student)
+    result["user"] = build_user_brief(user, student)
+    return result
+
+
+def send_login_code(phone: str) -> Dict[str, Any]:
+    """下发登录验证码（V4.1 mock 通道只打日志）。
+
+    Args:
+        phone: 手机号。
+
+    Returns:
+        ``{"sent": bool, "devCode": str|None}``；dev 环境回带万能码方便自测。
+
+    Raises:
+        ApiError: 400 手机号非法；500 通道未接入。
+    """
+    normalized_phone = (phone or "").strip()
+    if not sms.is_valid_phone(normalized_phone):
+        raise ApiError(CODE_BAD_REQUEST, "手机号格式不正确")
+
+    try:
+        sent = sms.send_code(normalized_phone)
+    except NotImplementedError as exc:
+        raise ApiError(CODE_SERVER_ERROR, "短信验证码服务尚未接入，请使用开发环境万能码登录") from exc
+
+    return {
+        "sent": bool(sent),
+        "devCode": settings.dev_sms_code if settings.is_dev else None,
+    }
+
+
+__all__ = [
+    "DEFAULT_GRADE",
+    "DEFAULT_STAGE",
+    "login_by_code",
+    "refresh_tokens",
+    "send_login_code",
+    "verify_login_code",
+    "get_user_by_phone",
+    "get_student_by_user_id",
+    "get_or_create_user",
+    "register_student",
+    "ensure_student_profile",
+    "build_token_payload",
+    "build_user_brief",
+]

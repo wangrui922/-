@@ -1,0 +1,64 @@
+# AI数学教练 V4.1 · 本地/联调容器编排
+# 用法（Windows PowerShell）：
+#   docker compose up -d db          # 只起数据库（推荐日常开发）
+#   docker compose up -d             # 数据库 + 后端 API
+#   docker compose down              # 停止；加 -v 连数据卷一起删
+#
+# 端口约定：宿主机 5433 -> 容器 5432（避开本机已装 PG 的 5432 占用）
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: coach-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-coach}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-coach}
+      POSTGRES_DB: ${POSTGRES_DB:-coach}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "5433:5432"
+    volumes:
+      - coach_pgdata:/var/lib/postgresql/data
+      # 首次初始化时自动执行建表脚本（数据卷为空才会执行）
+      - ./backend/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-coach} -d ${POSTGRES_DB:-coach}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: coach-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # 容器内走服务名 db:5432；宿主机调试走 localhost:5433
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-coach}:${POSTGRES_PASSWORD:-coach}@db:5432/${POSTGRES_DB:-coach}
+      APP_ENV: ${APP_ENV:-dev}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      ARK_API_KEY: ${ARK_API_KEY:-}
+      ARK_BASE_URL: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      ARK_MODEL: ${ARK_MODEL:-doubao-seed-1-6-250615}
+      FREE_DAILY_AI: ${FREE_DAILY_AI:-20}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      TZ: UTC
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - coach_storage:/app/storage
+    command: >-
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  coach_pgdata:
+  coach_storage:

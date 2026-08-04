@@ -1,0 +1,19 @@
+# AI数学教练 V4.1 · 后端依赖
+# 说明：
+#   - 用 PyJWT 而非 python-jose（后者拖 cryptography，Windows 易编译失败）
+#   - 用 psycopg[binary] 而非 psycopg2（免 Windows 编译 PG 头文件）
+
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+sqlalchemy>=2.0.36
+psycopg[binary]==3.2.*
+pydantic>=2.9
+pydantic-settings>=2.6
+PyJWT==2.9.*
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.12
+httpx==0.27.*
+APScheduler==3.10.*
+orjson==3.10.*
+pytest==8.3.*
+pytest-asyncio==0.24.*
