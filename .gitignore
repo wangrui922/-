@@ -33,6 +33,7 @@ htmlcov/
 *.sqlite3
 dev.db
 backend/dev.db
+backend/dev.db.bak-*
 backend/tests/*.db
 backend/storage/
 pgdata/
@@ -45,6 +46,10 @@ node_modules/
 student-web/dist/
 parent-web/dist/
 admin-web/dist/
+# 构建自检产物：CI/本地跑 `vite build --outDir .verify-dist` 验证编译用，不入库
+student-web/.verify-dist/
+# 协作过程中留下的探针/临时文件（保留在磁盘便于排查，不进仓库历史）
+student-web/.probe*.txt
 
 # ---------- 编辑器 / 系统 ----------
 .vscode/
@@ -77,12 +82,28 @@ student-web/nodedl.*
 student-web/npmfetch.txt
 student-web/npmview*.txt
 student-web/status.txt
+student-web/.probe*.txt
 student-web/dist-*/
 # 后端运行时产物（SQLite / 测试库 / 报告）
 *.db-shm
 *.db-wal
 test_verify.db*
 pytest-full.xml
+backend/_verify_*.xml
+# 后端根目录调试垃圾（保留在磁盘，不进仓库历史）
+# 只锚定 backend/ 直属层且必须带后缀：`_*` 这种宽泛写法会连 __init__.py 一起吃掉。
+# 同理不用 `backend/_*.py`——它会匹配 backend/__init__.py，所以调试脚本逐个点名。
+backend/_*.txt
+backend/_kpstat.py
 # 部署/函数依赖
 .edgeone/
 cloud-functions/**/node_modules/
+
+# pytest��ʱ���
+backend/pytest_*.txt
+backend/_regression_driver.py
+backend/import_reports*
+.qa_cache/
+
+# ��Ƕ��Ŀ¼
+backend/backend/
