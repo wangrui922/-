@@ -23,6 +23,7 @@ from app.ai.prompts import (
     ocr,
     practice_guide,
     practice_judge,
+    report,
     summary,
     tutor,
 )
@@ -34,4 +35,5 @@ __all__ = [
     "summary",
     "practice_guide",
     "practice_judge",
+    "report",
 ]

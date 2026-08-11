@@ -1,0 +1,43 @@
+sequenceDiagram
+    autonumber
+    participant S as 学生
+    participant V as AiTeacher.vue
+    participant API as api/exercise.py
+    participant O as orchestrator.generate_exercise
+    participant AES as ai_exercise_service.get_weak_profile
+    participant DB as mistakes（只读）
+    participant EX as agents/exercise.gen_exercises
+    participant M as ark_client
+
+    S->>V: 点【再出两道】
+    V->>API: POST /exercise/gen {sessionId}
+    API->>O: generate_exercise(session_id, db)
+    O->>O: _get_session() + _pick_analysis() → kp/error_type/difficulty（当前错题）
+
+    Note over O,AES: ★ ① 先算薄弱画像（纯本地 SQL，零外网）
+    O->>AES: get_weak_profile(db, student_id=session.student_id, top_n=2)
+    AES->>DB: SELECT error_type, COUNT(*) ... WHERE student_id=? AND error_type IN (五类) GROUP BY error_type ORDER BY cnt DESC LIMIT 2
+    DB-->>AES: [(METHOD,12),(READ,9)] / 空
+    AES-->>O: {"weak_tags":[{"code":"METHOD","label":"方法错"},{"code":"READ","label":"读题错"}], "source":"profile"}
+    Note over O: 空画像 → source="fallback"，weak_context=""
+
+    Note over O,EX: ★ ② 注入弱项（context 后缀，知识点仍锚定当前错题）
+    O->>O: weak_context = "【定向推题】该学生历史上反复出错的薄弱错因是：方法错、读题错。请在保持薄弱知识点「{kp}」不变的前提下，让这两道练习题的变式专门去反复练习和踩这些薄弱错因的坑…"（source=profile 时）
+    O->>EX: gen_exercises(error_type=当前错因, kp=当前kp, difficulty=, context=weak_context)
+    EX->>M: ark_respond(...)
+
+    Note over O: ★ ③ 照旧落库（D1：archived + ai_gen，零迁移）
+    O->>O: persist_exercises(...)；写 EXERCISE_PREFIX 消息；session_state=practicing
+
+    Note over O,API: ★ ④ 返回 weak_tags / weak_source
+    O-->>API: {"exercises":[...], "weak_tags":[...], "weak_source":"profile"}
+    API-->>V: 200 ok({exercises, weak_tags, weak_source})
+
+    Note over V: ★ ⑤ 前端整批横幅展示
+    V->>V: weakTags=result.weakTags; weakSource=result.weakSource
+    alt source=profile 且 weakTags 非空
+        V-->>S: 🎯 本次练习针对你的薄弱点：[方法错][读题错]（横幅，引导区上方）
+    else source=fallback（新学生/无历史错题）
+        V-->>S: 🎯 这次先按当前这道题的类型练一练（柔和兜底横幅）
+    end
+    V->>V: 打开第 1 题 GuideChatPanel（既有对话式作答流程不变）

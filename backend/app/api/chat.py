@@ -49,10 +49,14 @@ class ChatMessage(BaseSchema):
 
     Attributes:
         text: 孩子这一轮说的话。
+        mode: 前端快捷按钮显式指定的响应模式（``GUIDE``/``HINT``/``DEMO``/``JUDGE``）。
+            **可选**：自然输入时省略，由后端 ``intent.detect_mode()`` 自动判定；
+            非法值一律静默降级为自动判定，不报错（保证旧版前端零感知）。
         client_event_id: 客户端幂等键（别名 ``clientEventId``）。
     """
 
     text: Optional[str] = None
+    mode: Optional[str] = None
     client_event_id: Optional[str] = None
 
 
@@ -115,7 +119,9 @@ async def send_message(
     """多轮引导：把孩子这一轮的话接进会话，返回下一句引导。
 
     Returns:
-        ``{"code":0,"msg":"ok","data":{"reply": str}}``。
+        ``{"code":0,"msg":"ok","data":{"reply","mode","next_mode"}}``。
+        ``mode`` 是本轮实际生效的响应模式（前端渲染指示器用），
+        ``next_mode`` 是下一轮建议默认模式（讲完一轮自动回切 ``GUIDE``）。
 
     Raises:
         ApiError: 400 未绑定学生 / 会话不存在 / 输入为空；429 今日 AI 额度已用完。
@@ -126,6 +132,7 @@ async def send_message(
         orchestrator.continue_session,
         session_id=to_uuid(session_id, "session_id"),
         user_text=body.text or "",
+        mode=body.mode,
         db=db,
     )
     return ok(result)

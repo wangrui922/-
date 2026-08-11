@@ -1,0 +1,79 @@
+classDiagram
+    class AiExerciseService {
+        <<module app.services.ai_exercise_service>>
+        +AI_SOURCE_DOC: str
+        +persist_exercises(db, session, exercises, student) list
+        +guide_exercise(db, *, student_id, session_id, question_id, work, mode) dict
+        +judge_and_record(db, *, student_id, session_id, question_id, answer, work) dict
+        +get_weak_profile(db, *, student_id, top_n=2) dict
+        -_resolve_kp_id(db, knowledge) Optional~UUID~
+        -_map_question_type(ai_type) Optional~str~
+    }
+
+    class Orchestrator {
+        <<module app.ai.orchestrator>>
+        +generate_exercise(session_id, db) dict
+        -_pick_analysis(messages) dict
+    }
+
+    class ExerciseAgent {
+        <<module app.ai.agents.exercise>>
+        +gen_exercises(*, error_type, kp, difficulty, context="") list
+    }
+
+    class ErrorCategories {
+        <<module app.core.error_categories>>
+        +tuple ERROR_CATEGORIES
+        +error_label(code) str
+        +normalize_error(raw) str
+    }
+
+    class Mistake {
+        <<ORM mistakes>>
+        +UUID id
+        +UUID student_id
+        +UUID question_id
+        +str error_type
+        +bool solved
+        +datetime created_at
+    }
+
+    class ExerciseApi {
+        <<module app.api.exercise>>
+        +gen_exercise(body, current, db) dict
+    }
+
+    class ChatApiTs {
+        <<api/chat.ts>>
+        +genExercise(sid, clientEventId?) GenExerciseResult
+    }
+
+    class WeakTag {
+        <<typescript 新增>>
+        +str code
+        +str label
+    }
+
+    class GenExerciseResult {
+        <<typescript 增量>>
+        +Exercise[] exercises
+        +WeakTag[] weakTags
+        +'profile'|'fallback' weakSource
+    }
+
+    class AiTeacher {
+        <<vue views>>
+        +weakTags: WeakTag[]
+        +weakSource: string
+        +handleGenExercise()
+    }
+
+    AiExerciseService ..> Mistake : GROUP BY error_type COUNT
+    AiExerciseService ..> ErrorCategories : error_label()
+    Orchestrator --> AiExerciseService : get_weak_profile()
+    Orchestrator --> ExerciseAgent : gen_exercises(context=weak)
+    ExerciseApi --> Orchestrator : generate_exercise()
+    ExerciseApi ..> ExerciseApi : ok(result) 透传 weak_tags/weak_source
+    ChatApiTs ..> GenExerciseResult : 归一化(双写兼容)
+    AiTeacher --> ChatApiTs : genExercise()
+    GenExerciseResult *-- WeakTag : weakTags[]

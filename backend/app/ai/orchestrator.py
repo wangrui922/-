@@ -19,10 +19,12 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai import intent  # T2 意图识别：mode 的唯一定稿处
 from app.ai.agents import diagnose, exercise, question, tutor  # noqa: F401  (diagnose 供上层复用)
 from app.ai.agents._json_utils import extract_json as _extract_json
 from app.ai.ark_client import ArkError
 from app.ai.guards import check_ai_quota
+from app.ai.intent import MODE_DEMO, MODE_GUIDE
 from app.ai.state_machine import (  # T04B 状态机
     SESSION_STATE_GUIDING,
     SESSION_STATE_INTRO,
@@ -36,6 +38,13 @@ logger = logging.getLogger("app.ai.orchestrator")
 
 #: 分析结论写进 ai_messages 时的前缀（generate_exercise 靠它回捞 JSON）
 ANALYSIS_PREFIX: str = "分析："
+
+#: AI 练习题元数据写进 ai_messages 时的前缀（``guide_exercise`` 靠它校验归属）
+#:
+#: 与 ``ANALYSIS_PREFIX`` 同款回捞惯例，content 形如::
+#:
+#:     练习题：[{"question_id": "...", "role": "fix", "tag": "..."}]
+EXERCISE_PREFIX: str = "练习题："
 
 #: 分析结论解析不出时的兜底
 DEFAULT_KP: str = "综合"
@@ -141,16 +150,30 @@ def start_session(
     }
 
 
-def continue_session(*, session_id: Any, user_text: str, db: Session) -> Dict[str, Any]:
+def continue_session(
+    *,
+    session_id: Any,
+    user_text: str,
+    mode: Optional[str] = None,
+    db: Session,
+) -> Dict[str, Any]:
     """多轮辅导：带着完整历史再问一句，并落库 user / assistant 两条消息。
+
+    T2/T5 起本函数是 **mode 的唯一定稿处**：调 ``tutor.next_question()`` 之前先做
+    一次意图识别，把"孩子这一轮到底想要什么"翻译成 ``GUIDE/HINT/DEMO/JUDGE``，
+    再原样透传给 Agent → 状态机 → 泄漏守卫。
 
     Args:
         session_id: 会话 ID。
         user_text: 孩子这一轮说的话。
+        mode: 前端显式指定的模式（快捷按钮），``None`` 表示交给意图识别自动判断。
+            非法值会被 ``intent.detect_mode()`` 忽略，等同于 ``None``。
         db: 调用方传入的 SQLAlchemy 会话（本函数内 ``commit``）。
 
     Returns:
-        ``{"reply": str}``。
+        ``{"reply": str, "mode": str, "next_mode": str}``。``mode`` 是本轮实际
+        生效的模式；``next_mode`` 是建议前端下一轮默认带上的模式——本轮讲完
+        （``DEMO``）之后自动回切 ``GUIDE``（D3-a），其余情况等于本轮 ``mode``。
 
     Raises:
         ApiError: 400 会话不存在 / 输入为空；429 今日额度已用完。
@@ -166,9 +189,23 @@ def continue_session(*, session_id: Any, user_text: str, db: Session) -> Dict[st
     history = _to_history(_load_messages(session.id, db))
     state = session.session_state  # T04B 读回持久化的阶段
     step = session.step
+
+    # T2 意图识别：override（前端快捷按钮）优先，其次按文本 + 历史自动判定
+    detected = intent.detect(text=content, history=history, state=state, override=mode)
+    active_mode = detected.mode
+    logger.info(
+        "intent session=%s mode=%s source=%s confidence=%.2f matched=%s",
+        session.id,
+        active_mode,
+        detected.source,
+        detected.confidence,
+        detected.matched or "-",
+    )
+
     reply = tutor.next_question(
         session_messages=history + [{"role": "user", "content": content}],
         state=state,
+        mode=active_mode,
     )
 
     db.add(AiMessage(session_id=session.id, role="user", content=content))
@@ -180,7 +217,10 @@ def continue_session(*, session_id: Any, user_text: str, db: Session) -> Dict[st
     session.state_updated_at = datetime.now(timezone.utc)
     db.commit()
 
-    return {"reply": reply}
+    # D3-a：讲解只讲这一轮，讲完立刻回到引导，避免"一路讲到底"
+    next_mode = MODE_GUIDE if active_mode == MODE_DEMO else active_mode
+
+    return {"reply": reply, "mode": active_mode, "next_mode": next_mode}
 
 
 def _pick_analysis(messages: List[AiMessage]) -> Dict[str, Any]:
@@ -197,19 +237,29 @@ def _pick_analysis(messages: List[AiMessage]) -> Dict[str, Any]:
 
 
 def generate_exercise(*, session_id: Any, db: Session) -> Dict[str, Any]:
-    """基于会话的分析结论生成两道练习题（**不落库**，由上层决定是否入题库）。
+    """基于会话的分析结论生成两道练习题，并按 D1 落库成归档题（``source_doc='ai_gen'``）。
+
+    T6 起练习题会写进 ``questions`` / ``answers``：``status='archived'`` 保证**永不进入
+    题库抽题池**（``practice_service._candidate_rows()`` 硬条件是 ``status='active'``），
+    只为让后续的「判错即时入本」能拿到合法的 ``question_id`` 外键。
 
     Args:
         session_id: 会话 ID。
-        db: 调用方传入的 SQLAlchemy 会话（本函数只读）。
+        db: 调用方传入的 SQLAlchemy 会话（本函数内 ``commit``）。
 
     Returns:
-        ``{"exercises": list[dict]}``，元素含 ``q/a/type/knowledge/difficulty/role/tag``。
+        ``{"exercises": list[dict]}``，元素含
+        ``question_id/q/a/type/knowledge/difficulty/role/tag``。
+        落库失败时 ``question_id`` 为 ``None``（出题本身不因落库失败而失败）。
 
     Raises:
         ApiError: 400 会话不存在。
         ArkError: 方舟调用失败或返回无法解析。
     """
+    # 分层纪律：``app.services`` 依赖 ``app.ai``（见 practice_service），反向不许在模块级
+    # 依赖，否则 ai_exercise_service ← → orchestrator 形成 import 环。故此处延迟导入。
+    from app.services import ai_exercise_service
+
     session = _get_session(session_id, db)
     messages = _load_messages(session.id, db)
 
@@ -221,13 +271,70 @@ def generate_exercise(*, session_id: Any, db: Session) -> Dict[str, Any]:
     except (TypeError, ValueError):
         difficulty = DEFAULT_DIFFICULTY
 
-    exercises = exercise.gen_exercises(error_type=error_type, kp=kp, difficulty=difficulty)
+    # ★ T1 定向推题：先算薄弱画像（纯本地 SQL，零外网），再把 Top-2 弱项注入出题提示词。
+    # 弱项为空（source=fallback）时 weak_context=""，走现有出题行为；kp 仍锚定当前错题。
+    weak = ai_exercise_service.get_weak_profile(db, student_id=session.student_id)
+    weak_context = ""
+    if weak["source"] == "profile" and weak["weak_tags"]:
+        labels = "、".join(tag["label"] for tag in weak["weak_tags"])
+        weak_context = (
+            f"【定向推题】该学生历史上反复出错的薄弱错因是：{labels}。"
+            f"请在保持薄弱知识点「{kp}」不变的前提下，让这两道练习题的变式"
+            f"专门去反复练习和踩这些薄弱错因的坑，帮他把易错点练扎实。"
+        )
+
+    exercises = exercise.gen_exercises(
+        error_type=error_type,  # 仍锚定当前错题的 drill 目标
+        kp=kp,  # 知识点锚定当前错题，主题不跑偏
+        difficulty=difficulty,
+        context=weak_context,  # ★ 弱项 Top-2 注入点（为空即不注入，走现有行为）
+    )
+
+    # D1 落库：拿到与 exercises 等长的 question_id 列表（失败位置为 None）
+    question_ids = ai_exercise_service.persist_exercises(
+        db,
+        session=session,
+        exercises=exercises,
+        student_id=session.student_id,
+    )
+    for item, qid in zip(exercises, question_ids):
+        item["question_id"] = str(qid) if qid else None
+
+    # AI 侧元数据（role/tag/原始 type）不入 questions 表，单独落一条消息，
+    # 既是审计痕迹，也是 ``guide_exercise`` 校验「这道题属不属于本会话」的依据。
+    meta = [
+        {
+            "question_id": item.get("question_id"),
+            "role": item.get("role"),
+            "tag": item.get("tag"),
+            "type": item.get("type"),
+        }
+        for item in exercises
+    ]
+    db.add(
+        AiMessage(
+            session_id=session.id,
+            role="assistant",
+            content=f"{EXERCISE_PREFIX}{json.dumps(meta, ensure_ascii=False)}",
+        )
+    )
 
     # T04B 状态机：已出题进入练习阶段
     session.session_state = SESSION_STATE_PRACTICING
     session.state_updated_at = datetime.now(timezone.utc)
     db.commit()
-    return {"exercises": exercises}
+    # weak_tags / weak_source 随响应回带，供前端渲染薄弱点横幅（snake_case 透传）
+    return {
+        "exercises": exercises,
+        "weak_tags": weak["weak_tags"],
+        "weak_source": weak["source"],
+    }
 
 
-__all__ = ["start_session", "continue_session", "generate_exercise", "ANALYSIS_PREFIX"]
+__all__ = [
+    "start_session",
+    "continue_session",
+    "generate_exercise",
+    "ANALYSIS_PREFIX",
+    "EXERCISE_PREFIX",
+]

@@ -5,9 +5,28 @@
 的严格度（引导 / 开场阶段严格，练习 / 总结阶段宽松）。
 
 本模块为纯逻辑（只依赖标准库），不触碰 DB，是阶段枚举的权威来源。
+
+T2 增补：引入**响应模式** ``mode``（``app.ai.intent`` 是其唯一真相源），
+把「严格度」从「只看教学阶段」升级为「阶段 × 模式」二维：
+
+* ``mode_prompt(mode)``：给 tutor 系统提示追加一段模式行为说明；
+* ``is_strict_guard(state, *, mode=None)``：``DEMO`` / ``JUDGE`` 恒不严格，
+  其余保持原有的按阶段判定。
+
+⚠️ 依赖方向是单向的：``state_machine`` → ``intent``，**禁止反向 import**。
 """
 
 from __future__ import annotations
+
+from typing import Dict, Optional
+
+from app.ai.intent import (  # mode 常量的唯一定义处，禁止在本文件重写字面量
+    MODE_DEMO,
+    MODE_GUIDE,
+    MODE_HINT,
+    MODE_JUDGE,
+    normalize_mode,
+)
 
 #: 阶段枚举
 SESSION_STATE_INTRO = "intro"            # 刚开场，提出第一个引导问题
@@ -46,6 +65,58 @@ _STATE_PROMPTS = {
 }
 
 
+#: 各响应模式注入 tutor 系统提示的后缀（T2 · 与 ``_STATE_PROMPTS`` 同级同性质）
+#:
+#: 这一段是「三重锁死」的破法之一：模型此前只收到阶段提示（永远是「不要直接
+#: 给答案」），现在再叠一层模式提示，明确告诉它这一轮到底该引导还是该讲。
+_MODE_PROMPTS: Dict[str, str] = {
+    MODE_GUIDE: (
+        "【响应模式】引导模式：继续用提问带孩子自己想，一次只说一件事，"
+        "不要直接给答案。"
+    ),
+    MODE_HINT: (
+        "【响应模式】提示模式：孩子卡住了在要线索。给**一条**方向性提示"
+        "（贴着这道题的数字和情境），点到为止，然后抛一个他够得着的小问题，"
+        "仍然不要把结论说出来。"
+    ),
+    MODE_DEMO: (
+        "【响应模式】讲解模式：孩子已经明确请你讲，请**从头完整演示**这道题的"
+        "解题过程，把每一步为什么这么做讲清楚，并且**说出最终结果**——这一轮"
+        "不需要藏答案。讲完必须回扣一句追问（例如「这里面哪一步你想再听一遍？」），"
+        "把孩子拉回思考。"
+    ),
+    MODE_JUDGE: (
+        "【响应模式】评判模式：孩子给出了他的答案或结论。请**明确说对还是错**，"
+        "错的话指出是哪一步出的问题（读题 / 方法 / 计算 / 知识点 / 检查），"
+        "对的话追问一句「你是怎么想出来的」确认他真懂。这一轮可以说出正确结果。"
+    ),
+}
+
+
+def mode_prompt(mode: Optional[str]) -> str:
+    """返回追加到 TUTOR_PROMPT 的**响应模式**提示后缀。
+
+    Args:
+        mode: 响应模式（见 ``app.ai.intent.MODE_*``）。``None`` 或非法值返回空串，
+            此时调用方不追加任何模式提示，行为与改造前完全一致。
+
+    Returns:
+        模式提示文本；无需追加时为空串。
+
+    Examples:
+        >>> mode_prompt(None)
+        ''
+        >>> mode_prompt("nonsense")
+        ''
+        >>> mode_prompt("DEMO").startswith("【响应模式】讲解模式")
+        True
+    """
+    normalized = normalize_mode(mode)
+    if normalized is None:
+        return ""
+    return _MODE_PROMPTS.get(normalized, "")
+
+
 def state_prompt(state: str, step: int = 0) -> str:
     """返回追加到 TUTOR_PROMPT 的阶段提示后缀。
 
@@ -60,11 +131,36 @@ def state_prompt(state: str, step: int = 0) -> str:
         return template
 
 
-def is_strict_guard(state: str) -> bool:
-    """该阶段是否严格禁止泄答案。
+def is_strict_guard(state: str, *, mode: Optional[str] = None) -> bool:
+    """该阶段 × 该模式下是否严格禁止泄答案。
 
-    intro / guiding -> True（严格）；practicing / summarizing / 其他 -> False（宽松）。
+    判定顺序（**模式优先于阶段**）：
+
+    1. ``mode`` 为 ``DEMO`` / ``JUDGE`` → 恒 ``False``。这两个模式的正确行为就是
+       把结果说出来，再拿严格闸门去拦就是「写死的模板」的根因；
+    2. 其余（``None`` / ``GUIDE`` / ``HINT`` / 非法值）→ 保持原有按阶段判定：
+       intro / guiding -> ``True``（严格）；practicing / summarizing / 其他 -> ``False``。
+
+    Args:
+        state: 阶段值（见 ``SESSION_STATE_*``）。
+        mode: 响应模式（见 ``app.ai.intent.MODE_*``）。**关键字参数且默认 None**，
+            ``None`` 语义 = 「未指定」= 走老逻辑，保证存量调用与存量测试零改动。
+
+    Returns:
+        需要严格检查答案泄漏时返回 ``True``。
+
+    Examples:
+        >>> is_strict_guard("guiding")
+        True
+        >>> is_strict_guard("guiding", mode="DEMO")
+        False
+        >>> is_strict_guard("guiding", mode="HINT")
+        True
+        >>> is_strict_guard("practicing")
+        False
     """
+    if normalize_mode(mode) in (MODE_DEMO, MODE_JUDGE):
+        return False
     return state in (SESSION_STATE_INTRO, SESSION_STATE_GUIDING)
 
 
@@ -76,5 +172,11 @@ __all__ = [
     "SESSION_STATE_CLOSED",
     "SESSION_STATE_VALUES",
     "state_prompt",
+    "mode_prompt",
     "is_strict_guard",
+    # 从 intent 转出，方便下游只 import 一个模块（真相源仍是 app.ai.intent）
+    "MODE_GUIDE",
+    "MODE_HINT",
+    "MODE_DEMO",
+    "MODE_JUDGE",
 ]

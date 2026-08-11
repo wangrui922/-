@@ -5,6 +5,14 @@
 
 ``current_error`` 是 Diagnosis Agent 的结论，属于**内部信息**，只作为附加
 system 提示喂给模型，用来让这一句引导贴着孩子真实卡住的那一步，不会原样念给孩子听。
+
+T5 增补 —— ``mode`` 透传：
+    ``mode`` 由 ``app.ai.intent.detect_mode()`` 在 orchestrator 里**定稿**，
+    本模块只做纯透传，**不许再猜、再改、再降级**（设计文档 §7.1 铁律 1）：
+
+    * 拼进 system 提示：``TUTOR_PROMPT + state_suffix + mode_suffix``；
+    * 决定严格度：``is_strict_guard(state, mode=mode)``；
+    * 透传给 ``generate_guarded_reply(mode=mode)``（DEMO/JUDGE 会整段跳过检查）。
 """
 
 from __future__ import annotations
@@ -13,7 +21,12 @@ from typing import Any, Dict, List, Optional
 
 from app.ai.answer_guard import generate_guarded_reply
 from app.ai.prompts.tutor import PROMPT as TUTOR_PROMPT
-from app.ai.state_machine import is_strict_guard, state_prompt
+from app.ai.state_machine import (
+    SESSION_STATE_GUIDING,
+    is_strict_guard,
+    mode_prompt,
+    state_prompt,
+)
 
 #: 送进模型的历史对话最大条数（过长既费 token 也稀释当前重点）
 MAX_HISTORY: int = 24
@@ -58,6 +71,7 @@ def next_question(
     session_messages: List[Dict[str, Any]],
     current_error: Optional[str] = None,
     state: Optional[str] = None,
+    mode: Optional[str] = None,
 ) -> str:
     """生成下一句引导语（经答案泄漏检查器兜底）。
 
@@ -69,9 +83,13 @@ def next_question(
             system 提示追加到历史末尾，引导模型对准这个点。
         state: 当前教学阶段（见 ``app.ai.state_machine.SESSION_STATE_*``），
             非空时注入阶段提示并据此决定答案检查器的严格度。
+        mode: 本轮响应模式（见 ``app.ai.intent.MODE_*``），由 orchestrator 用
+            ``intent.detect_mode()`` **定稿**后传入。**关键字参数且默认 None**，
+            ``None`` = 未指定 = 行为与改造前完全一致。本函数只透传，不改写。
 
     Returns:
         一句引导语（已 strip）；命中泄漏且重生成耗尽时给 ``FALLBACK_REPLY`` 兜底。
+        ``mode`` 为 DEMO / JUDGE 时不会被兜底替换（guard 整段跳过）。
 
     Raises:
         ArkError: 方舟调用失败或消息结构非法。
@@ -86,15 +104,19 @@ def next_question(
         # 没有任何上下文时给个开场指令，避免空 input 直接被 ark_client 拒掉
         messages.append({"role": "user", "content": "我们开始吧，请你先问我第一个问题。"})
 
-    # 阶段提示 + 严格度（开场/引导严格，练习/总结宽松）
-    suffix = state_prompt(state) if state else ""
-    system = f"{TUTOR_PROMPT}\n\n{suffix}".strip() if suffix else TUTOR_PROMPT
-    strict = is_strict_guard(state) if state else True
+    # 系统提示拼接顺序固定：核心提示词 → 阶段后缀 → 模式后缀（模式最后，优先级最高）
+    suffixes = [part for part in (state_prompt(state) if state else "", mode_prompt(mode)) if part]
+    system = "\n\n".join([TUTOR_PROMPT, *suffixes]) if suffixes else TUTOR_PROMPT
+
+    # 严格度：DEMO / JUDGE 恒 False；其余保持「开场/引导严格，练习/总结宽松」。
+    # state 为空时按 guiding 兜底 —— 与改造前的 `strict=True` 完全等价。
+    strict = is_strict_guard(state or SESSION_STATE_GUIDING, mode=mode)
 
     return generate_guarded_reply(
         messages=messages,
         system=system,
         strict=strict,
+        mode=mode,
         fallback=FALLBACK_REPLY,
     )
 
