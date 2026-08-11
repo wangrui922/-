@@ -33,13 +33,46 @@ export interface StartChatResult {
   firstQuestion: string
 }
 
+/**
+ * AI 老师的响应模式（后端 `app/ai/intent.py` 是唯一真相源，这里只做镜像）。
+ *
+ * - `GUIDE` 苏格拉底引导（默认）
+ * - `HINT`  只给一个方向性小线索
+ * - `DEMO`  完整讲解并说出结果
+ * - `JUDGE` 判对错 + 指出错在哪一步
+ */
+export type TutorMode = 'GUIDE' | 'HINT' | 'DEMO' | 'JUDGE'
+
+/** 合法模式集合，用于归一化脏输入。 */
+const TUTOR_MODES: readonly TutorMode[] = ['GUIDE', 'HINT', 'DEMO', 'JUDGE']
+
+/** 后端不认识 / 没返回 mode 时的兜底（与后端 DEFAULT_MODE 一致）。 */
+export const DEFAULT_TUTOR_MODE: TutorMode = 'GUIDE'
+
+/** 把任意脏输入归一化成合法 mode，识别不了一律回落 `GUIDE`。 */
+export function normalizeTutorMode(raw: unknown): TutorMode {
+  const value = String(raw ?? '').trim().toUpperCase()
+  return (TUTOR_MODES as readonly string[]).includes(value)
+    ? (value as TutorMode)
+    : DEFAULT_TUTOR_MODE
+}
+
 /** POST /api/chat/{id}/message 结果。 */
 export interface SendMessageResult {
   reply: string
+  /** 本轮实际生效的模式（渲染顶部指示器用） */
+  mode: TutorMode
+  /** 下一轮建议默认模式：讲完一轮（DEMO）后端会自动回切 GUIDE */
+  nextMode: TutorMode
 }
 
 /** 一道生成的练习题。 */
 export interface Exercise {
+  /**
+   * 落库后的 questions.id（后端 D1 起生成即落库为 archived 归档题）。
+   * 落库失败时为 null——此时这道题不能走 /exercise/guide 与 /exercise/judge。
+   */
+  questionId: string | null
   q: string
   a: string
   type: string
@@ -50,9 +83,49 @@ export interface Exercise {
   tag?: string
 }
 
-/** POST /api/exercise/gen 结果。 */
+/** POST /api/exercise/guide 结果（练习题的对话式逐步引导）。 */
+export interface GuideExerciseResult {
+  questionId: string
+  reply: string
+  /** 模型认为孩子已写完，可以问「这是你的最终答案吗」 */
+  askFinalConfirm: boolean
+  /** correct=已答对 / wrong=已答错 / pending=还在过程中 */
+  verdict: 'correct' | 'wrong' | 'pending'
+  /** verdict=wrong 时给五类错因机器码之一，否则为 null */
+  errorType: string | null
+  mode: TutorMode
+  promptVersion: string
+}
+
+/** POST /api/exercise/judge 结果（提交最终答案 + 判错即时入本）。 */
+export interface JudgeExerciseResult {
+  questionId: string
+  correct: boolean
+  /** 给孩子看的判词（对/错 + 错在哪一步） */
+  verdictText: string
+  /** 判错时给五类错因机器码之一，判对为 null */
+  errorType: string | null
+  /** 判错时后端已自动写入错题本，这里回带错题 ID；判对为 null */
+  mistakeId: string | null
+  /** 是否已刷新掌握度画像缓存（题目没挂知识点时为 false） */
+  masteryRefreshed: boolean
+}
+
+/** 薄弱错因标签：code 为五类机器码，label 走后端 `error_label`，前端不硬编码中文。 */
+export interface WeakTag {
+  /** 五类机器码之一：READ/METHOD/CALC/KNOWLEDGE/CHECK */
+  code: string
+  /** 中文展示标签，由后端唯一真相源提供 */
+  label: string
+}
+
+/** POST /api/exercise/gen 结果（增量：weakTags / weakSource）。 */
 export interface GenExerciseResult {
   exercises: Exercise[]
+  /** 这批练习题定向 drill 的薄弱错因标签；为空表示走兜底（新学生 / 无历史错题）。 */
+  weakTags: WeakTag[]
+  /** "profile"=来自历史画像；"fallback"=画像为空，仅按当前错题练。 */
+  weakSource: 'profile' | 'fallback'
 }
 
 /** 错题本条目（后端已是 camelCase）。 */
@@ -66,6 +139,15 @@ export interface MistakeItem {
   createdAt: string | null
   /** 攻克备注（PUT /api/mistake/{id}/solve 写入，T04 · B10） */
   note?: string | null
+  /**
+   * 关联知识点 ID（建档时从 Question.kp_id 快照，T01 后端 _to_item 已落地）。
+   * 为空时前端不渲染知识点条、不显示「练同类题」按钮。
+   */
+  kpId: string | null
+  /** 知识点名称（通过 Mistake.kp relationship 取，kpId 为空时同为 null） */
+  kpName: string | null
+  /** 题目年级（通过 Mistake.question.grade 取，深链时收窄抽题范围用） */
+  grade: number | null
 }
 
 /** GET /api/mistake/list 结果。 */
@@ -103,6 +185,130 @@ interface RawStartChat {
   analysis?: Record<string, unknown>
 }
 
+/** POST /api/chat/{id}/message 的后端原始返回。 */
+interface RawSendMessage {
+  reply?: string
+  mode?: string
+  next_mode?: string
+  nextMode?: string
+}
+
+function normalizeSendMessage(raw: RawSendMessage): SendMessageResult {
+  const mode = normalizeTutorMode(raw.mode)
+  return {
+    reply: String(raw.reply ?? ''),
+    mode,
+    // 后端没给 next_mode（旧版本）时退化为「维持本轮模式」
+    nextMode: normalizeTutorMode(raw.next_mode ?? raw.nextMode ?? mode),
+  }
+}
+
+/** POST /api/exercise/guide 的后端原始返回（service 直接透传，snake_case）。 */
+interface RawGuideExercise {
+  question_id?: string
+  questionId?: string
+  reply?: string
+  ask_final_confirm?: boolean
+  askFinalConfirm?: boolean
+  verdict?: string
+  error_type?: string | null
+  errorType?: string | null
+  mode?: string
+  prompt_version?: string
+  promptVersion?: string
+}
+
+function normalizeGuideExercise(raw: RawGuideExercise): GuideExerciseResult {
+  const verdict = String(raw.verdict ?? 'pending')
+  return {
+    questionId: String(raw.question_id ?? raw.questionId ?? ''),
+    reply: String(raw.reply ?? ''),
+    askFinalConfirm: Boolean(raw.ask_final_confirm ?? raw.askFinalConfirm ?? false),
+    verdict: verdict === 'correct' || verdict === 'wrong' ? verdict : 'pending',
+    errorType: (raw.error_type ?? raw.errorType) || null,
+    mode: normalizeTutorMode(raw.mode),
+    promptVersion: String(raw.prompt_version ?? raw.promptVersion ?? ''),
+  }
+}
+
+/** POST /api/exercise/judge 的后端原始返回（service 直接透传，snake_case）。 */
+interface RawJudgeExercise {
+  question_id?: string
+  questionId?: string
+  correct?: boolean
+  verdict_text?: string
+  verdictText?: string
+  error_type?: string | null
+  errorType?: string | null
+  mistake_id?: string | null
+  mistakeId?: string | null
+  mastery_refreshed?: boolean
+  masteryRefreshed?: boolean
+}
+
+function normalizeJudgeExercise(raw: RawJudgeExercise): JudgeExerciseResult {
+  return {
+    questionId: String(raw.question_id ?? raw.questionId ?? ''),
+    correct: Boolean(raw.correct ?? false),
+    verdictText: String(raw.verdict_text ?? raw.verdictText ?? ''),
+    errorType: (raw.error_type ?? raw.errorType) || null,
+    mistakeId: (raw.mistake_id ?? raw.mistakeId) || null,
+    masteryRefreshed: Boolean(raw.mastery_refreshed ?? raw.masteryRefreshed ?? false),
+  }
+}
+
+/** POST /api/exercise/gen 的后端原始返回（question_id 是 snake_case）。 */
+interface RawExercise {
+  question_id?: string | null
+  questionId?: string | null
+  q?: string
+  a?: string
+  type?: string
+  knowledge?: string
+  difficulty?: number
+  role?: string
+  tag?: string
+}
+
+function normalizeExercise(raw: RawExercise): Exercise {
+  return {
+    questionId: (raw.question_id ?? raw.questionId) || null,
+    q: String(raw.q ?? ''),
+    a: String(raw.a ?? ''),
+    type: String(raw.type ?? ''),
+    knowledge: String(raw.knowledge ?? ''),
+    difficulty: Number(raw.difficulty ?? 3),
+    role: raw.role,
+    tag: raw.tag,
+  }
+}
+
+/** POST /api/exercise/gen 的后端原始返回（snake_case / camelCase 双写兼容）。 */
+interface RawGenExercise {
+  exercises?: RawExercise[]
+  /** snake_case（后端当前实际透传键） */
+  weak_tags?: Array<{ code?: string; label?: string }>
+  /** camelCase（兼容后端未来改名） */
+  weakTags?: Array<{ code?: string; label?: string }>
+  /** snake_case */
+  weak_source?: string
+  /** camelCase */
+  weakSource?: string
+}
+
+function normalizeGenExercise(raw: RawGenExercise): GenExerciseResult {
+  const weakTags = (raw.weak_tags ?? raw.weakTags ?? []).map((tag) => ({
+    code: String(tag.code ?? ''),
+    label: String(tag.label ?? ''),
+  }))
+  const weakSource = raw.weak_source ?? raw.weakSource ?? 'fallback'
+  return {
+    exercises: (raw.exercises ?? []).map(normalizeExercise),
+    weakTags,
+    weakSource: weakSource === 'profile' ? 'profile' : 'fallback',
+  }
+}
+
 function normalizeStartChat(raw: RawStartChat): StartChatResult {
   const analysis = (raw.analysis ?? {}) as Record<string, unknown>
   return {
@@ -137,21 +343,82 @@ export async function startChat(payload: {
   return normalizeStartChat(raw)
 }
 
-/** 多轮引导：把孩子这一轮的回答发过去，拿下一句引导。 */
-export function sendMessage(
+/**
+ * 多轮引导：把孩子这一轮的回答发过去，拿下一句引导。
+ *
+ * @param sessionId 辅导会话 ID
+ * @param text 孩子这一轮说的话
+ * @param options `mode` 由快捷按钮显式指定（不传则后端按文本自动识别意图）；
+ *   `clientEventId` 为客户端幂等键。
+ */
+export async function sendMessage(
   sessionId: string,
   text: string,
-  clientEventId?: string,
+  options: { mode?: TutorMode; clientEventId?: string } = {},
 ): Promise<SendMessageResult> {
-  return post<SendMessageResult>(`/chat/${encodeURIComponent(sessionId)}/message`, {
+  const raw = await post<RawSendMessage>(`/chat/${encodeURIComponent(sessionId)}/message`, {
     text,
-    clientEventId,
+    mode: options.mode,
+    clientEventId: options.clientEventId,
   })
+  return normalizeSendMessage(raw)
 }
 
-/** 基于会话分析结论生成 2 道练习题（修复题 + 迁移题，后端不落库）。 */
-export function genExercise(sessionId: string, clientEventId?: string): Promise<GenExerciseResult> {
-  return post<GenExerciseResult>('/exercise/gen', { sessionId, clientEventId })
+/**
+ * 基于会话分析结论生成 2 道练习题（修复题 + 迁移题）。
+ *
+ * 后端 D1 起**生成即落库**为 `status='archived'` 的归档题（不进题库抽题池），
+ * 每道题回带 `questionId`，供 {@link guideExercise} / {@link judgeExercise} 使用。
+ */
+export async function genExercise(
+  sessionId: string,
+  clientEventId?: string,
+): Promise<GenExerciseResult> {
+  const raw = await post<RawGenExercise>('/exercise/gen', {
+    sessionId,
+    clientEventId,
+  })
+  return normalizeGenExercise(raw)
+}
+
+/**
+ * 练习题的对话式逐步引导（可多轮往复，对应 POST /api/exercise/guide）。
+ *
+ * @param payload `work` 是孩子当前写下的过程；`mode` 由快捷按钮显式指定，
+ *   不传则后端按文本自动识别（DEMO/JUDGE 会跳过泄题闸门，孩子请你讲就真的讲）。
+ */
+export async function guideExercise(payload: {
+  sessionId: string
+  questionId: string
+  work?: string
+  mode?: TutorMode
+}): Promise<GuideExerciseResult> {
+  const raw = await post<RawGuideExercise>('/exercise/guide', {
+    sessionId: payload.sessionId,
+    questionId: payload.questionId,
+    work: payload.work ?? '',
+    mode: payload.mode,
+  })
+  return normalizeGuideExercise(raw)
+}
+
+/**
+ * 提交练习题最终答案：判对错，**判错后端会即时写入错题本**
+ * （对应 POST /api/exercise/judge，前端无需再调 {@link createMistake}）。
+ */
+export async function judgeExercise(payload: {
+  sessionId: string
+  questionId: string
+  answer: string
+  work?: string
+}): Promise<JudgeExerciseResult> {
+  const raw = await post<RawJudgeExercise>('/exercise/judge', {
+    sessionId: payload.sessionId,
+    questionId: payload.questionId,
+    answer: payload.answer,
+    work: payload.work ?? '',
+  })
+  return normalizeJudgeExercise(raw)
 }
 
 /** 错题本列表，state 不传返回全部。 */
@@ -163,7 +430,9 @@ export function listMistakes(state?: MistakeState): Promise<MistakeListResult> {
  * 记录一道错题（后端幂等：同题存在未攻克记录时直接复用）。
  *
  * ⚠️ questionId 必须是 questions 表里已存在的 UUID（后端有外键校验）。
- *    /api/exercise/gen 生成的题目**不落库**，所以暂时无法直接用它建档。
+ *    /api/exercise/gen 生成的题目现在**已经落库**并回带 `questionId`，可以直接用它建档；
+ *    但 AI 练习的常规路径是走 {@link judgeExercise}——判错时后端会自动入本，
+ *    不需要前端再手工调本接口，重复调用只会命中幂等返回同一条记录。
  */
 export function createMistake(payload: {
   questionId: string

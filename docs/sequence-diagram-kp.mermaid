@@ -1,0 +1,107 @@
+%% V4 增量时序图：错题→知识点深链 + /guide 引导优化
+%% 架构师 高见远 · v1.0
+
+%% ============================================================
+%% 流程一：错题建档时快照 kp_id
+%% ============================================================
+sequenceDiagram
+    participant FE as 前端 Mistakes.vue
+    participant API as api/mistake.py
+    participant SVC as learning_service
+    participant DB as Database
+
+    FE->>API: POST /api/mistake { questionId, errorType, errorReason }
+    API->>SVC: record_mistake(student_id, question_id, ...)
+    SVC->>SVC: 幂等检查：已有未攻克记录？
+
+    alt 已有未攻克记录
+        SVC-->>API: 返回已存在的 Mistake
+    else 新建
+        SVC->>DB: SELECT kp_id FROM questions WHERE id = question_id
+        DB-->>SVC: question.kp_id（可能为 None）
+        SVC->>DB: INSERT INTO mistakes (..., kp_id=question.kp_id)
+        DB-->>SVC: 新建 Mistake（kp_id 已快照）
+    end
+
+    SVC-->>API: Mistake 实例
+    API-->>FE: { id, solved }
+
+%% ============================================================
+%% 流程二：错题本深链跳转
+%% ============================================================
+sequenceDiagram
+    participant FE_M as Mistakes.vue
+    participant FE_P as Practice.vue
+    participant Store as stores/practice.ts
+    participant API_M as api/mistake.py
+    participant API_P as api/practice.py
+    participant SVC as practice_service
+    participant DB as Database
+
+    Note over FE_M: onMounted → fetchMistakes
+    FE_M->>API_M: GET /api/mistake/list
+    API_M->>API_M: _to_item(mistake) → kpId/kpName/grade
+    API_M-->>FE_M: { items: [{..., kpId, kpName, grade}], total }
+
+    Note over FE_M: kpId 非空时渲染「🏷 kpName · n年级」+ [练同类题]
+
+    FE_M->>FE_M: router.push({ name:'practice',<br/>query: { kp_id, kp_name, grade } })
+
+    Note over FE_P: onMounted → consumeDeepLink()
+    FE_P->>FE_P: 读 route.query.kp_id / kp_name / grade
+    FE_P->>FE_P: router.replace({ name:'practice' }) 摘掉 query
+    FE_P->>Store: startDeepLink({ kp_id, kp_name, grade })
+
+    Store->>Store: startPractice({ kp_id, grade, count })
+    Store->>API_P: POST /api/practice/session { kp_id, grade, count }
+    API_P->>SVC: draw_questions(kp_id=..., grade=..., count=...)
+
+    SVC->>DB: _candidate_rows(attributable_only=True, kp_id=匹配, grade=匹配)
+    DB-->>SVC: 可归因池候选题
+
+    alt 数量不够
+        SVC->>DB: _candidate_rows(attributable_only=False, kp_id=匹配, grade=匹配)
+        DB-->>SVC: 全 L1 安全池候选题（仍带 kp_id + grade 过滤）
+    end
+
+    SVC->>SVC: random.sample → create_session
+    SVC-->>API_P: { session_id, questions, pool_size, ... }
+    API_P-->>Store: 抽题结果
+    Store-->>FE_P: 进入答题态（不停在筛选页）
+
+    Note over FE_P: 顶部显示「正在练：计算（来自你的错题）」
+
+%% ============================================================
+%% 流程三：自动归因批处理（离线）
+%% ============================================================
+sequenceDiagram
+    participant OPS as 运维
+    participant SCRIPT as backfill_kp.py
+    participant DB as Database
+    participant ARK as 方舟 ark_respond
+
+    OPS->>SCRIPT: python app/scripts/backfill_kp.py --dry-run
+
+    SCRIPT->>SCRIPT: 加载 seed/kp_keywords.json
+    SCRIPT->>DB: SELECT id, content FROM questions WHERE kp_id IS NULL
+    DB-->>SCRIPT: N 道空 kp 题
+
+    loop for each question
+        SCRIPT->>SCRIPT: classify_by_rules(content, rules)
+        Note right of SCRIPT: 遍历 13 桶 keywords<br/>命中唯一 → 返回 kp_code<br/>多桶/无命中 → None
+
+        alt 规则未命中
+            SCRIPT->>ARK: classify_by_ark(content, 13 个封闭选项)
+            ARK-->>SCRIPT: kp_code（或失败返回 None）
+        end
+    end
+
+    alt dry_run=True
+        SCRIPT-->>OPS: 输出归因分布报告<br/>{ total_empty, rule_matched, ark_matched, unmatched, distribution }
+    else dry_run=False
+        SCRIPT->>DB: UPDATE questions SET kp_id=..., kp_verified=0 WHERE id=...
+        Note right of DB: 归因结果一律 kp_verified=0<br/>不污染可归因池
+        SCRIPT->>DB: UPDATE mistakes SET kp_id = (SELECT q.kp_id FROM questions q<br/>WHERE q.id = mistakes.question_id)<br/>WHERE mistakes.kp_id IS NULL
+        Note right of DB: 二次回填错题 kp_id（PRD Q3）
+        SCRIPT-->>OPS: 回填完成统计
+    end

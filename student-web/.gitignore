@@ -1,0 +1,26 @@
+# 依赖
+node_modules/
+
+# 打包产物
+/dist/
+
+# 调试日志（npm/node 探针产生，非交付物）
+_net.txt
+_probe.txt
+_state.txt
+check.txt
+check2.txt
+diag.txt
+diag2.txt
+distout.txt
+fail.txt
+mirror.txt
+netdiag.txt
+nm3.txt
+nmcount.txt
+nmstate.txt
+nodedl.txt
+npmfetch.txt
+npmview.txt
+npmview2.txt
+status.txt

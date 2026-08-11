@@ -41,6 +41,30 @@ def load_json(name: str):
     return json.load(open(SEED_DIR / name, encoding="utf-8"))
 
 
+def validate_kp_tree(kp_raw: list[dict]) -> None:
+    """知识树 fail-fast 校验：任一不过立即抛 ``AssertionError``，绝不静默入库。
+
+    三条不变式（对应 PRD 原则 P2「只做两层」）：
+        1. ``parentCode`` 必须存在于本文件的 code 集合中；
+        2. 禁自环：``parentCode != code``；
+        3. 禁 L3：父节点自身的 ``parentCode`` 必须为 ``None``。
+
+    Args:
+        kp_raw: ``knowledge_points.json`` 的 ``knowledgePoints`` 数组。
+
+    Raises:
+        AssertionError: 任一校验不通过。
+    """
+    codes = {kp["code"] for kp in kp_raw}
+    parent_of = {kp["code"]: kp["parentCode"] for kp in kp_raw}
+    for code, pc in parent_of.items():
+        if pc is None:
+            continue
+        assert pc in codes, f"parentCode 不存在: {code} -> {pc}"
+        assert pc != code, f"自环: {code}"
+        assert parent_of[pc] is None, f"树深超过 2 层: {code} -> {pc} -> {parent_of[pc]}"
+
+
 def main() -> None:
     reset = "--reset" in sys.argv
     if reset:
@@ -52,18 +76,25 @@ def main() -> None:
     kp_raw = load_json("knowledge_points.json")["knowledgePoints"]
     q_raw = load_json("questions.json")["questions"]
 
+    validate_kp_tree(kp_raw)
+
     with SessionLocal() as s:
-        # 1) 知识点
-        for kp in kp_raw:
-            s.merge(
-                KnowledgePoint(
-                    id=kp_uuid(kp["code"]),
-                    code=kp["code"],
-                    name=kp["name"],
-                    description=kp.get("description"),
-                    sort=kp.get("sort", 0),
+        # 1) 知识点：两趟写入（先 L1 后 L2），保证写 L2 时父行已在库、外键成立
+        for is_l1_pass in (True, False):
+            for kp in kp_raw:
+                if (kp["parentCode"] is None) != is_l1_pass:
+                    continue
+                s.merge(
+                    KnowledgePoint(
+                        id=kp_uuid(kp["code"]),
+                        code=kp["code"],
+                        name=kp["name"],
+                        description=kp.get("description"),
+                        sort=kp.get("sort", 0),
+                        parent_id=kp_uuid(kp["parentCode"]) if kp["parentCode"] else None,
+                    )
                 )
-            )
+            s.flush()
         kmap = {kp["code"]: kp_uuid(kp["code"]) for kp in kp_raw}
 
         # 2) 题目 + 答案
@@ -94,6 +125,11 @@ def main() -> None:
             n_q += 1
         s.commit()
 
+        # 2.5) 知识树索引缓存失效（同进程内立即按新树 rollup；跨进程靠行数校验自愈）
+        from app.services.kp_tree import invalidate as _invalidate_kp_tree  # noqa: E402
+
+        _invalidate_kp_tree()
+
         # 3) 校验
         total = s.execute(select(func.count()).select_from(Question)).scalar()
         active = s.execute(
@@ -104,7 +140,10 @@ def main() -> None:
         ).scalar()
         ans = s.execute(select(func.count()).select_from(Answer)).scalar()
         kpc = s.execute(select(func.count()).select_from(KnowledgePoint)).scalar()
-        print(f"[seed] 知识点={kpc}  题目(upsert)={n_q}")
+        kp_l2 = s.execute(
+            select(func.count()).select_from(KnowledgePoint).where(KnowledgePoint.parent_id.isnot(None))
+        ).scalar()
+        print(f"[seed] 知识点={kpc} (L1={(kpc or 0) - (kp_l2 or 0)} / L2={kp_l2})  题目(upsert)={n_q}")
         print(f"[seed] questions 总={total}  active(小学)={active}  archived(初中)={archived}  answers={ans}")
 
 

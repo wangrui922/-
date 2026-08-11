@@ -1,0 +1,124 @@
+%% 图 A · seed 跑批（两趟写入 + 三条校验 fail-fast）
+sequenceDiagram
+    autonumber
+    participant OPS as 运维
+    participant SEED as seed_db.main()
+    participant VAL as validate_kp_tree()
+    participant S as Session
+    participant DB as knowledge_points
+
+    OPS->>SEED: python app/scripts/seed_db.py（禁加 --reset）
+    SEED->>SEED: kp_raw = load_json("knowledge_points.json")["knowledgePoints"]
+    SEED->>VAL: validate_kp_tree(kp_raw)
+    VAL->>VAL: ① parentCode ∈ codes ?
+    VAL->>VAL: ② parentCode != code ?（禁自环）
+    VAL->>VAL: ③ parent_of[parentCode] is None ?（禁 L3）
+    alt 任一校验失败
+        VAL-->>OPS: AssertionError，进程退出，零写入
+    end
+    VAL-->>SEED: OK（93 条）
+
+    Note over SEED,DB: 第 1 趟 —— 只写 parentCode is None 的 13 个 L1
+    loop 13 个 L1
+        SEED->>S: merge(KnowledgePoint(id=kp_uuid(code), parent_id=None, ...))
+    end
+    SEED->>S: flush()
+    S->>DB: INSERT/UPDATE 13 行（id 与 v1 完全一致 → 存量 kp_id 外键不断）
+
+    Note over SEED,DB: 第 2 趟 —— 写 80 个 L2，父行已在库，FK 成立
+    loop 80 个 L2
+        SEED->>S: merge(KnowledgePoint(parent_id=kp_uuid(parentCode), ...))
+    end
+    SEED->>S: flush()
+    S->>DB: INSERT/UPDATE 80 行
+
+    SEED->>S: commit()
+    SEED->>DB: SELECT count(*) → 期望 93
+    SEED->>DB: SELECT count(*) WHERE parent_id IS NOT NULL → 期望 80
+    SEED-->>OPS: [seed] 知识点=93 (L1=13 / L2=80)
+
+%% ---------------------------------------------------------------------------
+%% 图 B · backfill 跑批（--relabel-l1 仅规则层 / 方舟单独）
+sequenceDiagram
+    autonumber
+    participant OPS as 运维
+    participant CLI as backfill_kp.main()
+    participant BF as backfill()
+    participant R as classify_by_rules
+    participant A as classify_by_ark
+    participant DB as questions / mistakes
+
+    rect rgb(238,246,255)
+    Note over OPS,DB: 第 1 轮 —— 存量重打标（幂等，只跑规则层）
+    OPS->>CLI: --dry-run --relabel-l1
+    CLI->>CLI: relabel_l1 ⇒ 强制 no_ark=True
+    CLI->>BF: backfill(dry_run=True, relabel_l1=True, no_ark=True)
+    BF->>DB: SELECT id, content WHERE kp_id IS NULL<br/>OR (kp_id IN 13*L1 AND kp_verified IS FALSE)
+    DB-->>BF: 候选行（kp_verified=1 的题不在其中）
+    loop 每道题
+        BF->>R: classify_by_rules(content, rules 93 条)
+        R->>R: 命中打分 →(priority desc, hits desc) → Top1 严格优于 Top2 ?
+        R-->>BF: kp_code（L2 优先）或 None
+    end
+    BF-->>OPS: 归因分布报告（未落库）
+    OPS->>CLI: --relabel-l1（去掉 --dry-run）
+    CLI->>DB: UPDATE questions SET kp_id=?, kp_verified=0
+    CLI->>DB: 同步 mistakes（EXISTS 子查询挂题目侧 kp_verified）
+    end
+
+    rect rgb(255,247,236)
+    Note over OPS,DB: 第 2 轮 —— 剩余空值走方舟（非确定性，单独跑一次）
+    OPS->>CLI: python backfill_kp.py（默认模式）
+    CLI->>BF: backfill(relabel_l1=False, no_ark=False)
+    BF->>DB: SELECT ... WHERE kp_id IS NULL
+    loop 每道题
+        BF->>R: classify_by_rules
+        alt 规则命中
+            R-->>BF: kp_code
+        else 规则未命中
+            BF->>A: classify_by_ark(content, kp_tree)
+            A->>A: 段① 13 个 L1 选 1
+            A->>A: 段② 该 L1 的 children（≤8）选 1
+            A->>A: _pick_code(reply, sorted(codes, key=len, reverse=True))
+            A-->>BF: L2 code / 降级 L1 code / None
+        end
+    end
+    BF-->>OPS: 报告（rule/ark 占比）
+    end
+
+%% ---------------------------------------------------------------------------
+%% 图 C · 读侧 L1 rollup（Q5）
+sequenceDiagram
+    autonumber
+    participant API as /api/profile/mastery · radar · recommendations
+    participant PS as profile_service
+    participant C as PracticeEventCollector
+    participant KT as kp_tree.load_kp_tree()
+    participant ME as mastery_engine
+    participant RS as report_service
+
+    API->>PS: load_entries(db, student_id)
+    PS->>C: collector.load()
+    C->>KT: load_kp_tree(db)（93 行，进程内缓存）
+    KT-->>C: KpTreeIndex
+
+    C->>C: _load_attempts() / _load_mistakes()
+    Note over C: _VERIFIED_KP_EXPR 保持不变，未复核题仍置空
+    loop 每条事件
+        C->>C: _kp_ids_of(kp_id) → [index.rollup(kp_id)]
+    end
+    C-->>PS: events_by_kp（≤13 桶）
+    PS->>ME: compute_mastery(events)
+    ME-->>PS: entries（kp_id 均为 L1）
+    PS-->>API: 雷达图 13 桶
+    PS-->>RS: report_service 消费 entries → 零改动自动 rollup
+
+    API->>PS: get_recommendations()
+    PS->>PS: _suggested_questions(db, [L1 ids])
+    PS->>KT: subtree_ids(L1) + l2_sample_counts(db)
+    alt 某 L2 样本数 >= 5
+        PS->>PS: 优先从该 L2 抽题
+    else 样本 < 5
+        PS->>PS: 回退到整个 L1 子树抽题
+    end
+    PS-->>API: suggested_question_ids

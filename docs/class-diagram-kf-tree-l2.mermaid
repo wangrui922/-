@@ -1,0 +1,90 @@
+classDiagram
+    class KnowledgePoint {
+        <<ORM · 表结构零改动>>
+        +UUID id
+        +str name
+        +UUID parent_id
+        +str description
+        +str code
+        +int sort
+        +KnowledgePoint parent
+        +List~KnowledgePoint~ children
+        +List~Question~ questions
+    }
+
+    class Question {
+        <<ORM · 表结构零改动>>
+        +UUID id
+        +str content
+        +UUID kp_id
+        +bool kp_verified
+        +str status
+        +int grade
+    }
+
+    class SeedKpNode {
+        <<JSON DTO · knowledge_points.json v2>>
+        +str code
+        +str name
+        +str|None parentCode
+        +int sort
+        +str description
+    }
+
+    class KeywordRule {
+        <<JSON DTO · kp_keywords.json v2>>
+        +str kp_code
+        +str kp_name
+        +List~str~ keywords
+        +int priority
+    }
+
+    class SeedDb {
+        <<script · seed_db.py>>
+        +kp_uuid(code) str
+        +load_json(name) dict
+        +validate_kp_tree(kp_raw) None
+        +main() None
+    }
+
+    class BackfillKp {
+        <<script · backfill_kp.py>>
+        +classify_by_rules(content, rules) str|None
+        +classify_by_ark(content, kp_tree) str|None
+        +_pick_code(reply, valid_codes) str|None
+        +_select_targets(db, relabel_l1, limit) List
+        +backfill(db, dry_run, limit, relabel_l1, no_ark) dict
+    }
+
+    class KpTree {
+        <<new service · kp_tree.py>>
+        +load_kp_tree(db) KpTreeIndex
+        +l2_sample_counts(db) Dict
+        +invalidate() None
+        +int L2_MIN_SAMPLES
+    }
+
+    class KpTreeIndex {
+        <<dataclass · 进程内缓存>>
+        +Dict~UUID,UUID~ parent_of
+        +Dict~UUID,List~ children_of
+        +Set~UUID~ l1_ids
+        +rollup(kp_id) UUID
+        +subtree_ids(kp_id) List~UUID~
+    }
+
+    class PracticeEventCollector {
+        <<profile_service · 唯一 rollup 收敛点>>
+        +_kp_ids_of(kp_id) List~UUID~
+        +load() self
+    }
+
+    KnowledgePoint "1" --> "0..*" KnowledgePoint : children (树深恒=2)
+    KnowledgePoint "1" --> "0..*" Question : questions
+    SeedKpNode ..> KnowledgePoint : SeedDb.merge() 两趟写入
+    SeedDb ..> SeedKpNode : 解析+校验
+    BackfillKp ..> KeywordRule : classify_by_rules
+    BackfillKp ..> Question : UPDATE kp_id
+    KpTree --> KpTreeIndex : 构建/缓存
+    KpTreeIndex ..> KnowledgePoint : SELECT id,parent_id
+    PracticeEventCollector ..> KpTreeIndex : rollup()

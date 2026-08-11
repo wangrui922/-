@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.core.constants import (
@@ -62,6 +62,12 @@ from app.models.content import KnowledgePoint, Question
 from app.models.learning import Attempt, Mistake
 from app.models.student_mastery import StudentMastery
 from app.services import mastery_engine as engine
+from app.services.kp_tree import (
+    KpTreeIndex,
+    l2_sample_counts,
+    load_kp_tree,
+    preferred_targets,
+)
 from app.services.mastery_engine import (
     AttemptEvent,
     ErrorEvidence,
@@ -108,6 +114,23 @@ class RecommendationView:
     items: List[Recommendation] = field(default_factory=list)
     computed_at: Optional[datetime] = None
     mode: str = MODE_FRESH
+
+
+# ============================================ 未复核题目的知识点隔离（T05 · 风险2）
+#: 只有 ``kp_verified IS TRUE`` 的题目才把 ``kp_id`` 计入掌握度统计。
+#:
+#: 背景：T05 从 docx 批量导入的题目，其 ``kp_id`` 是机器猜的、未经人工复核。
+#: 若直接参与掌握度计算，会把「解析噪音」放大成「学生某知识点很差」的错误结论。
+#:
+#: 语义约定（与 R5 的既有分支完全复用，不新增代码路径）：
+#:     * 未复核题 → 本表达式返回 ``NULL``，等价于「该题没有归属知识点」，
+#:       走 ``_kp_ids_of`` 的空列表分支 → **不进掌握度**；
+#:     * 错因维度统计（``/error-patterns`` 的 ``total_mistakes`` /
+#:       ``unmapped_mistakes``）**照常计入**，数据不会凭空消失。
+#:
+#: 之所以用 SQL ``CASE`` 而不是 Python 侧过滤，是为了让「未复核 → kp 置空」
+#: 在**所有读取入口**天然一致，避免将来新增查询时漏加过滤条件。
+_VERIFIED_KP_EXPR = case((Question.kp_verified.is_(True), Question.kp_id), else_=None)
 
 
 # ==================================================================== 通用工具
@@ -182,6 +205,8 @@ class PracticeEventCollector:
         self.all_error_evidence: List[ErrorEvidence] = []
         #: 已在 attempts 里出现过的题目，用于「错题不重复计负样本」的去重
         self._attempted_question_ids: Set[uuid.UUID] = set()
+        #: 知识树索引（懒加载，一次采集只查一次；见 ``_kp_index``）
+        self._kp_tree_index: Optional[KpTreeIndex] = None
 
     # ------------------------------------------------------------ 内部查询
     def _question_kp_map(self, question_ids: Iterable[uuid.UUID]) -> Dict[uuid.UUID, Optional[uuid.UUID]]:
@@ -190,17 +215,32 @@ class PracticeEventCollector:
         if not ids:
             return {}
         rows = self.db.execute(
-            select(Question.id, Question.kp_id).where(Question.id.in_(ids))
+            # T05 风险2：未人工复核的题目（docx 批量导入）kp 归属置空，不污染掌握度
+            select(Question.id, _VERIFIED_KP_EXPR).where(Question.id.in_(ids))
         ).all()
         return {row[0]: row[1] for row in rows}
 
+    def _kp_index(self) -> KpTreeIndex:
+        """懒加载知识树索引（一次采集只查一次库）。"""
+        if self._kp_tree_index is None:
+            self._kp_tree_index = load_kp_tree(self.db)
+        return self._kp_tree_index
+
     def _kp_ids_of(self, kp_id: Optional[uuid.UUID]) -> List[uuid.UUID]:
-        """一道题归属的知识点列表。
+        """一道题归属的知识点列表（**统计口径统一 rollup 到 L1**）。
 
         当前数据模型是「一题一知识点」（``questions.kp_id``），
         返回 list 是为了将来接多对多映射时不用改调用方。
+
+        KF 知识树 L2（design §4.5 R1）：题目的 ``kp_id`` 被 backfill 下沉到 L2 后，
+        这里必须向上归并到 L1，否则雷达图会从 13 桶炸成 93 桶、每桶只剩 1~2 个样本，
+        掌握度全变成噪声。本函数是**全项目唯一的 rollup 收敛点**——改这一处，
+        掌握度 / 雷达 / 推荐 / 家长报告四个下游同时生效。
         """
-        return [kp_id] if kp_id is not None else []
+        if kp_id is None:
+            return []
+        rolled = self._kp_index().rollup(kp_id)
+        return [rolled] if rolled is not None else []
 
     def _load_kp_names(self, kp_ids: Set[uuid.UUID]) -> None:
         """批量取知识点名称。"""
@@ -272,7 +312,8 @@ class PracticeEventCollector:
     def _load_attempts(self) -> None:
         """一手事件源：作答流水（含正负样本）。"""
         rows = self.db.execute(
-            select(Attempt.question_id, Attempt.is_correct, Attempt.created_at, Question.kp_id)
+            # T05 风险2：未人工复核的题目 kp 归属置空 → 不进掌握度，错因维度不受影响
+            select(Attempt.question_id, Attempt.is_correct, Attempt.created_at, _VERIFIED_KP_EXPR)
             .join(Question, Attempt.question_id == Question.id)
             .where(Attempt.student_id == self.student_id)
         ).all()
@@ -713,13 +754,20 @@ def _suggested_questions(
 ) -> Dict[str, List[str]]:
     """给每个知识点挑几道可用（``status='active'``）的题。
 
+    KF 知识树 L2（design §4.5 R2）：``kp_ids`` 来自掌握度 entries，经 R1 rollup 后
+    **恒为 L1**；而 backfill 已把题目下沉到 L2。若仍按 ``kp_id IN (L1)`` 查，
+    推荐题会恒为空。因此这里先把每个 L1 展开成子树再查，返回时再归并回 L1 键。
+
+    下钻策略（design §4.4 时序图 C）：某个 L2 名下可用题 ≥ ``L2_MIN_SAMPLES`` 时
+    优先从这些「够厚」的 L2 抽题（练习更聚焦）；都不够厚则回退整棵子树。
+
     Args:
         db: 数据库会话。
-        kp_ids: 知识点字符串 ID 列表。
+        kp_ids: 知识点字符串 ID 列表（L1）。
         limit: 每个知识点最多几道。
 
     Returns:
-        ``{kp_id: [question_id, ...]}``。
+        ``{kp_id: [question_id, ...]}``，键仍是入参里的知识点 ID。
     """
     if not kp_ids:
         return {}
@@ -733,15 +781,31 @@ def _suggested_questions(
     if not targets:
         return {}
 
+    index = load_kp_tree(db)
+    counts = l2_sample_counts(db)
+
+    #: 子树里的每个 id 归属哪个入参键（首个占位者胜出，避免一题被两个 L1 抢）
+    owner_of: Dict[uuid.UUID, str] = {}
+    expanded: List[uuid.UUID] = []
+    for target in targets:
+        for kid in preferred_targets(index, target, counts):
+            if kid in owner_of:
+                continue
+            owner_of[kid] = _kp_key(target)
+            expanded.append(kid)
+
     rows = db.execute(
         select(Question.id, Question.kp_id)
-        .where(Question.kp_id.in_(targets), Question.status == "active")
+        .where(Question.kp_id.in_(expanded), Question.status == "active")
         .order_by(Question.created_at.desc())
     ).all()
 
     grouped: Dict[str, List[str]] = {}
     for question_id, kp_id in rows:
-        key = _kp_key(kp_id)
+        key = owner_of.get(kp_id)
+        if key is None:  # pragma: no cover - in_() 已限定范围，兜底防御
+            rolled = index.rollup(kp_id)
+            key = _kp_key(rolled) if rolled is not None else _kp_key(kp_id)
         bucket = grouped.setdefault(key, [])
         if len(bucket) < limit:
             bucket.append(str(question_id))

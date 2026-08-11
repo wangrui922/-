@@ -27,4 +27,9 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // 关闭构建前的自动清空输出目录：本机安全删除拦截（safe-delete）对中文/空格路径
+    // 处理异常会误报失败，关闭后由 vite 直接覆盖写入，便于本地 CI 跑通 build。
+    emptyOutDir: false,
+  },
 })

@@ -81,22 +81,65 @@ def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+#: T05 题库扩容新增列：``列名 -> ALTER 片段``（两方言通用写法，不用 IF NOT EXISTS）。
+#:
+#: ``kp_verified`` 默认 TRUE 的原因见 V7：存量种子题都是人工整理的，
+#: 补列瞬间必须立刻被视为「已复核」，否则学习画像统计会瞬时塌陷。
+#: 该列的 DEFAULT 由建表侧保证，回填由下面的 UPDATE 兜底。
+_T05_BANK_COLUMNS: Dict[str, str] = {
+    "edition": "ALTER TABLE questions ADD COLUMN edition VARCHAR(16)",
+    "source_type": "ALTER TABLE questions ADD COLUMN source_type VARCHAR(16)",
+    "section": "ALTER TABLE questions ADD COLUMN section VARCHAR(16)",
+    "source_doc": "ALTER TABLE questions ADD COLUMN source_doc VARCHAR(255)",
+    "kp_verified": "ALTER TABLE questions ADD COLUMN kp_verified BOOLEAN NOT NULL DEFAULT 1",
+}
+
+
 def ensure_schema() -> None:
-    """保证表结构存在且含 ``questions.status`` 列（幂等，两方言通用）。
+    """保证表结构存在且含 T04/T05 新增列（幂等，两方言通用）。
 
     * 表不存在 → ``Base.metadata.create_all``；
-    * 表存在但缺 ``status`` 列（T01 建的老库）→ ``ALTER TABLE ADD COLUMN``。
+    * 表存在但缺 ``status`` 列（T01 建的老库）→ ``ALTER TABLE ADD COLUMN``；
+    * 表存在但缺 T05 题库扩容五列（edition / source_type / section /
+      source_doc / kp_verified）→ 逐列 ``ALTER``，并对 ``kp_verified``
+      立刻回填 TRUE（存量题视为已复核，见 V7 线上事故复盘）。
+
+    该函数与 ``app.services.importers.schema_guard.ensure_bank_columns``
+    是**同一件事的两个入口**：seed 走这里，导入 CLI 走那里，二者互相兜底。
     """
     Base.metadata.create_all(engine)
 
     inspector = inspect(engine)
     columns = {col["name"] for col in inspector.get_columns("questions")}
+
     if "status" not in columns:
         with engine.begin() as conn:
             conn.execute(
                 text("ALTER TABLE questions ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'active'")
             )
         print("[seed_db] 已为 questions 表补充 status 列")
+
+    is_sqlite = engine.dialect.name == "sqlite"
+    missing = [name for name in _T05_BANK_COLUMNS if name not in columns]
+    if not missing:
+        return
+
+    with engine.begin() as conn:
+        for name in missing:
+            ddl = _T05_BANK_COLUMNS[name]
+            if name == "kp_verified" and not is_sqlite:
+                # PostgreSQL 布尔字面量用 TRUE，SQLite 用 1
+                ddl = ddl.replace("DEFAULT 1", "DEFAULT TRUE")
+            conn.execute(text(ddl))
+        if "kp_verified" in missing:
+            # 存量题（source_doc IS NULL）一律视为已人工复核，与补列同事务完成
+            conn.execute(
+                text(
+                    "UPDATE questions SET kp_verified = {truthy} "
+                    "WHERE source_doc IS NULL".format(truthy="1" if is_sqlite else "TRUE")
+                )
+            )
+    print(f"[seed_db] 已为 questions 表补充 T05 题库列：{', '.join(missing)}")
 
 
 # ==================================================================== 知识点

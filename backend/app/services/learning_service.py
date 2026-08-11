@@ -23,11 +23,13 @@ from typing import Any, List, Optional
 
 from sqlalchemy import Exists, Select, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only, selectinload
 
 from app.core.response import ApiError, CODE_BAD_REQUEST, CODE_NOT_FOUND
 from app.models.base import utcnow
+from app.models.content import Question
 from app.models.learning import Attempt, Mistake
+from app.services.kp_tree import load_kp_tree
 
 logger = logging.getLogger("app.services.learning")
 
@@ -41,6 +43,15 @@ STATE_MASTERED: str = "mastered"
 
 #: 合法的 ``state`` 取值
 MISTAKE_STATES: tuple[str, ...] = (STATE_UNSOLVED, STATE_PRACTICING, STATE_MASTERED)
+
+# ------------------------------------------------------------------ 耗时上限
+#: 单题作答耗时上限（秒）。
+#:
+#: C8 口径：前端单题计时并在 ``>600s`` 时截断为 600；后端在 ``record_attempt``
+#: 里再做一次 ``min(d, 600)`` 兜底，防止客户端时钟漂移/伪造写出离谱值。
+#: ⚠️ 该列**仅供数据分析**，家长周报 ``report_service.count_engagement`` 的
+#: K3 硬约束明确「不依据 duration_sec 估算学习时长」，本期不改动这一行为。
+MAX_DURATION_SEC: int = 600
 
 
 # ------------------------------------------------------------------ 通用工具
@@ -80,6 +91,26 @@ def require_student_id(sid: Optional[str]) -> uuid.UUID:
     if not sid:
         raise ApiError(CODE_BAD_REQUEST, "未绑定学生")
     return to_uuid(sid, "student_id")
+
+
+def clamp_duration(duration_sec: Optional[int]) -> Optional[int]:
+    """把作答耗时夹到 ``[0, MAX_DURATION_SEC]``（C8 后端兜底）。
+
+    Args:
+        duration_sec: 客户端上报的耗时（秒），可为 ``None`` / 非数字。
+
+    Returns:
+        规范化后的秒数；输入为空或不可解析时返回 ``None``（不写脏值）。
+    """
+    if duration_sec is None:
+        return None
+    try:
+        value = int(duration_sec)
+    except (TypeError, ValueError):
+        return None
+    if value < 0:
+        return 0
+    return min(value, MAX_DURATION_SEC)
 
 
 def _has_correct_attempt() -> Exists:
@@ -146,12 +177,19 @@ def record_mistake(
     if existing is not None:
         return existing
 
+    # ★ 快照：建档时从 Question.kp_id 拷贝（可能为 None）
+    # 快照语义：题目的 kp 后续被修正时，历史错题的归因不应被追溯改写。
+    question_kp_id = db.execute(
+        select(Question.kp_id).where(Question.id == qid)
+    ).scalar_one_or_none()
+
     mistake = Mistake(
         student_id=sid,
         question_id=qid,
         error_type=error_type,
         error_reason=error_reason,
         solved=False,
+        kp_id=question_kp_id,
     )
     db.add(mistake)
     try:
@@ -170,6 +208,7 @@ def list_mistakes(
     *,
     student_id: Any,
     state: Optional[str] = None,
+    kp_id: Optional[Any] = None,
 ) -> List[Mistake]:
     """按三态筛选错题本，``created_at`` 倒序返回。
 
@@ -177,6 +216,7 @@ def list_mistakes(
         db: 数据库会话。
         student_id: 学生 ID。
         state: ``unsolved`` / ``practicing`` / ``mastered``；``None`` 表示全部。
+        kp_id: 可选，按知识点筛选错题（``None`` 表示不筛）。
 
     Returns:
         ``Mistake`` 列表（可能为空）。
@@ -195,6 +235,19 @@ def list_mistakes(
         stmt = stmt.where(Mistake.solved.is_(False), _has_correct_attempt())
     elif state:
         raise ApiError(CODE_BAD_REQUEST, f"state 仅支持 {'/'.join(MISTAKE_STATES)}")
+
+    # ★ 按知识点筛选（T01 新增）
+    # KF 知识树 L2（design §4.5 R5）：按 L1 筛选时要覆盖它下面的全部 L2，
+    # 否则 backfill 之后「已升到 L2 的错题」会从错题本 L1 视图里凭空消失。
+    if kp_id is not None:
+        kid = to_uuid(kp_id, "kp_id")
+        stmt = stmt.where(Mistake.kp_id.in_(load_kp_tree(db).subtree_ids(kid)))
+
+    # ★ eager load：避免 _to_item 取 kp_name / grade 时的 N+1
+    stmt = stmt.options(
+        selectinload(Mistake.kp),
+        selectinload(Mistake.question).load_only(Question.grade),
+    )
 
     return list(db.execute(stmt.order_by(Mistake.created_at.desc())).scalars())
 
@@ -290,12 +343,14 @@ def record_attempt(
     session_id: Any = None,
     selected_answer: Optional[str] = None,
     is_correct: bool,
+    duration_sec: Optional[int] = None,
     client_event_id: Optional[str] = None,
 ) -> Attempt:
     """记录一条作答流水（按 ``client_event_id`` 幂等）。
 
     幂等口径：``client_event_id`` 非空且库中已存在时直接返回已有记录；
     并发下撞唯一键也会回查一次，保证「重复 client_event_id 只写一条」。
+    命中幂等时**不覆盖**已有行的 ``duration_sec``（首次写入即定稿）。
 
     Args:
         db: 数据库会话。
@@ -304,6 +359,7 @@ def record_attempt(
         session_id: AI 会话 ID，可为空。
         selected_answer: 作答内容，可为空。
         is_correct: 是否正确（必填）。
+        duration_sec: 单题作答耗时（秒），可为空；内部按 ``min(d, 600)`` 兜底（C8）。
         client_event_id: 客户端幂等键，可为空。
 
     Returns:
@@ -314,6 +370,7 @@ def record_attempt(
     """
     sid = to_uuid(student_id, "student_id")
     event_key = (client_event_id or "").strip() or None
+    safe_duration = clamp_duration(duration_sec)
 
     if event_key:
         existing = (
@@ -330,6 +387,7 @@ def record_attempt(
         session_id=to_uuid(session_id, "session_id") if session_id else None,
         selected_answer=selected_answer,
         is_correct=bool(is_correct),
+        duration_sec=safe_duration,
         client_event_id=event_key,
     )
     db.add(attempt)
@@ -360,6 +418,8 @@ __all__ = [
     "record_attempt",
     "require_student_id",
     "to_uuid",
+    "clamp_duration",
+    "MAX_DURATION_SEC",
     "STATE_UNSOLVED",
     "STATE_PRACTICING",
     "STATE_MASTERED",

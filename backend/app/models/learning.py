@@ -26,7 +26,7 @@ from app.models.base import GUID, Base, JSONType, utcnow, uuid_pk
 
 if TYPE_CHECKING:  # 仅类型检查期引用，运行期不产生循环导入
     from app.models.ai import AiSession
-    from app.models.content import Question
+    from app.models.content import KnowledgePoint, Question
 
 #: 任务类型枚举
 TASK_TYPE_VALUES = ("daily", "review", "exam")
@@ -65,12 +65,25 @@ class Mistake(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, comment="创建时间(UTC)"
     )
+    # T01 新增：关联知识点（建档时从 Question.kp_id 快照写入，FK→knowledge_points.id）
+    # 快照语义：题目的 kp 后续被修正时，历史错题的归因不应被追溯改写。
+    kp_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(),
+        ForeignKey("knowledge_points.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="关联知识点(建档时从Question.kp_id快照)",
+    )
+
+    # 知识点关系：用于 _to_item 取 kp_name，list_mistakes 用 selectinload 避免 N+1
+    kp: Mapped[Optional["KnowledgePoint"]] = relationship()
 
     student: Mapped["Student"] = relationship(back_populates="mistakes")
     question: Mapped["Question"] = relationship(back_populates="mistakes")
 
     __table_args__ = (
         Index("idx_mistakes_student_solved", "student_id", "solved"),
+        Index("idx_mistakes_kp", "kp_id"),
         {"comment": "错题本表"},
     )
 

@@ -1,0 +1,205 @@
+%% V4 增量类图：错题→知识点深链 + /guide 引导优化
+%% 架构师 高见远 · v1.0
+
+classDiagram
+    direction LR
+
+    %% ============================================================
+    %% 数据模型层
+    %% ============================================================
+    class Mistake {
+        +UUID id
+        +UUID student_id
+        +UUID question_id
+        +String error_type
+        +String error_reason
+        +String note
+        +Boolean solved
+        +DateTime solved_at
+        +DateTime created_at
+        +UUID kp_id ★新增
+        --relationships--
+        +Student student
+        +Question question
+        +KnowledgePoint kp ★新增
+    }
+
+    class Question {
+        +UUID id
+        +String content
+        +String image_url
+        +String subject
+        +Integer grade
+        +Integer difficulty
+        +UUID kp_id
+        +String type
+        +JSON options
+        +String status
+        +String edition
+        +String source_type
+        +String section
+        +String source_doc
+        +Boolean kp_verified
+        +DateTime created_at
+        --relationships--
+        +KnowledgePoint kp
+        +Answer answer
+        +List~Mistake~ mistakes
+        +List~Attempt~ attempts
+    }
+
+    class KnowledgePoint {
+        +UUID id
+        +String name
+        +UUID parent_id
+        +String description
+        +String code
+        +Integer sort
+        --relationships--
+        +KnowledgePoint parent
+        +List~KnowledgePoint~ children
+        +List~Question~ questions
+    }
+
+    class Answer {
+        +UUID id
+        +UUID question_id
+        +String correct_answer
+        +String analysis
+        +JSON distractor_analysis
+    }
+
+    %% ============================================================
+    %% 服务层
+    %% ============================================================
+    class LearningService {
+        +record_mistake(db, student_id, question_id, error_type, error_reason) Mistake
+        +list_mistakes(db, student_id, state, kp_id) List~Mistake~ ★kp_id新增
+        +mark_mistake_solved(db, mistake_id, student_id, note) Mistake
+        +record_attempt(db, student_id, question_id, ...) Attempt
+        -_has_correct_attempt() Exists
+    }
+
+    class PracticeService {
+        +draw_questions(db, student_id, grade, kp_id, ...) Dict
+        +create_session(db, student_id, question_ids) LearningTask
+        +submit_answer(db, student_id, ...) Dict
+        +reveal_answer(db, student_id, ...) Dict
+        +finish_session(db, student_id, session_id) Dict
+        +guide_question(db, student_id, ...) Dict
+        +sanitize_guide_reply(reply, q_type, ...) String
+        -_candidate_rows(db, attributable_only, grade, kp_id, ...) List
+    }
+
+    class BackfillKp {
+        <<script>>
+        +classify_by_rules(content, rules) Optional~str~
+        +classify_by_ark(content, kp_list) Optional~str~
+        +backfill(db, dry_run, limit) Dict
+        -load_rules() List~dict~
+        -update_question_kp(db, question_id, kp_code) void
+    }
+
+    class SchemaGuard {
+        +ensure_bank_columns(engine, strict) Dict
+        +ensure_mistake_kp_column(engine) Dict ★新增
+        +existing_columns(engine, table) Dict
+        -_is_sqlite(engine) Boolean
+    }
+
+    %% ============================================================
+    %% API 层
+    %% ============================================================
+    class MistakeAPI {
+        +create_mistake(body, current, db) Dict
+        +list_mistakes(state, kp_id, current, db) Dict ★kp_id新增
+        +solve_mistake(mistake_id, body, current, db) Dict
+        -_to_item(mistake) Dict ★出参补kpId/kpName/grade
+    }
+
+    class PracticeAPI {
+        +create_practice_session(body, current, db) Dict
+        +answer(body, current, db) Dict
+        +reveal(body, current, db) Dict
+        +finish(body, current, db) Dict
+        +guide(body, current, db) Dict
+    }
+
+    %% ============================================================
+    %% 提示词层
+    %% ============================================================
+    class PracticeGuidePrompt {
+        +VERSION: str = "1.0.0" → "1.1.0" ★patch
+        +PROMPT: str
+        +PLACEHOLDERS: tuple
+    }
+
+    class TutorPrompt {
+        +VERSION: str = "1.0.0"
+        +PROMPT: str
+        ── 教学法资产来源 ──
+        五分类错因诊断
+        引导的拿法
+        内部状态判断
+        铁律（不给答案/一次一件事）
+    }
+
+    %% ============================================================
+    %% 前端
+    %% ============================================================
+    class MistakesVue {
+        +fetchMistakes(key) void
+        +handleSolve(item) void
+        +handlePracticeDeepLink(item) void ★新增
+        -删除122-130断点注释 ★
+    }
+
+    class PracticeVue {
+        +consumeDeepLink() void ★扩展读grade
+        +handleStart(params) void
+        +handleGuide() void
+    }
+
+    class PracticeStore {
+        +startDeepLink(info, count) Boolean ★grade透传
+        +startPractice(params) Boolean
+        +restartSame() Boolean
+        +deep_link: DeepLinkInfo
+    }
+
+    class ChatAPI {
+        +MistakeItem interface ★补kpId/kpName/grade
+        +listMistakes(state) Promise
+        +markMistakeSolved(id, note) Promise
+    }
+
+    %% ============================================================
+    %% 关系
+    %% ============================================================
+    Mistake }o--|| Question : "question_id FK"
+    Mistake }o--|| KnowledgePoint : "kp_id FK ★新增"
+    Question }o--|| KnowledgePoint : "kp_id FK"
+    Question ||--|| Answer : "1:1"
+
+    LearningService --> Mistake : "record/list/solve"
+    LearningService --> Question : "SELECT kp_id ★新增"
+    PracticeService --> LearningService : "record_mistake (finish)"
+    PracticeService --> Question : "_candidate_rows"
+    PracticeService --> PracticeGuidePrompt : "guide_question"
+    PracticeService --> SchemaGuard : "间接（startup探测）"
+
+    BackfillKp --> Question : "UPDATE kp_id+kp_verified=0"
+    BackfillKp --> Mistake : "二次回填 kp_id"
+    BackfillKp --> KnowledgePoint : "查 kp_id by code"
+
+    MistakeAPI --> LearningService : "调用"
+    MistakeAPI --> Mistake : "_to_item 序列化"
+    PracticeAPI --> PracticeService : "调用"
+
+    PracticeGuidePrompt ..> TutorPrompt : "裁剪下沉教学法"
+
+    MistakesVue --> ChatAPI : "listMistakes"
+    MistakesVue --> PracticeVue : "router.push 深链"
+    PracticeVue --> PracticeStore : "startDeepLink"
+    PracticeStore --> PracticeAPI : "POST /session"
+    ChatAPI --> MistakeAPI : "GET /mistake/list"

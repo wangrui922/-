@@ -2,18 +2,33 @@
 /** 对话气泡：AI 靠左（白底），学生靠右（蓝底）。 */
 import { computed } from 'vue'
 
+import { formatMath } from '@/utils/formatMath'
+
 interface Props {
   /** 说话人 */
   role: 'user' | 'ai'
   /** 气泡文本 */
   content: string
+  /** 学生拍照的题目缩略图（仅 user 角色，base64 dataUrl）。点开看大图。 */
+  image?: string
   /** 是否显示「思考中」省略号动画 */
   pending?: boolean
 }
 
-const props = withDefaults(defineProps<Props>(), { pending: false })
+const props = withDefaults(defineProps<Props>(), { pending: false, image: '' })
 
 const isUser = computed<boolean>(() => props.role === 'user')
+
+/** 学生向：拍照只显示，不做 LaTeX 转换（图像就是图像）。
+ *  AI 向：把内容里的 LaTeX/分数源码转成小学生看得懂的纯文本（如 5/13）。 */
+const displayContent = computed<string>(() =>
+  isUser.value ? props.content : formatMath(props.content),
+)
+
+/** 点击图片看大图 */
+function openImage(): void {
+  if (props.image) window.open(props.image, '_blank')
+}
 </script>
 
 <template>
@@ -39,7 +54,16 @@ const isUser = computed<boolean>(() => props.role === 'user')
           <i class="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" style="animation-delay: 150ms" />
           <i class="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" style="animation-delay: 300ms" />
         </span>
-        <template v-else>{{ content }}</template>
+        <template v-else>
+          <img
+            v-if="image"
+            :src="image"
+            alt="题目照片"
+            class="mb-1.5 block max-h-[260px] max-w-[220px] cursor-pointer rounded-lg object-cover hover:opacity-90"
+            @click="openImage"
+          />
+          <span class="block">{{ displayContent }}</span>
+        </template>
       </div>
     </div>
   </div>

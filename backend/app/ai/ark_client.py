@@ -72,6 +72,41 @@ def _as_data_url(image_b64: str) -> str:
     return f"data:image/jpeg;base64,{raw}"
 
 
+#: 角色标签：把多轮历史压成单条 user 消息时，用标签区分说话人
+_ROLE_LABELS = {
+    "assistant": "老师",
+    "system": "（内部提示）",
+    "user": "学生",
+}
+
+
+def _flatten_messages_to_transcript(messages: List[Dict[str, Any]]) -> str:
+    """把多轮历史压成一段带角色标签的文本。
+
+    用于规避本模型对方舟 Responses API 多轮 ``input`` 的限制（见 ``_build_input``）。
+
+    Args:
+        messages: 原始消息列表，元素形如 ``{"role": "user", "content": "..."}``。
+
+    Returns:
+        形如 ``"学生：...\\n老师：...\\n学生：..."`` 的拼接文本；无有效内容返回空串。
+    """
+    lines: List[str] = []
+    for message in messages or []:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "user").strip().lower()
+        content = message.get("content", "")
+        if content is None or not isinstance(content, str):
+            continue
+        content = content.strip()
+        if not content:
+            continue
+        label = _ROLE_LABELS.get(role, "学生")
+        lines.append(f"{label}：{content}")
+    return "\n".join(lines)
+
+
 def _build_input(
     messages: List[Dict[str, Any]],
     system: Optional[str],
@@ -81,8 +116,14 @@ def _build_input(
 
     规则：
     1. ``system`` 非空时作为首条 ``role="system"`` 消息。
-    2. 每条消息的 ``content`` 统一转成 ``[{"type": "input_text", "text": ...}]``。
-    3. ``image_b64`` 非空时，图片块挂在**最后一条 user 消息**上并排在文本块之前；
+    2. **单条 user 消息**（最常见路径，含单轮问答 / 带图 OCR）保持原样，以确保图片挂在
+       该 user 消息上、行为向后兼容。
+    3. **多轮历史**（含 ``assistant`` 角色）压平成**一条带角色标签的 user 消息**——
+       本模型（``ep-m-20260728224052-bb4vl``）对「多轮 input」会强制要求 ``partial``
+       参数，而该字段又被接口判定为 ``unknown field``，无法合法传入；实测单条 user 消息
+       （即使内含完整历史文本）完全正常。故用「单条带历史文本」等价替代多轮，既保留
+       苏格拉底上下文，又规避 partial 限制。
+    4. ``image_b64`` 非空时，图片块挂在**最后一条 user 消息**上并排在文本块之前；
        若消息里没有任何 user 消息，则追加一条只含图片 + 空文本的 user 消息。
 
     Args:
@@ -106,7 +147,20 @@ def _build_input(
             }
         )
 
-    for index, message in enumerate(messages or []):
+    msgs: List[Dict[str, Any]] = list(messages or [])
+
+    # 判断是否「恰好一条 user 消息」：是则保持原样；否则压平成单条 user 消息
+    single_user = (
+        len(msgs) == 1
+        and isinstance(msgs[0], dict)
+        and str(msgs[0].get("role") or "user").strip().lower() == "user"
+    )
+    if not single_user and msgs:
+        transcript = _flatten_messages_to_transcript(msgs)
+        if transcript:
+            msgs = [{"role": "user", "content": transcript}]
+
+    for index, message in enumerate(msgs):
         if not isinstance(message, dict):
             raise ArkError(f"messages[{index}] 必须是 dict，实际为 {type(message).__name__}")
 

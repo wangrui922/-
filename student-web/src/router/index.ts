@@ -3,9 +3,10 @@
  *
  * 结构：
  *   /login              独立公开页
- *   /  (StudentLayout)  总布局：左导航 + 顶栏，children 三个分区
+ *   /  (StudentLayout)  总布局：左导航 + 顶栏，children 四个分区
  *     /dashboard        学习画像（默认首页）
  *     /ai               AI 老师
+ *     /practice         题库练习（题库消费层 · F1，需登录，**不加** meta.public）
  *     /mistakes         错题本
  *
  * 守卫口径：除 meta.public 的页面外，无 token 一律跳 /login（带 redirect 回跳）。
@@ -40,12 +41,24 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'AI 老师' },
       },
       {
+        path: 'practice',
+        name: 'practice',
+        component: () => import('@/views/Practice.vue'),
+        meta: { title: '练习' },
+      },
+      {
         path: 'mistakes',
         name: 'mistakes',
         component: () => import('@/views/Mistakes.vue'),
         meta: { title: '错题本' },
       },
     ],
+  },
+  {
+    path: '/r/:token',
+    name: 'share-report',
+    component: () => import('@/views/report/ShareReport.vue'),
+    meta: { public: true, title: '家长周报' },
   },
   { path: '/:pathMatch(.*)*', redirect: { name: 'dashboard' } },
 ]

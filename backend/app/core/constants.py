@@ -92,6 +92,26 @@ MODE_CACHE: Final[str] = "cache"
 #: 实时计算标识
 MODE_FRESH: Final[str] = "fresh"
 
+# ========================================================== Epic6 家长周报
+#: 周报统计周期长度（天）——自然周
+REPORT_PERIOD_DAYS: Final[int] = 7
+#: 分享令牌随机字节数，``secrets.token_urlsafe(24)`` → 32 字符 URL-safe
+REPORT_TOKEN_BYTES: Final[int] = 24
+#: 分享链接有效期（天）
+REPORT_SHARE_TTL_DAYS: Final[int] = 30
+#: 分享页展示的薄弱知识点条数
+REPORT_WEAK_POINT_TOP_N: Final[int] = 3
+#: 低于该作答量时提示「数据较少，仅供参考」
+REPORT_LOW_DATA_THRESHOLD: Final[int] = 3
+#: 快照结构版本号（改结构必须升版，diff 逻辑靠它识别老快照）
+REPORT_SNAPSHOT_SCHEMA_VERSION: Final[int] = 1
+#: 环比变化阈值：|delta| 小于该值视为无变化（抑制噪声）
+REPORT_DELTA_THRESHOLD: Final[float] = 0.05
+#: 周报生成失败的业务码（5001 是画像计算失败，不复用）
+CODE_REPORT_GENERATE_FAILED: Final[int] = 5002
+#: 「自然周」所用本地时区偏移（东八区），不引 pytz / zoneinfo
+LOCAL_TZ_OFFSET_HOURS: Final[int] = 8
+
 
 def mastery_level_label(level: int) -> str:
     """取掌握度等级的中文标签。
@@ -136,6 +156,16 @@ __all__ = [
     "CODE_PROFILE_COMPUTE_FAILED",
     "MODE_CACHE",
     "MODE_FRESH",
+    # Epic6 家长周报
+    "REPORT_PERIOD_DAYS",
+    "REPORT_TOKEN_BYTES",
+    "REPORT_SHARE_TTL_DAYS",
+    "REPORT_WEAK_POINT_TOP_N",
+    "REPORT_LOW_DATA_THRESHOLD",
+    "REPORT_SNAPSHOT_SCHEMA_VERSION",
+    "REPORT_DELTA_THRESHOLD",
+    "CODE_REPORT_GENERATE_FAILED",
+    "LOCAL_TZ_OFFSET_HOURS",
     "error_label",
     "mastery_level_label",
 ]

@@ -61,7 +61,14 @@ class MistakeSolve(BaseSchema):
 
 
 def _to_item(mistake: Mistake) -> Dict[str, Any]:
-    """把 ``Mistake`` 序列化成 camelCase 出参（时间转 ISO 8601）。"""
+    """把 ``Mistake`` 序列化成 camelCase 出参（时间转 ISO 8601）。
+
+    ⚠️ 本文件是 T03 既有接口，沿用 camelCase 不改。
+    kpId/kpName/grade 为 T01 新增字段：
+      - kpId/kpName 来自 Mistake.kp_id（快照），kp_name 通过 relationship 取
+      - grade 来自 Question.grade（通过 question relationship 取）
+      - kpId 为空时前端不渲染知识点条 / 不显示「练同类题」按钮
+    """
     return {
         "id": str(mistake.id),
         "questionId": str(mistake.question_id),
@@ -71,6 +78,10 @@ def _to_item(mistake: Mistake) -> Dict[str, Any]:
         "solved": mistake.solved,
         "solvedAt": mistake.solved_at.isoformat() if mistake.solved_at else None,
         "createdAt": mistake.created_at.isoformat() if mistake.created_at else None,
+        # ★ T01 新增：知识点深链出参
+        "kpId": str(mistake.kp_id) if mistake.kp_id else None,
+        "kpName": mistake.kp.name if mistake.kp else None,
+        "grade": mistake.question.grade if mistake.question else None,
     }
 
 
@@ -105,6 +116,11 @@ def list_mistakes(
         None,
         description=f"三态筛选，可选值：{'/'.join(MISTAKE_STATES)}；不传返回全部",
     ),
+    kp_id: Optional[str] = Query(
+        None,
+        alias="kp_id",
+        description="按知识点筛选错题（UUID 字符串）；不传返回全部",
+    ),
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -114,10 +130,12 @@ def list_mistakes(
         ``{"code":0,"msg":"ok","data":{"items":[...],"total":n}}``。
 
     Raises:
-        ApiError: 400 未绑定学生 / state 取值非法。
+        ApiError: 400 未绑定学生 / state 取值非法 / kp_id 非法 UUID。
     """
     student_id = require_student_id(current.sid)
-    items = learning_service.list_mistakes(db, student_id=student_id, state=state)
+    items = learning_service.list_mistakes(
+        db, student_id=student_id, state=state, kp_id=kp_id
+    )
     return ok({"items": [_to_item(m) for m in items], "total": len(items)})
 
 

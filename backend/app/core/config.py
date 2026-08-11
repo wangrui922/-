@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     storage_driver: str = "local"
     storage_dir: str = "./storage"
 
+    # ---------- 家长周报分享页（Epic6）----------
+    # 家长免登录访问的公开页部署地址；生成接口会把 token 拼成
+    # ``{public_base_url}/r/{token}`` 返回给前端。生产环境务必改成真实域名。
+    public_base_url: str = "http://localhost:5173"
+
     # ---------- 短信 ----------
     sms_provider: str = "mock"
     dev_sms_code: str = "000000"

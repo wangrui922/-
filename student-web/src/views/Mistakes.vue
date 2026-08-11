@@ -10,11 +10,15 @@
  *   - MistakeItem.questionId 是 questions 表的 UUID。目前后端**没有**
  *     「按 questionId 取题面」的接口，所以这里只能把它当题号标识展示
  *     （「题目 #」+ 前 8 位），不假装能显示题干。
+ *   - T02 起 MistakeItem 新增 kpId / kpName / grade（后端 T01 已落地），
+ *     卡片渲染「🏷 知识点 · 年级」条 + 「练同类题」深链按钮（kpId 为空时
+ *     整行不渲染）。深链复用画像页 RecommendationList.vue → Practice.vue
+ *     的现成模式：router.push snake_case 直传，不转驼峰。
  *   - T04 起 SUPPORTS_MARK_SOLVED 已置 true（@/config/features），卡片对未掌握
  *     错题渲染「标记已掌握」按钮，调 markMistakeSolved（PUT .../solve），
  *     成功后用返回条目就地更新本地列表。
  *   - 顶栏与退出已下沉到 StudentLayout，本页只保留筛选 tab 与列表。
- *   - 暂时无法深链到某道题，「去练习」先统一回 AI 老师页。
+ *   - 「去练习」跳练习页筛选态（kpId 为空的错题用这个出口）。
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -116,9 +120,39 @@ function questionLabel(questionId: string): string {
   return short ? `题目 #${short}` : '题目 #未知'
 }
 
-/** 去练习：暂时无法深链到具体题，先回 AI 老师页重新问。 */
+/**
+ * 去练习：跳练习页的筛选态，**不带**任何深链参数。
+ *
+ * 仅用于 kpId 为空的错题（无法知识点直达）或已掌握错题的「去练习」按钮。
+ */
 function handlePractice(): void {
-  void router.push({ name: 'ai-teacher' })
+  void router.push({ name: 'practice' })
+}
+
+/**
+ * 练同类题：带 kp_id + kp_name + grade 深链到练习页，落地即开练。
+ *
+ * 复用画像页 RecommendationList.vue → Practice.vue 的现成深链模式：
+ * query 键名 snake_case 直传（kp_id / kp_name / grade），与后端
+ * `/practice/session` 的入参同名，全链路不转驼峰。
+ *
+ * grade 为 null 时不塞进 query（Practice.vue 的 consumeDeepLink 读到
+ * 空值会当 undefined 处理，drawSession 不发给后端，等同不收窄年级）。
+ * source: 'mistakes' 让练习页顶部显示「（来自你的错题）」来源提示。
+ *
+ * @param item 错题条目（调用方保证 kpId 非空）
+ */
+function handlePracticeKp(item: MistakeItem): void {
+  if (!item.kpId) return
+  const query: Record<string, string> = {
+    kp_id: item.kpId,
+    kp_name: item.kpName ?? '',
+    source: 'mistakes',
+  }
+  if (typeof item.grade === 'number' && Number.isFinite(item.grade)) {
+    query.grade = String(item.grade)
+  }
+  void router.push({ name: 'practice', query })
 }
 
 /**
@@ -215,7 +249,25 @@ onMounted(() => {
             <span v-if="item.solved && item.solvedAt"> · 攻克于 {{ formatDate(item.solvedAt) }}</span>
           </p>
 
-          <div class="border-t border-dashed border-slate-200 pt-3">
+          <!-- 知识点条 + 操作按钮 -->
+          <div class="space-y-2 border-t border-dashed border-slate-200 pt-3">
+            <!-- 知识点条：kpId 为空时整行不渲染，也不显示「练同类题」按钮 -->
+            <div
+              v-if="item.kpId"
+              class="flex items-center justify-between gap-2"
+            >
+              <span class="min-w-0 truncate text-xs text-slate-500">
+                🏷 {{ item.kpName }}<template v-if="item.grade !== null && item.grade !== undefined"> · {{ item.grade }}年级</template>
+              </span>
+              <button
+                type="button"
+                class="btn-ghost shrink-0 text-sm"
+                @click="handlePracticeKp(item)"
+              >
+                练同类题 →
+              </button>
+            </div>
+
             <button
               v-if="SUPPORTS_MARK_SOLVED && !item.solved"
               type="button"

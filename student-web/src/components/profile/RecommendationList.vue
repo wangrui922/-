@@ -3,7 +3,8 @@
  * 练习推荐面板（T04 · F9）。
  *
  * 列出后端按优先级排好的「该练什么」，每条给出推荐理由、掌握度、错率、主要错因、
- * 可练题数，并提供「去练习」入口（目前统一回 AI 老师页，待深链能力补齐）。
+ * 可练题数，并提供「练这个」入口——点了带着 kp_id 深链到练习页**直接开练**，
+ * 不再把用户丢回筛选页重挑一遍。
  */
 import {
   ERROR_CATEGORY_LABEL,
@@ -18,8 +19,12 @@ defineProps<{
   error: string
 }>()
 
+/**
+ * 「去练习」出参保持 **snake_case**：kp_id 会被原样透传到
+ * `/practice/session` 的同名参数，中途转成 kpId 再转回来只会平添漂移风险。
+ */
 const emit = defineEmits<{
-  (e: 'practice', payload: { kpId: string; kpName: string }): void
+  (e: 'practice', payload: { kp_id: string; kp_name: string }): void
 }>()
 
 function errorLabel(category: string | null): string {
@@ -77,9 +82,9 @@ function hasTopError(item: RecommendationItem): boolean {
           <button
             type="button"
             class="btn-ghost mt-3 h-9 w-full text-sm"
-            @click="emit('practice', { kpId: item.kp_id, kpName: item.kp_name })"
+            @click="emit('practice', { kp_id: item.kp_id, kp_name: item.kp_name })"
           >
-            去练习
+            练这个
           </button>
         </li>
       </ul>

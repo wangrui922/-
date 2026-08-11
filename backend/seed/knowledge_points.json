@@ -1,82 +1,656 @@
 {
+  "version": "2.0.0",
   "knowledgePoints": [
     {
       "code": "KP_CALC",
       "name": "计算",
+      "parentCode": null,
       "sort": 10,
       "description": "四则运算、口算笔算、简便运算与运算定律"
     },
     {
+      "code": "KP_CALC_ADD",
+      "name": "加减法",
+      "parentCode": "KP_CALC",
+      "sort": 10,
+      "description": "整数加减法、进位退位与竖式笔算"
+    },
+    {
+      "code": "KP_CALC_MUL",
+      "name": "乘除法",
+      "parentCode": "KP_CALC",
+      "sort": 20,
+      "description": "表内乘除、多位数乘除法与有余数除法"
+    },
+    {
+      "code": "KP_CALC_MIXED_OP",
+      "name": "四则混合运算",
+      "parentCode": "KP_CALC",
+      "sort": 30,
+      "description": "含小括号中括号的两三步混合运算与运算顺序"
+    },
+    {
+      "code": "KP_CALC_LAW",
+      "name": "运算定律",
+      "parentCode": "KP_CALC",
+      "sort": 40,
+      "description": "交换律、结合律、分配律的辨识与字母表达"
+    },
+    {
+      "code": "KP_CALC_SIMPLE",
+      "name": "简便运算",
+      "parentCode": "KP_CALC",
+      "sort": 50,
+      "description": "凑整、拆分、提取公因数等简算技巧"
+    },
+    {
+      "code": "KP_CALC_MENTAL",
+      "name": "口算与估算",
+      "parentCode": "KP_CALC",
+      "sort": 60,
+      "description": "口算笔算训练、估算与近似计算"
+    },
+    {
+      "code": "KP_CALC_RATIONAL",
+      "name": "有理数运算",
+      "parentCode": "KP_CALC",
+      "sort": 70,
+      "description": "有理数加减乘除、乘方与混合运算"
+    },
+    {
       "code": "KP_EQUATION",
       "name": "方程",
+      "parentCode": null,
       "sort": 20,
       "description": "用字母表示数、解方程与列方程解决问题"
     },
     {
+      "code": "KP_EQ_LETTER",
+      "name": "用字母表示数",
+      "parentCode": "KP_EQUATION",
+      "sort": 10,
+      "description": "字母表示数量关系、代数式书写与求值"
+    },
+    {
+      "code": "KP_EQ_PROPERTY",
+      "name": "等式性质",
+      "parentCode": "KP_EQUATION",
+      "sort": 20,
+      "description": "等式基本性质、移项与同解变形"
+    },
+    {
+      "code": "KP_EQ_LINEAR1",
+      "name": "一元一次方程",
+      "parentCode": "KP_EQUATION",
+      "sort": 30,
+      "description": "一元一次方程的解法、去分母去括号与检验"
+    },
+    {
+      "code": "KP_EQ_SYSTEM",
+      "name": "二元一次方程组",
+      "parentCode": "KP_EQUATION",
+      "sort": 40,
+      "description": "代入消元法、加减消元法与方程组应用"
+    },
+    {
+      "code": "KP_EQ_QUADRATIC",
+      "name": "一元二次方程",
+      "parentCode": "KP_EQUATION",
+      "sort": 50,
+      "description": "配方法、公式法、因式分解法与根的判别式"
+    },
+    {
+      "code": "KP_EQ_INEQUALITY",
+      "name": "不等式",
+      "parentCode": "KP_EQUATION",
+      "sort": 60,
+      "description": "一元一次不等式(组)的解集与数轴表示"
+    },
+    {
+      "code": "KP_EQ_WORD",
+      "name": "列方程解应用题",
+      "parentCode": "KP_EQUATION",
+      "sort": 70,
+      "description": "设未知数建模，行程/工程/浓度等方程应用"
+    },
+    {
       "code": "KP_WORD",
       "name": "应用题",
+      "parentCode": null,
       "sort": 30,
       "description": "文字情境题，考察审题与数量关系建模"
     },
     {
+      "code": "KP_WORD_SUM_DIFF",
+      "name": "和差倍问题",
+      "parentCode": "KP_WORD",
+      "sort": 10,
+      "description": "和差、和倍、差倍关系的经典模型"
+    },
+    {
+      "code": "KP_WORD_TRAVEL",
+      "name": "行程问题",
+      "parentCode": "KP_WORD",
+      "sort": 20,
+      "description": "相遇、追及、往返，速度时间路程三量关系"
+    },
+    {
+      "code": "KP_WORD_WORK",
+      "name": "工程问题",
+      "parentCode": "KP_WORD",
+      "sort": 30,
+      "description": "工作总量、工作效率与合作完成时间"
+    },
+    {
+      "code": "KP_WORD_PRICE",
+      "name": "经济问题",
+      "parentCode": "KP_WORD",
+      "sort": 40,
+      "description": "单价数量总价、成本利润与盈亏问题"
+    },
+    {
+      "code": "KP_WORD_AGE",
+      "name": "年龄问题",
+      "parentCode": "KP_WORD",
+      "sort": 50,
+      "description": "年龄差不变、几年后几年前类问题"
+    },
+    {
+      "code": "KP_WORD_PLANT",
+      "name": "植树与间隔问题",
+      "parentCode": "KP_WORD",
+      "sort": 60,
+      "description": "植树、锯木、上楼、方阵等间隔计数问题"
+    },
+    {
+      "code": "KP_WORD_GENERAL",
+      "name": "一般应用题",
+      "parentCode": "KP_WORD",
+      "sort": 70,
+      "description": "未归入专项模型的常规文字应用题（兜底）"
+    },
+    {
       "code": "KP_FRACTION",
       "name": "分数",
+      "parentCode": null,
       "sort": 40,
       "description": "分数的意义、性质、四则运算与分数应用"
     },
     {
+      "code": "KP_FRAC_MEANING",
+      "name": "分数的意义",
+      "parentCode": "KP_FRACTION",
+      "sort": 10,
+      "description": "分数单位、真分数假分数带分数与分数意义"
+    },
+    {
+      "code": "KP_FRAC_PROPERTY",
+      "name": "分数基本性质",
+      "parentCode": "KP_FRACTION",
+      "sort": 20,
+      "description": "约分、通分与分数大小比较"
+    },
+    {
+      "code": "KP_FRAC_ADD_SUB",
+      "name": "分数加减法",
+      "parentCode": "KP_FRACTION",
+      "sort": 30,
+      "description": "同分母与异分母分数加减、带分数加减"
+    },
+    {
+      "code": "KP_FRAC_MUL_DIV",
+      "name": "分数乘除法",
+      "parentCode": "KP_FRACTION",
+      "sort": 40,
+      "description": "分数乘法除法法则与倒数"
+    },
+    {
+      "code": "KP_FRAC_WORD",
+      "name": "分数应用题",
+      "parentCode": "KP_FRACTION",
+      "sort": 50,
+      "description": "求一个数的几分之几、已知部分求整体"
+    },
+    {
+      "code": "KP_FRAC_EXPR",
+      "name": "分式",
+      "parentCode": "KP_FRACTION",
+      "sort": 60,
+      "description": "分式的意义、约分通分、分式运算与分式方程"
+    },
+    {
       "code": "KP_DECIMAL",
       "name": "小数",
+      "parentCode": null,
       "sort": 50,
       "description": "小数的意义、性质与小数四则运算"
     },
     {
+      "code": "KP_DEC_MEANING",
+      "name": "小数的意义",
+      "parentCode": "KP_DECIMAL",
+      "sort": 10,
+      "description": "小数数位、读写、大小比较与小数性质"
+    },
+    {
+      "code": "KP_DEC_ADD_SUB",
+      "name": "小数加减法",
+      "parentCode": "KP_DECIMAL",
+      "sort": 20,
+      "description": "小数点对齐的加减竖式计算"
+    },
+    {
+      "code": "KP_DEC_MUL_DIV",
+      "name": "小数乘除法",
+      "parentCode": "KP_DECIMAL",
+      "sort": 30,
+      "description": "小数乘除法法则、小数点移动与商的近似值"
+    },
+    {
+      "code": "KP_DEC_APPROX",
+      "name": "近似数与循环小数",
+      "parentCode": "KP_DECIMAL",
+      "sort": 40,
+      "description": "四舍五入、精确到、有限小数与循环小数"
+    },
+    {
+      "code": "KP_DEC_CONVERT",
+      "name": "分小百互化",
+      "parentCode": "KP_DECIMAL",
+      "sort": 50,
+      "description": "分数小数百分数三者互化与大小比较"
+    },
+    {
       "code": "KP_PERCENT",
       "name": "百分数",
+      "parentCode": null,
       "sort": 60,
       "description": "百分数意义、折扣税率利率与百分数应用"
     },
     {
+      "code": "KP_PCT_MEANING",
+      "name": "百分数的意义",
+      "parentCode": "KP_PERCENT",
+      "sort": 10,
+      "description": "百分数读写意义与合格率出勤率等常见率"
+    },
+    {
+      "code": "KP_PCT_DISCOUNT",
+      "name": "折扣与成数",
+      "parentCode": "KP_PERCENT",
+      "sort": 20,
+      "description": "打折、成数、原价现价与省钱问题"
+    },
+    {
+      "code": "KP_PCT_INTEREST",
+      "name": "利率与纳税",
+      "parentCode": "KP_PERCENT",
+      "sort": 30,
+      "description": "本金利率利息、税率与应纳税额"
+    },
+    {
+      "code": "KP_PCT_CHANGE",
+      "name": "百分数增减",
+      "parentCode": "KP_PERCENT",
+      "sort": 40,
+      "description": "增加百分之几、减少百分之几与增长率"
+    },
+    {
+      "code": "KP_PCT_WORD",
+      "name": "百分数应用题",
+      "parentCode": "KP_PERCENT",
+      "sort": 50,
+      "description": "综合百分数情境问题（兜底）"
+    },
+    {
       "code": "KP_RATIO",
       "name": "比例",
+      "parentCode": null,
       "sort": 70,
       "description": "比、比例、正反比例与按比分配"
     },
     {
+      "code": "KP_RATIO_BASIC",
+      "name": "比的意义与化简",
+      "parentCode": "KP_RATIO",
+      "sort": 10,
+      "description": "比、比值、前项后项与化简比"
+    },
+    {
+      "code": "KP_RATIO_ALLOC",
+      "name": "按比分配",
+      "parentCode": "KP_RATIO",
+      "sort": 20,
+      "description": "按给定比分配总量的问题"
+    },
+    {
+      "code": "KP_RATIO_PROP",
+      "name": "比例的意义与解比例",
+      "parentCode": "KP_RATIO",
+      "sort": 30,
+      "description": "比例的基本性质、内项外项与解比例"
+    },
+    {
+      "code": "KP_RATIO_DIRECT_INV",
+      "name": "正比例与反比例",
+      "parentCode": "KP_RATIO",
+      "sort": 40,
+      "description": "正反比例关系的判断、图像与应用"
+    },
+    {
+      "code": "KP_RATIO_SCALE",
+      "name": "比例尺",
+      "parentCode": "KP_RATIO",
+      "sort": 50,
+      "description": "图上距离、实际距离与比例尺换算"
+    },
+    {
       "code": "KP_GEOMETRY",
       "name": "几何",
+      "parentCode": null,
       "sort": 80,
       "description": "周长面积体积等度量计算"
     },
     {
+      "code": "KP_GEO_PERIMETER",
+      "name": "周长",
+      "parentCode": "KP_GEOMETRY",
+      "sort": 10,
+      "description": "长方形正方形三角形等平面图形周长"
+    },
+    {
+      "code": "KP_GEO_AREA_PLANE",
+      "name": "平面图形面积",
+      "parentCode": "KP_GEOMETRY",
+      "sort": 20,
+      "description": "长方形正方形平行四边形三角形梯形面积"
+    },
+    {
+      "code": "KP_GEO_CIRCLE",
+      "name": "圆的周长与面积",
+      "parentCode": "KP_GEOMETRY",
+      "sort": 30,
+      "description": "圆周率、圆的周长面积、扇形与圆环"
+    },
+    {
+      "code": "KP_GEO_SURFACE",
+      "name": "立体图形表面积",
+      "parentCode": "KP_GEOMETRY",
+      "sort": 40,
+      "description": "长方体正方体圆柱表面积与展开图"
+    },
+    {
+      "code": "KP_GEO_VOLUME",
+      "name": "体积与容积",
+      "parentCode": "KP_GEOMETRY",
+      "sort": 50,
+      "description": "长方体正方体圆柱圆锥体积容积与排水法"
+    },
+    {
+      "code": "KP_GEO_COMPOSITE",
+      "name": "组合图形",
+      "parentCode": "KP_GEOMETRY",
+      "sort": 60,
+      "description": "组合图形面积、阴影部分与割补转化"
+    },
+    {
+      "code": "KP_GEO_PYTHAGORAS",
+      "name": "勾股定理",
+      "parentCode": "KP_GEOMETRY",
+      "sort": 70,
+      "description": "直角三角形三边关系、逆定理与实际应用"
+    },
+    {
       "code": "KP_SHAPE",
       "name": "图形",
+      "parentCode": null,
       "sort": 90,
       "description": "图形的认识、位置与变换、观察物体"
     },
     {
+      "code": "KP_SHAPE_PLANE",
+      "name": "平面图形的认识",
+      "parentCode": "KP_SHAPE",
+      "sort": 10,
+      "description": "三角形四边形圆等平面图形的特征与分类"
+    },
+    {
+      "code": "KP_SHAPE_SOLID",
+      "name": "立体图形的认识",
+      "parentCode": "KP_SHAPE",
+      "sort": 20,
+      "description": "长方体正方体圆柱圆锥特征与观察物体"
+    },
+    {
+      "code": "KP_SHAPE_ANGLE",
+      "name": "角与线",
+      "parentCode": "KP_SHAPE",
+      "sort": 30,
+      "description": "线段射线直线、锐角直角钝角、角的度量、平行与垂直"
+    },
+    {
+      "code": "KP_SHAPE_TRANSFORM",
+      "name": "平移旋转与对称",
+      "parentCode": "KP_SHAPE",
+      "sort": 40,
+      "description": "轴对称、平移、旋转与图形变换"
+    },
+    {
+      "code": "KP_SHAPE_POSITION",
+      "name": "位置与方向",
+      "parentCode": "KP_SHAPE",
+      "sort": 50,
+      "description": "上下左右前后、方向与距离、数对与平面直角坐标系"
+    },
+    {
+      "code": "KP_SHAPE_TRIANGLE",
+      "name": "三角形与全等",
+      "parentCode": "KP_SHAPE",
+      "sort": 60,
+      "description": "三角形三边关系内角和、全等三角形判定与性质"
+    },
+    {
+      "code": "KP_SHAPE_SIMILAR",
+      "name": "相似图形",
+      "parentCode": "KP_SHAPE",
+      "sort": 70,
+      "description": "比例线段、相似三角形判定性质与位似"
+    },
+    {
+      "code": "KP_SHAPE_CIRCLE_PROP",
+      "name": "圆的性质",
+      "parentCode": "KP_SHAPE",
+      "sort": 80,
+      "description": "垂径定理、圆心角圆周角、切线与位置关系"
+    },
+    {
       "code": "KP_STATISTICS",
       "name": "统计",
+      "parentCode": null,
       "sort": 100,
       "description": "数据收集整理、统计图表与平均数"
     },
     {
+      "code": "KP_STAT_COLLECT",
+      "name": "数据收集与整理",
+      "parentCode": "KP_STATISTICS",
+      "sort": 10,
+      "description": "分类计数、调查记录与统计表"
+    },
+    {
+      "code": "KP_STAT_CHART",
+      "name": "统计图",
+      "parentCode": "KP_STATISTICS",
+      "sort": 20,
+      "description": "条形图、折线图、扇形图的读图与绘制"
+    },
+    {
+      "code": "KP_STAT_AVERAGE",
+      "name": "平均数与统计量",
+      "parentCode": "KP_STATISTICS",
+      "sort": 30,
+      "description": "平均数、中位数、众数与方差"
+    },
+    {
+      "code": "KP_STAT_PROBABILITY",
+      "name": "可能性与概率",
+      "parentCode": "KP_STATISTICS",
+      "sort": 40,
+      "description": "事件可能性大小判断与简单概率计算"
+    },
+    {
+      "code": "KP_STAT_ANALYSIS",
+      "name": "数据分析与决策",
+      "parentCode": "KP_STATISTICS",
+      "sort": 50,
+      "description": "依据统计结果做判断、预测与方案选择"
+    },
+    {
       "code": "KP_UNIT",
       "name": "单位换算",
+      "parentCode": null,
       "sort": 110,
       "description": "长度重量面积体积时间货币单位换算"
     },
     {
+      "code": "KP_UNIT_LENGTH",
+      "name": "长度单位",
+      "parentCode": "KP_UNIT",
+      "sort": 10,
+      "description": "毫米厘米分米米千米的认识与换算"
+    },
+    {
+      "code": "KP_UNIT_AREA_VOL",
+      "name": "面积与体积单位",
+      "parentCode": "KP_UNIT",
+      "sort": 20,
+      "description": "平方厘米平方米公顷、立方厘米立方米升毫升换算"
+    },
+    {
+      "code": "KP_UNIT_MASS",
+      "name": "质量单位",
+      "parentCode": "KP_UNIT",
+      "sort": 30,
+      "description": "克千克吨的认识与换算"
+    },
+    {
+      "code": "KP_UNIT_TIME",
+      "name": "时间单位",
+      "parentCode": "KP_UNIT",
+      "sort": 40,
+      "description": "时分秒、年月日与经过时间计算"
+    },
+    {
+      "code": "KP_UNIT_MONEY",
+      "name": "人民币与货币",
+      "parentCode": "KP_UNIT",
+      "sort": 50,
+      "description": "元角分的认识与购物找零计算"
+    },
+    {
+      "code": "KP_UNIT_COMPOUND",
+      "name": "复名数与单位综合",
+      "parentCode": "KP_UNIT",
+      "sort": 60,
+      "description": "复名数改写与跨类单位综合换算（兜底）"
+    },
+    {
       "code": "KP_NUMBER_THEORY",
       "name": "数论",
+      "parentCode": null,
       "sort": 120,
       "description": "因数倍数、质数合数、公因数公倍数"
     },
     {
+      "code": "KP_NT_INTEGER",
+      "name": "整数的认识",
+      "parentCode": "KP_NUMBER_THEORY",
+      "sort": 10,
+      "description": "数位顺序、读写、大小比较、改写与近似数"
+    },
+    {
+      "code": "KP_NT_FACTOR",
+      "name": "因数与倍数",
+      "parentCode": "KP_NUMBER_THEORY",
+      "sort": 20,
+      "description": "因数倍数的概念与找法"
+    },
+    {
+      "code": "KP_NT_PRIME",
+      "name": "质数与合数",
+      "parentCode": "KP_NUMBER_THEORY",
+      "sort": 30,
+      "description": "质数合数的判断与分解质因数"
+    },
+    {
+      "code": "KP_NT_GCD_LCM",
+      "name": "公因数与公倍数",
+      "parentCode": "KP_NUMBER_THEORY",
+      "sort": 40,
+      "description": "最大公因数、最小公倍数及其应用"
+    },
+    {
+      "code": "KP_NT_DIVISIBLE",
+      "name": "整除与奇偶",
+      "parentCode": "KP_NUMBER_THEORY",
+      "sort": 50,
+      "description": "2/3/5 的整除特征、奇数偶数与整除性质"
+    },
+    {
+      "code": "KP_NT_NEGATIVE",
+      "name": "负数与有理数",
+      "parentCode": "KP_NUMBER_THEORY",
+      "sort": 60,
+      "description": "负数意义、数轴、相反数与绝对值"
+    },
+    {
+      "code": "KP_NT_ROOT",
+      "name": "平方根与实数",
+      "parentCode": "KP_NUMBER_THEORY",
+      "sort": 70,
+      "description": "平方根立方根、无理数与实数分类"
+    },
+    {
       "code": "KP_MIXED",
       "name": "综合",
+      "parentCode": null,
       "sort": 900,
       "description": "跨知识点综合题与思维拓展题"
+    },
+    {
+      "code": "KP_MIX_PATTERN",
+      "name": "找规律",
+      "parentCode": "KP_MIXED",
+      "sort": 10,
+      "description": "数列规律、图形规律与周期问题"
+    },
+    {
+      "code": "KP_MIX_LOGIC",
+      "name": "逻辑推理",
+      "parentCode": "KP_MIXED",
+      "sort": 20,
+      "description": "推理判断、排除法与信息整理"
+    },
+    {
+      "code": "KP_MIX_OPTIMIZE",
+      "name": "优化与统筹",
+      "parentCode": "KP_MIXED",
+      "sort": 30,
+      "description": "烙饼排队等统筹问题、最优方案与鸡兔同笼"
+    },
+    {
+      "code": "KP_MIX_FUNCTION",
+      "name": "函数初步",
+      "parentCode": "KP_MIXED",
+      "sort": 40,
+      "description": "变量关系、一次函数与反比例函数的图像性质"
+    },
+    {
+      "code": "KP_MIX_OTHER",
+      "name": "其他综合",
+      "parentCode": "KP_MIXED",
+      "sort": 50,
+      "description": "跨知识点综合题与未归类拓展题（全局兜底）"
     }
   ]
 }
