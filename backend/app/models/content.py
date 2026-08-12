@@ -53,6 +53,38 @@ SOURCE_TYPE_VALUES = ("衔接", "期末")
 #: 册内分区枚举（T05）；同一册的温故/预习靠它区分，**不拆年级**
 SECTION_VALUES = ("温故", "预习", "提优", "摸底", "专项", "自测")
 
+#: 学段（商业化学段选择器用）。
+#:
+#: ⚠️ 与 ``grade``（升入年级）的映射约定：**一律由 grade 推导，不单独建列、不做 grade-1 换算**。
+#:   小学 1-6 / 初中 7-9 / 高中 10-12，沿用 U1「升入年级」语义向初高中自然延展。
+GRADE_BANDS = ("小学", "初中", "高中")
+#: grade → 学段 推导边界（含端点）。
+BAND_GRADE_RANGE = {"小学": (1, 6), "初中": (7, 9), "高中": (10, 12)}
+
+
+def grade_band(grade: Optional[int]) -> Optional[str]:
+    """由升入年级推导学段。
+
+    Args:
+        grade: 升入年级（1-12），None 表示未标注。
+
+    Returns:
+        学段字符串（小学/初中/高中）或 None。
+    """
+    if grade is None:
+        return None
+    if grade <= 6:
+        return "小学"
+    if grade <= 9:
+        return "初中"
+    return "高中"
+
+
+def grades_of_band(band: str) -> range:
+    """返回某学段覆盖的升入年级 range（用于按学段抽题）。"""
+    lo, hi = BAND_GRADE_RANGE.get(band, (1, 12))
+    return range(lo, hi + 1)
+
 
 class KnowledgePoint(Base):
     """知识点（自引用树，支持多级归类）。"""

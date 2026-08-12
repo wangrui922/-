@@ -1,0 +1,77 @@
+{
+  "knowledgePoints": [
+    {"code": "HS_SET", "name": "集合与常用逻辑用语", "parentCode": null, "sort": 10, "description": "高中数学入口模块：集合语言与充要条件、量词"},
+    {"code": "HS_SET_MEAN", "name": "集合的含义与表示", "parentCode": "HS_SET", "sort": 10, "description": "元素与集合关系、列举法描述法、集合特性"},
+    {"code": "HS_SET_OP", "name": "集合的关系与运算", "parentCode": "HS_SET", "sort": 20, "description": "子集交集并集补集、Venn 图、容斥原理"},
+    {"code": "HS_SET_COND", "name": "充分条件与必要条件", "parentCode": "HS_SET", "sort": 30, "description": "充要条件的判定与推理"},
+    {"code": "HS_SET_QUANT", "name": "全称量词与存在量词", "parentCode": "HS_SET", "sort": 40, "description": "量词命题的否定与真假判断"},
+
+    {"code": "HS_FUNC", "name": "函数概念与基本初等函数", "parentCode": null, "sort": 20, "description": "函数三要素、性质与指数/对数/幂函数"},
+    {"code": "HS_FUNC_CONCEPT", "name": "函数概念", "parentCode": "HS_FUNC", "sort": 10, "description": "定义域值域对应法则、函数表示、分段函数"},
+    {"code": "HS_FUNC_MONO", "name": "函数单调性", "parentCode": "HS_FUNC", "sort": 20, "description": "单调性定义与判定、最值"},
+    {"code": "HS_FUNC_PARITY", "name": "函数奇偶性", "parentCode": "HS_FUNC", "sort": 30, "description": "奇偶性定义与图像对称"},
+    {"code": "HS_FUNC_QUAD", "name": "一次函数与二次函数", "parentCode": "HS_FUNC", "sort": 40, "description": "二次函数图像性质、根的分布"},
+    {"code": "HS_FUNC_EXP", "name": "指数函数", "parentCode": "HS_FUNC", "sort": 50, "description": "指数运算、指数函数图像性质"},
+    {"code": "HS_FUNC_LOG", "name": "对数函数", "parentCode": "HS_FUNC", "sort": 60, "description": "对数运算、对数函数图像性质、反函数"},
+    {"code": "HS_FUNC_POWER", "name": "幂函数", "parentCode": "HS_FUNC", "sort": 70, "description": "幂函数 y=x^a 的图像与性质"},
+    {"code": "HS_FUNC_EQROOT", "name": "函数与方程", "parentCode": "HS_FUNC", "sort": 80, "description": "零点存在定理、二分法、方程根与函数交点"},
+
+    {"code": "HS_TRIG", "name": "三角函数", "parentCode": null, "sort": 30, "description": "任意角、弧度、三角函数定义与解三角形"},
+    {"code": "HS_TRIG_ANGLE", "name": "任意角与弧度制", "parentCode": "HS_TRIG", "sort": 10, "description": "角的概念推广、弧度与角度互化"},
+    {"code": "HS_TRIG_DEF", "name": "三角函数定义", "parentCode": "HS_TRIG", "sort": 20, "description": "单位圆定义、三角函数线、同角关系"},
+    {"code": "HS_TRIG_INDUCE", "name": "诱导公式", "parentCode": "HS_TRIG", "sort": 30, "description": "终边对称诱导公式的应用"},
+    {"code": "HS_TRIG_IMG", "name": "三角函数图像与性质", "parentCode": "HS_TRIG", "sort": 40, "description": "正弦余弦正切图像、周期性、单调性、最值"},
+    {"code": "HS_TRIG_SIN", "name": "函数 y=Asin(ωx+φ)", "parentCode": "HS_TRIG", "sort": 50, "description": "振幅周期相位平移变换"},
+    {"code": "HS_TRIG_LAW", "name": "正弦定理与余弦定理", "parentCode": "HS_TRIG", "sort": 60, "description": "解三角形、面积与边角关系"},
+
+    {"code": "HS_SEQ", "name": "数列", "parentCode": null, "sort": 40, "description": "等差等比数列与数列求和"},
+    {"code": "HS_SEQ_CONCEPT", "name": "数列概念", "parentCode": "HS_SEQ", "sort": 10, "description": "数列通项与前 n 项和、递推"},
+    {"code": "HS_SEQ_ARITH", "name": "等差数列", "parentCode": "HS_SEQ", "sort": 20, "description": "通项与前 n 项和公式、性质"},
+    {"code": "HS_SEQ_GEOM", "name": "等比数列", "parentCode": "HS_SEQ", "sort": 30, "description": "通项与前 n 项和公式、性质"},
+    {"code": "HS_SEQ_SUM", "name": "数列求和", "parentCode": "HS_SEQ", "sort": 40, "description": "错位相减、裂项相消、分组求和"},
+
+    {"code": "HS_INEQ", "name": "不等式", "parentCode": null, "sort": 50, "description": "不等式性质与线性规划、基本不等式"},
+    {"code": "HS_INEQ_PROP", "name": "不等式性质", "parentCode": "HS_INEQ", "sort": 10, "description": "不等式基本性质与证明"},
+    {"code": "HS_INEQ_QUAD", "name": "一元二次不等式", "parentCode": "HS_INEQ", "sort": 20, "description": "三个二次的关系、解法与解集"},
+    {"code": "HS_INEQ_LP", "name": "简单线性规划", "parentCode": "HS_INEQ", "sort": 30, "description": "可行域、目标函数最值"},
+    {"code": "HS_INEQ_BASIC", "name": "基本不等式", "parentCode": "HS_INEQ", "sort": 40, "description": "均值不等式及其实际应用"},
+
+    {"code": "HS_SOLID", "name": "立体几何初步", "parentCode": null, "sort": 60, "description": "空间点线面位置关系与几何体度量"},
+    {"code": "HS_SOLID_POS", "name": "空间点线面位置关系", "parentCode": "HS_SOLID", "sort": 10, "description": "平面的基本性质、异面直线"},
+    {"code": "HS_SOLID_PARALLEL", "name": "平行关系", "parentCode": "HS_SOLID", "sort": 20, "description": "线面平行、面面平行的判定与性质"},
+    {"code": "HS_SOLID_VERTICAL", "name": "垂直关系", "parentCode": "HS_SOLID", "sort": 30, "description": "线面垂直、面面垂直的判定与性质"},
+    {"code": "HS_SOLID_VECTOR", "name": "空间向量与立体几何", "parentCode": "HS_SOLID", "sort": 40, "description": "空间向量运算、法向量与夹角体积"},
+    {"code": "HS_SOLID_VOLUME", "name": "柱锥台球表面积与体积", "parentCode": "HS_SOLID", "sort": 50, "description": "多面体与旋转体的表面积、体积公式"},
+
+    {"code": "HS_ANALYTIC", "name": "解析几何", "parentCode": null, "sort": 70, "description": "直线与圆锥曲线的方程与性质"},
+    {"code": "HS_ANALYTIC_LINE", "name": "直线与方程", "parentCode": "HS_ANALYTIC", "sort": 10, "description": "斜率、方程形式、位置关系与距离"},
+    {"code": "HS_ANALYTIC_CIRCLE", "name": "圆与方程", "parentCode": "HS_ANALYTIC", "sort": 20, "description": "圆的标准方程与一般方程"},
+    {"code": "HS_ANALYTIC_ELLIPSE", "name": "椭圆", "parentCode": "HS_ANALYTIC", "sort": 30, "description": "椭圆的定义标准方程与几何性质"},
+    {"code": "HS_ANALYTIC_HYPER", "name": "双曲线", "parentCode": "HS_ANALYTIC", "sort": 40, "description": "双曲线的定义标准方程与几何性质"},
+    {"code": "HS_ANALYTIC_PARAB", "name": "抛物线", "parentCode": "HS_ANALYTIC", "sort": 50, "description": "抛物线的定义标准方程与几何性质"},
+
+    {"code": "HS_DERIV", "name": "导数及其应用", "parentCode": null, "sort": 80, "description": "导数概念运算与函数研究、积分初步"},
+    {"code": "HS_DERIV_CONCEPT", "name": "导数概念", "parentCode": "HS_DERIV", "sort": 10, "description": "平均变化率、导数定义与几何意义"},
+    {"code": "HS_DERIV_OP", "name": "导数运算", "parentCode": "HS_DERIV", "sort": 20, "description": "基本初等函数导数公式与运算法则"},
+    {"code": "HS_DERIV_APP", "name": "导数在研究函数中应用", "parentCode": "HS_DERIV", "sort": 30, "description": "单调性、极值与最值、凹凸性"},
+    {"code": "HS_DERIV_INTEGRAL", "name": "定积分", "parentCode": "HS_DERIV", "sort": 40, "description": "定积分概念与微积分基本定理"},
+
+    {"code": "HS_PROB", "name": "概率与统计", "parentCode": null, "sort": 90, "description": "计数、概率模型与统计案例"},
+    {"code": "HS_PROB_COUNT", "name": "计数原理", "parentCode": "HS_PROB", "sort": 10, "description": "分类加法与分步乘法计数原理、排列组合"},
+    {"code": "HS_PROB_CLASSIC", "name": "古典概型", "parentCode": "HS_PROB", "sort": 20, "description": "古典概型计算、事件关系与概率"},
+    {"code": "HS_PROB_DIST", "name": "随机变量及其分布", "parentCode": "HS_PROB", "sort": 30, "description": "离散型分布、期望方差、二项分布正态分布"},
+    {"code": "HS_PROB_STAT", "name": "统计案例", "parentCode": "HS_PROB", "sort": 40, "description": "抽样、用样本估计总体、回归与独立性检验"},
+
+    {"code": "HS_COMPLEX", "name": "复数", "parentCode": null, "sort": 100, "description": "复数概念与四则运算"},
+    {"code": "HS_COMPLEX_OP", "name": "复数概念与运算", "parentCode": "HS_COMPLEX", "sort": 10, "description": "复数代数形式、几何意义与四则运算"},
+
+    {"code": "HS_VECTOR", "name": "平面向量", "parentCode": null, "sort": 110, "description": "向量的线性运算与坐标表示"},
+    {"code": "HS_VECTOR_CONCEPT", "name": "平面向量概念", "parentCode": "HS_VECTOR", "sort": 10, "description": "向量定义、模、零向量与单位向量"},
+    {"code": "HS_VECTOR_OP", "name": "平面向量运算", "parentCode": "HS_VECTOR", "sort": 20, "description": "加减数乘、数量积、坐标运算"},
+    {"code": "HS_VECTOR_APP", "name": "平面向量应用", "parentCode": "HS_VECTOR", "sort": 30, "description": "向量在几何与物理中的应用"},
+
+    {"code": "HS_ALGO", "name": "算法初步", "parentCode": null, "sort": 120, "description": "程序框图与基本算法语句"},
+    {"code": "HS_ALGO_FLOW", "name": "算法与程序框图", "parentCode": "HS_ALGO", "sort": 10, "description": "顺序条件循环结构、流程图"},
+    {"code": "HS_ALGO_STMT", "name": "基本算法语句", "parentCode": "HS_ALGO", "sort": 20, "description": "输入输出赋值条件循环语句"}
+  ]
+}
