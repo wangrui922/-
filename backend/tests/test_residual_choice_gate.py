@@ -214,15 +214,21 @@ class TestLoaderGateIntegration:
         assert stats.gated_clean == 1
         assert stats.gated_review == 0
 
-    def test_residual_choice_answer_miss_uses_full_caliber(self) -> None:
-        # 入库卡口默认只校验选项完整性（不传答案，与批处理同口径）。
-        # 答案命中校验由 validate_choice_options(options, correct_answer) 全量口径负责
-        # （PRD P1.1），其单点真相已在 TestValidateChoiceOptions 覆盖。
-        # 这里确认：完整 A-D、答案错位的题在「仅选项卡口」下仍判 clean（落 active）。
+    def test_residual_choice_unparseable_answer_archived(self) -> None:
+        # 防新增死题卡口：选择题答案若根本解析不出合法键位（如 "F" 不在 A-D 内），
+        # 入库即判 review（落 archived），不让学生刷到无法判分的题。
+        # 这比「只校验选项」更贴合「有问题的题都剔除」的要求。
         status, stats = _run_loader(["50", "55", "35", "65"], "F")
-        assert status == "active"
-        assert stats.gated_clean == 1
-        # 而显式用全量口径校验该题 → 判残缺（答案未命中选项键）
+        assert status == "archived"
+        assert stats.gated_review == 1
+        assert stats.gated_clean == 0
+        # 全量口径校验该题同样判残缺（答案未命中选项键），单点真相一致
         from app.services.importers.quality_gate import validate_choice_options
 
         assert validate_choice_options(["50", "55", "35", "65"], correct_answer="F") is False
+
+    def test_choice_valid_answer_still_active(self) -> None:
+        # 合法答案（"B" 命中 A-D）不应被完整性卡口误杀
+        status, stats = _run_loader(["50", "55", "35", "65"], "B")
+        assert status == "active"
+        assert stats.gated_clean == 1
