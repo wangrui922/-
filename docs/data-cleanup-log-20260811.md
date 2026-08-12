@@ -408,3 +408,706 @@
 - 导出 CSV：（已跳过 dry-run）
 - 内置关键词数：16
 
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:19:17.128985+00:00
+- 模式：dry-run
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：（未写出）
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:19:19.248136+00:00
+- 模式：dry-run
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：（未写出）
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:19:20.250295+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:19:22.715446+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:19:24.721459+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:19:26.900593+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:19:27.639720+00:00
+- 模式：dry-run
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:19:30.534891+00:00
+- 模式：dry-run
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:19:36.120677+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:19:39.032183+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:19:40.210798+00:00
+- 模式：实际执行
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：3 个（双保险）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-removed-20260812.csv
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:19:45.197095+00:00
+- 模式：实际执行
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：3 个（双保险）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-removed-20260812.csv
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:20:02.041066+00:00
+- 模式：dry-run
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：（未写出）
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:20:04.274756+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:20:07.683700+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:20:10.042952+00:00
+- 模式：dry-run
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:20:17.991008+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:20:20.056699+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:20:21.122339+00:00
+- 模式：实际执行
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：3 个（双保险）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-removed-20260812.csv
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:21:42.142543+00:00
+- 模式：dry-run
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：（未写出）
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:21:44.687167+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:21:47.708140+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:21:49.498727+00:00
+- 模式：dry-run
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:21:54.201196+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:21:56.239205+00:00
+- 模式：实际执行
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：3 个（双保险）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-removed-20260812.csv
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:22:05.122928+00:00
+- 模式：dry-run
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：（未写出）
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:22:07.178613+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:22:08.758260+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:22:10.220770+00:00
+- 模式：dry-run
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:22:18.108927+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:22:22.152598+00:00
+- 模式：实际执行
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：3 个（双保险）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-removed-20260812.csv
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:22:45.562758+00:00
+- 模式：dry-run
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：（未写出）
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:22:47.755847+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:22:49.980943+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:22:51.668059+00:00
+- 模式：dry-run
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:22:57.166626+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:22:59.697529+00:00
+- 模式：实际执行
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：3 个（双保险）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-removed-20260812.csv
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:23:47.795022+00:00
+- 模式：dry-run
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：（未写出）
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:23:48.954260+00:00
+- 模式：dry-run
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：（未写出）
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:23:53.744485+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:23:56.007954+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:23:59.268444+00:00
+- 模式：dry-run
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:24:00.656927+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:24:06.460308+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:24:08.303960+00:00
+- 模式：实际执行
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：3 个（双保险）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-removed-20260812.csv
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:24:12.759574+00:00
+- 模式：dry-run
+- 扫描：active 选择题 563 道
+- 命中归档：308 道
+- 期望核对：未设（跳过熔断）
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:24:30.586824+00:00
+- 模式：dry-run
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：（未写出）
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:24:32.494735+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:24:34.421360+00:00
+- 模式：实际执行
+- 扫描：active 选择题 563 道
+- 命中归档：308 道
+- 期望核对：--expect 308
+- 跳过的已补D id：3 个（双保险）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-removed-20260812.csv
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:24:34.803515+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:24:36.764347+00:00
+- 模式：dry-run
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:24:40.534180+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:24:43.506504+00:00
+- 模式：实际执行
+- 扫描：active 选择题 18 道
+- 命中归档：10 道
+- 期望核对：--expect 10
+- 跳过的已补D id：3 个（双保险）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-removed-20260812.csv
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:28:59.412354+00:00
+- 模式：dry-run
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：（未写出）
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:29:17.290144+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:29:39.351513+00:00
+- 模式：dry-run
+- 扫描：active 选择题 255 道
+- 命中归档：0 道
+- 期望核对：未设（跳过熔断）
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:30:00.185630+00:00
+- 模式：实际执行
+- 扫描：active 选择题 255 道
+- 命中归档：0 道
+- 期望核对：未设（跳过熔断）
+- 跳过的已补D id：3 个（双保险）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-removed-20260812.csv
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:41:57.346034+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\backend\_fixa_tmp\out\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:41:59.668991+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\backend\_fixa_tmp\out\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-08-12T07:55:24.854070+00:00
+- 模式：dry-run
+- 扫描：active 选择题 255 道
+- 命中归档：0 道
+- 期望核对：未设（跳过熔断）
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:56:20.313171+00:00
+- 模式：dry-run
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：（未写出）
+- 不动字段：correct_answer
+
+## N0.1 · 截图 4 题即时修复
+
+- 脚本：scripts/data_cleanup/20260812_fix_screenshot_four.py
+- 时间：2026-08-12T07:56:33.829915+00:00
+- 模式：实际执行
+- 补 D：3 道（9a4f1461, a3275f03, 855ae9b6 → 末位补 D）
+- 归档：1 道（9cf5259e 逻辑错误）
+- 备份表：questions_options_backup_20260812（补D） / questions_removed_backup_20260812（archive）
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
+- 不动字段：correct_answer
+

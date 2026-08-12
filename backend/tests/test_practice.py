@@ -1270,3 +1270,25 @@ class TestL1PoolInvariantOnRealBank:
                 offenders.append((correct_answer, outcome.reason))
 
         assert not offenders, f"有 {len(offenders)} 道被踢出池的题仍被 L1 判分，样例：{offenders[:5]}"
+
+    def test_no_choice_question_with_missing_options(self) -> None:
+        """P0 全库不变式：**active 选择题必须含完整 A-D 四选项**。
+
+        与设计 §3.4 口径同构（严格相等 ``{A,B,C,D}``），既不退化成 ``>= 4``、
+        也不退化成 ``⊇``。用 ``quality_gate.validate_choice_options`` 作单一真相源，
+        不各自写 SQL ``LIKE '%"D"%'``。
+
+        这是 P0 治理（N0.1 补 D + N0.2 归档）后的验收核心：治理前全库有 312 道
+        残缺 active 选择题，治理后应归零。本断言只核对口径自洽，不硬编码任何数字。
+        """
+        from app.services.importers.quality_gate import validate_choice_options
+
+        naked: List[Any] = []
+        for q_type, raw_options, _correct_answer in _real_bank_rows():
+            if q_type != "选择":
+                continue
+            options = _parse_options(raw_options)
+            if not validate_choice_options(options):
+                naked.append(_parse_options(raw_options))
+
+        assert not naked, f"有 {len(naked)} 道 active 选择题仍缺 A-D 完整选项，样例：{naked[:5]}"
