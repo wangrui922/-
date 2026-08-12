@@ -29,6 +29,11 @@ const emit = defineEmits<{
   (e: 'back'): void
   (e: 'retry'): void
   (e: 'mistakes'): void
+  /**
+   * T10（P0-F）薄弱点一键再练：父页面接收后用 `router.push` 跳到
+   * `/practice?kp_id=...&kp_name=...`，触发 `consumeDeepLink()` 直接开练。
+   */
+  (e: 're-practice', kp: { kp_id: string; kp_name: string }): void
 }>()
 
 const PERCENT = 100
@@ -186,6 +191,15 @@ const mistakeNote = computed<string>(() => {
             <span class="shrink-0 rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-500">
               错 {{ wp.wrong_count }} 题
             </span>
+            <!-- T10：薄弱点一键再练（Q4/Q5 拍板 · P0-F） -->
+            <button
+              type="button"
+              class="shrink-0 rounded-full bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-600 transition active:bg-brand-100 disabled:opacity-50"
+              :disabled="!wp.kp_id"
+              @click="emit('re-practice', { kp_id: wp.kp_id, kp_name: wp.kp_name })"
+            >
+              再练
+            </button>
           </li>
         </ul>
       </section>

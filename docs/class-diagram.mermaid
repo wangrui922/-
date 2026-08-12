@@ -1,79 +1,322 @@
+---
+title: 练习模块增量重设计 · 类图
+---
+
+# 后端类图
+
+```mermaid
 classDiagram
-    class AiExerciseService {
-        <<module app.services.ai_exercise_service>>
-        +AI_SOURCE_DOC: str
-        +persist_exercises(db, session, exercises, student) list
-        +guide_exercise(db, *, student_id, session_id, question_id, work, mode) dict
-        +judge_and_record(db, *, student_id, session_id, question_id, answer, work) dict
-        +get_weak_profile(db, *, student_id, top_n=2) dict
-        -_resolve_kp_id(db, knowledge) Optional~UUID~
-        -_map_question_type(ai_type) Optional~str~
+    class Question {
+        <<ORM questions>>
+        +UUID id
+        +str content
+        +str type_
+        +int difficulty
+        +UUID kp_id
+        +bool kp_verified
+        +str status
+        +str source_doc
+        +Any options
     }
-
-    class Orchestrator {
-        <<module app.ai.orchestrator>>
-        +generate_exercise(session_id, db) dict
-        -_pick_analysis(messages) dict
+    class Answer {
+        <<ORM answers>>
+        +UUID id
+        +UUID question_id
+        +str correct_answer
     }
-
-    class ExerciseAgent {
-        <<module app.ai.agents.exercise>>
-        +gen_exercises(*, error_type, kp, difficulty, context="") list
-    }
-
-    class ErrorCategories {
-        <<module app.core.error_categories>>
-        +tuple ERROR_CATEGORIES
-        +error_label(code) str
-        +normalize_error(raw) str
-    }
-
     class Mistake {
         <<ORM mistakes>>
         +UUID id
         +UUID student_id
         +UUID question_id
         +str error_type
+        +str error_reason
+        +UUID kp_id
         +bool solved
-        +datetime created_at
+    }
+    class LearningTask {
+        <<ORM learning_tasks>>
+        +UUID id
+        +UUID student_id
+        +str task_type
+        +JSON items
+        +str status
+    }
+    class KnowledgePoint {
+        <<ORM knowledge_points>>
+        +UUID id
+        +str name
     }
 
-    class ExerciseApi {
-        <<module app.api.exercise>>
-        +gen_exercise(body, current, db) dict
+    class PracticeService {
+        <<module app.services.practice_service>>
+        +draw_questions(...) Dict
+        +create_session(...) LearningTask
+        +submit_answer(...) Dict
+        +reveal_answer(...) Dict
+        +finish_session(...) Dict
+        +sanitize_guide_reply(...) str
+        +guide_question(...) Dict
+        -_question_payload(q) Dict
+        -_options_status(q_type, options) str
+        -_draw_with_relaxation(...) Tuple
+        -_human_error_text(kp_name, code) str
+        -_candidate_rows(...) List
+        -_unmapped_of(rows) int
     }
 
-    class ChatApiTs {
-        <<api/chat.ts>>
-        +genExercise(sid, clientEventId?) GenExerciseResult
+    class JudgeEngine {
+        <<module app.services.judge_engine>>
+        +is_l1_safe(q_type, opts, ans) bool
+        +normalize_options(options) List~OptionItem~
+        +judge(q_type, opts, ans, sel) JudgeOutcome
+        +is_compound(ans) bool
     }
 
-    class WeakTag {
-        <<typescript 新增>>
-        +str code
+    class ErrorCategories {
+        <<module app.core.error_categories>>
+        +tuple ERROR_CATEGORIES
+        +dict ERROR_LABELS
+        +classify_error(text) str
+        +normalize_error(raw) str
+        +error_label(code) str
+    }
+
+    class DrawQuestionOut {
+        <<pydantic schemas/practice.py>>
+        +str question_id
+        +str type
+        +str stem
+        +List options
+        +str options_status
+        +int difficulty
+        +int grade
+        +str edition
+        +str section
+        +str kp_id
+    }
+
+    class DrawResponse {
+        <<pydantic schemas/practice.py>>
+        +str session_id
+        +List~DrawQuestionOut~ questions
+        +int pool_size
+        +int unmapped_count
+        +bool auto_relaxed
+        +int requested_count
+        +int actual_count
+        +int miss_count
+        +int relaxed_to_level
+        +List~RelaxationStepOut~ relaxation_steps
+    }
+
+    class RelaxationStepOut {
+        <<pydantic schemas/practice.py>>
+        +int level
         +str label
+        +int pool_size
     }
 
-    class GenExerciseResult {
-        <<typescript 增量>>
-        +Exercise[] exercises
-        +WeakTag[] weakTags
-        +'profile'|'fallback' weakSource
+    class PracticeApi {
+        <<module app.api.practice>>
+        +create_practice_session(body, current, db) dict
+        +answer(body, current, db) dict
+        +reveal(body, current, db) dict
+        +finish(body, current, db) dict
+        +guide(body, current, db) dict
     }
 
-    class AiTeacher {
-        <<vue views>>
-        +weakTags: WeakTag[]
-        +weakSource: string
-        +handleGenExercise()
+    class DataCleanupScripts {
+        <<module scripts.data_cleanup>>
+        +archive_incomplete_options() int
+        +strip_e2e_prefix() int
+        +autotag_unmapped() Tuple~int,int~
+        +archive_unresolvable() int
     }
 
-    AiExerciseService ..> Mistake : GROUP BY error_type COUNT
-    AiExerciseService ..> ErrorCategories : error_label()
-    Orchestrator --> AiExerciseService : get_weak_profile()
-    Orchestrator --> ExerciseAgent : gen_exercises(context=weak)
-    ExerciseApi --> Orchestrator : generate_exercise()
-    ExerciseApi ..> ExerciseApi : ok(result) 透传 weak_tags/weak_source
-    ChatApiTs ..> GenExerciseResult : 归一化(双写兼容)
-    AiTeacher --> ChatApiTs : genExercise()
-    GenExerciseResult *-- WeakTag : weakTags[]
+    PracticeService --> Question : reads/updates
+    PracticeService --> Answer : reads
+    PracticeService --> Mistake : creates (via learning_service)
+    PracticeService --> LearningTask : creates/updates
+    PracticeService --> KnowledgePoint : reads
+    PracticeService ..> JudgeEngine : normalize_options/is_l1_safe
+    PracticeService ..> ErrorCategories : error_label
+    PracticeApi --> PracticeService : delegates
+    DrawResponse *-- DrawQuestionOut : contains
+    DrawResponse *-- RelaxationStepOut : contains
+    Question "1" --> "0..1" Answer : answer
+    Question "1" --> "0..*" Mistake : mistakes
+    Question "0..*" --> "0..1" KnowledgePoint : kp
+    DataCleanupScripts ..> Question : UPDATE status/content/kp_id
+```
+
+# 前端类图
+
+```mermaid
+classDiagram
+    class BankQuestion {
+        <<types api/practice.ts>>
+        +string question_id
+        +string type
+        +string stem
+        +BankOption[] options
+        +OptionsStatus options_status
+        +number|null difficulty
+        +number|null grade
+        +string|null edition
+        +string|null section
+        +string|null kp_id
+    }
+
+    class OptionsStatus {
+        <<enum>>
+        complete
+        partial
+        missing
+        n/a
+    }
+
+    class DrawResult {
+        <<types api/practice.ts>>
+        +string session_id
+        +BankQuestion[] questions
+        +number pool_size
+        +number unmapped_count
+        +boolean auto_relaxed
+        +number requested_count
+        +number actual_count
+        +number miss_count
+        +number relaxed_to_level
+        +RelaxationStep[] relaxation_steps
+    }
+
+    class RelaxationStep {
+        <<types api/practice.ts>>
+        +number level
+        +string label
+        +number pool_size
+    }
+
+    class PoolInfo {
+        <<types stores/practice.ts>>
+        +number pool_size
+        +number unmapped_count
+        +boolean auto_relaxed
+        +number requested_count
+        +number actual_count
+        +RelaxationStep[] relaxation_steps
+    }
+
+    class PracticeState {
+        <<types stores/practice.ts>>
+        +PracticePhase phase
+        +boolean drawing
+        +string drawError
+        +boolean drawEmpty
+        +DeepLinkInfo|null deep_link
+        +string session_id
+        +BankQuestion[] questions
+        +number index
+        +PoolInfo pool
+        +Record~string,string~ selected
+        +Record~string,SubmitResult~ feedback
+    }
+
+    class BankQuestionCard {
+        <<vue components/practice>>
+        +BankQuestion question
+        +number index
+        +number total
+        +string selected
+        +boolean locked
+        +render()
+        +handleSelect(key)
+    }
+
+    class PracticeFilterCard {
+        <<vue components/practice>>
+        +boolean loading
+        +string error
+        +emit start(params)
+    }
+
+    class PracticeResult {
+        <<vue components/practice>>
+        +FinishResult|null result
+        +boolean loading
+        +string error
+        +emit again()
+        +emit back()
+        +emit retry()
+        +emit mistakes()
+        +emit rePractice(kp_id)
+    }
+
+    class PracticeView {
+        <<vue views/Practice>>
+        +disclosures computed
+        +handleStart(params)
+        +handleSelect(key)
+        +handleSubmit()
+        +handleFinish()
+        +handleRePractice(kp_id)
+    }
+
+    DrawResult *-- BankQuestion : contains
+    DrawResult *-- RelaxationStep : contains
+    BankQuestion --> OptionsStatus
+    PracticeState --> PoolInfo
+    PoolInfo *-- RelaxationStep : contains
+    BankQuestionCard ..> BankQuestion : props
+    PracticeFilterCard ..> DrawResult : emits start
+    PracticeResult ..> PoolInfo : reads
+    PracticeView --> BankQuestionCard
+    PracticeView --> PracticeFilterCard
+    PracticeView --> PracticeResult
+    PracticeView ..> PracticeState : reads
+```
+
+# 任务依赖图
+
+```mermaid
+graph TD
+    T1["T1 数据备份脚本（一次性）<br/>P0"]
+    T2["T2 P0-A 缺选项归档<br/>P0"]
+    T3["T3 P0-B E2E 剥离<br/>P0"]
+    T4["T4 P0-C kp 标不上归档<br/>P0"]
+    T5["T5 后端 draw_questions<br/>6 档 fallback P0"]
+    T6["T6 后端 /session 响应加字段<br/>P0"]
+    T7["T7 前端 types+api 加字段<br/>P0"]
+    T8["T8 BankQuestionCard 兜底<br/>P0"]
+    T9["T9 PracticeFilterCard 智能提示<br/>P0"]
+    T10["T10 PracticeResult 薄弱点再练<br/>P0"]
+    T11["T11 P1-I 错因人话文案<br/>P1"]
+    T12["T12 测试（QA 写）<br/>P0"]
+
+    T1 --> T2
+    T1 --> T3
+    T1 --> T4
+    T5 --> T6
+    T5 --> T11
+    T6 --> T7
+    T7 --> T8
+    T7 --> T9
+    T7 --> T10
+    T2 --> T12
+    T3 --> T12
+    T4 --> T12
+    T5 --> T12
+    T6 --> T12
+    T7 --> T12
+    T8 --> T12
+    T9 --> T12
+    T10 --> T12
+    T11 --> T12
+
+    classDef p0 fill:#f6ffed,stroke:#52c41a,color:#135200
+    classDef p1 fill:#fff7e6,stroke:#fa8c16,color:#873800
+    classDef base fill:#e6f4ff,stroke:#1677ff,color:#003a8c
+    class T1 base
+    class T2,T3,T4,T5,T6,T7,T8,T9,T10,T12 p0
+    class T11 p1
+```

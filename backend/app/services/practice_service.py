@@ -48,6 +48,7 @@ from sqlalchemy.orm import Session
 from app.ai import ark_client
 from app.ai.agents._json_utils import extract_json
 from app.ai.prompts import practice_guide
+from app.core.error_categories import error_label
 from app.core.response import (
     ApiError,
     CODE_BAD_REQUEST,
@@ -102,6 +103,19 @@ WEAK_POINT_LIMIT: int = 5
 
 #: 引导语兜底话术：模型回复涉嫌泄题（或为空）时改说这句，绝不把答案递出去
 GUIDE_FALLBACK_REPLY: str = "我们一步步来：先说说这道题告诉了我们什么条件？"
+
+#: 抽题 fallback 档位的人话标签（设计 §1.5）。
+#: 第 4/5 档本期不实现（Q8 拍板），但保留字典给未来 P2 阶段用。
+RELAXATION_LABELS: Dict[int, str] = {
+    1: "优先使用可归因题库（同筛选条件 + 回避最近 7 天）",
+    2: "已放开：包含最近做过的题（同样条件）",
+    3: "已放开：包含暂未关联知识点的题",
+    4: "已放开：放宽题型限制",  # P2 留 TODO，不输出
+    5: "已放开：缩放到邻近年级",  # P2 留 TODO，不输出
+}
+
+#: ``error_reason`` 文案上限（设计 §8.3 TD-6：超过 100 字截断 + 省略号）
+HUMAN_ERROR_TEXT_LIMIT: int = 100
 
 
 # ================================================================== 内部工具
@@ -241,6 +255,35 @@ def _unmapped_of(rows: Sequence[Tuple[uuid.UUID, Optional[uuid.UUID], bool]]) ->
     return sum(1 for _, kp, verified in rows if kp is None or not verified)
 
 
+#: 选择题选项完整性枚举（设计 §3.1 / §1.4）。
+#: 前端 ``BankQuestionCard`` 按这个值渲染兜底态。
+#:
+#: - ``complete``  ：归一化后 ≥4 个选项；
+#: - ``partial``   ：1~3 个选项（孩子点不到完整 ABCD）；
+#: - ``missing``   ：0 个选项（前端「没有可选项」态）；
+#: - ``n/a``       ：非选择题，前端无需 disabled。
+OPTIONS_STATUS_COMPLETE: str = "complete"
+OPTIONS_STATUS_PARTIAL: str = "partial"
+OPTIONS_STATUS_MISSING: str = "missing"
+OPTIONS_STATUS_NA: str = "n/a"
+
+
+def _options_status(q_type: Optional[str], options: Any) -> str:
+    """选择题选项完整性枚举。判断题返回 ``'n/a'``。
+
+    这是设计 §1.4 单点真相：前后端都按这套判定走，Pool 里不再被前端用
+    ``options.length === 1`` 之类魔数兜底。
+    """
+    if (q_type or "").strip() != "选择":
+        return OPTIONS_STATUS_NA
+    count = len(judge_engine.normalize_options(options))
+    if count >= 4:
+        return OPTIONS_STATUS_COMPLETE
+    if count >= 1:
+        return OPTIONS_STATUS_PARTIAL
+    return OPTIONS_STATUS_MISSING
+
+
 def _question_payload(question: Question) -> Dict[str, Any]:
     """把 ``Question`` 序列化成抽题出参（snake_case，选项已归一）。"""
     return {
@@ -248,6 +291,7 @@ def _question_payload(question: Question) -> Dict[str, Any]:
         "type": question.type_ or "",
         "stem": question.content or "",
         "options": [item.to_dict() for item in judge_engine.normalize_options(question.options)],
+        "options_status": _options_status(question.type_, question.options),
         "difficulty": question.difficulty,
         "grade": question.grade,
         "edition": question.edition,
@@ -363,6 +407,150 @@ def _load_question(db: Session, question_id: uuid.UUID) -> Tuple[Question, Optio
 
 
 # ================================================================== 抽题
+def _draw_with_relaxation(
+    db: Session,
+    *,
+    common: Dict[str, Any],
+    recent: Sequence[uuid.UUID],
+    want: int,
+) -> Tuple[List[uuid.UUID], List[Dict[str, Any]], Dict[str, Any]]:
+    """逐档抽题（设计 §1.5）。
+
+    6 档 fallback 仅本期实现 1-3 档 + 兜底 404（Q8 拍板）；4/5 档留 TODO。
+    每档**只有真的放宽（候选池扩增）**时才追加 ``steps``——避免「挨个跑一遍
+    档但啥也没松」刷屏；同时 ``relaxed_to_level`` 也只在档位**真的进了一步**
+    时才升档。
+
+    关键口径（设计 §1.5）：
+
+    * 第 1 档：可归因 + 回避 7 天；够用即停；
+    * 第 2 档：可归因 + 取消回避 7 天（候选多了才算放宽）；
+    * 第 3 档：放开 kp（attributable_only=False）+ 取消回避（候选多了才算放宽）；
+    * 第 4/5 档：本期不实现（影响判分口径 / 产品卖点）；TODO 留 P2；
+    * 兜底：3 档全空 → 返回 ApiError 404。
+
+    注意：**``common`` 字典里始终带着 ``kp_id``**。放宽档只放宽「是否只要人工
+    核对过的题」与「是否回避最近 7 天」，所以**指定知识点时抽到的题必然还
+    是这个知识点的**——这点很重要，避免孩子看到「练了别的知识点」这种假披露。
+
+    Returns:
+        ``(picked_ids, steps, meta)``：
+
+        * ``picked_ids``：本轮抽到的题 ID 列表（最多 want 道）；
+        * ``steps``：逐档尝试记录（仅放宽过的档），前端原样展示；
+        * ``meta``：抽题池元数据（pool_size / auto_relaxed / actual_count /
+          miss_count / relaxed_to_level）。
+    """
+    steps: List[Dict[str, Any]] = []
+
+    # ---- 第 1 档：可归因 + 回避 7 天 ----------------------------------------
+    rows_1 = _candidate_rows(db, attributable_only=True, exclude_ids=recent, **common)
+    steps.append(
+        {
+            "level": 1,
+            "label": RELAXATION_LABELS[1],
+            "pool_size": len(rows_1),
+            "applied_at": utcnow().isoformat(),
+            "applied": len(rows_1) > 0,
+        }
+    )
+    if len(rows_1) >= want:
+        return _sample_and_meta(rows_1, want, steps, level=1)
+
+    chosen_rows: List[Tuple[uuid.UUID, Optional[uuid.UUID], bool]] = list(rows_1)
+    chosen_level = 1
+
+    # ---- 第 2 档：可归因 + 取消回避 7 天 ------------------------------------
+    rows_2 = _candidate_rows(db, attributable_only=True, exclude_ids=(), **common)
+    # 只有真的让候选池扩大才记录为「放宽」——避免「同池空跑」刷屏也避免误标
+    # auto_relaxed=True。
+    if len(rows_2) > len(chosen_rows):
+        chosen_rows = list(rows_2)
+        chosen_level = 2
+        steps.append(
+            {
+                "level": 2,
+                "label": RELAXATION_LABELS[2],
+                "pool_size": len(rows_2),
+                "applied_at": utcnow().isoformat(),
+                "applied": True,
+            }
+        )
+    if len(chosen_rows) >= want:
+        return _sample_and_meta(chosen_rows, want, steps, level=chosen_level)
+
+    # ---- 第 3 档：放开 kp（不可归因）+ 取消回避 7 天 ------------------------
+    rows_3 = _candidate_rows(db, attributable_only=False, exclude_ids=(), **common)
+    if len(rows_3) > len(chosen_rows):
+        chosen_rows = list(rows_3)
+        chosen_level = 3
+        steps.append(
+            {
+                "level": 3,
+                "label": RELAXATION_LABELS[3],
+                "pool_size": len(rows_3),
+                "applied_at": utcnow().isoformat(),
+                "applied": True,
+            }
+        )
+
+    # ---- 第 4 档（TODO 不实现）-----------------------------------------------
+    # 设计 §1.5：第 4 档是「题型放宽」，会影响 judge_engine，必须等 P2 阶段
+    # 与判分口径合并讨论后再开。本期不输出 steps、不抽样。
+    # ---- 第 5 档（TODO 不实现）-----------------------------------------------
+    # 设计 §1.5：第 5 档是「年级缩放」，会影响产品卖点「筛年级练」的语义，
+    # 也留 P2，本期不输出 steps、不抽样。
+
+    # ---- 兜底：完全抽不到题 ------------------------------------------------
+    if not chosen_rows:
+        steps.append(
+            {
+                "level": 6,
+                "label": "兜底：当前条件下没有可练的题",
+                "pool_size": 0,
+                "applied_at": utcnow().isoformat(),
+                "applied": False,
+            }
+        )
+        return [], steps, {
+            "pool_size": 0,
+            "unmapped_count": 0,
+            "auto_relaxed": False,
+            "requested_count": want,
+            "actual_count": 0,
+            "miss_count": want,
+            "relaxed_to_level": 6,
+        }
+
+    return _sample_and_meta(chosen_rows, want, steps, level=chosen_level)
+
+
+def _sample_and_meta(
+    rows: Sequence[Tuple[uuid.UUID, Optional[uuid.UUID], bool]],
+    want: int,
+    steps: List[Dict[str, Any]],
+    level: int,
+) -> Tuple[List[uuid.UUID], List[Dict[str, Any]], Dict[str, Any]]:
+    """从候选池随机抽样 + 拼 meta（Q7 拍板：少给不凑数）。"""
+    pool_size = len(rows)
+    # :func:`random.sample` 的 ``k`` 必须 ≥0，否则抛 ValueError
+    sample_size = max(0, min(want, pool_size))
+    picked: List[Tuple[uuid.UUID, Optional[uuid.UUID], bool]] = (
+        random.sample(list(rows), k=sample_size) if sample_size > 0 else []
+    )
+    picked_ids = [row[0] for row in picked]
+    miss_count = max(0, want - len(picked))
+    return picked_ids, steps, {
+        "pool_size": pool_size,
+        "unmapped_count": _unmapped_of(rows),
+        "auto_relaxed": level > 1,
+        "requested_count": want,
+        "actual_count": len(picked_ids),
+        "miss_count": miss_count,
+        "relaxed_to_level": level,
+    }
+
+
 def draw_questions(
     db: Session,
     *,
@@ -374,40 +562,44 @@ def draw_questions(
     difficulty: Optional[int] = None,
     count: Optional[int] = DEFAULT_COUNT,
 ) -> Dict[str, Any]:
-    """抽一组题并开一个练习会话（C6 两级回退）。
+    """抽一组题并开一个练习会话（C6 逐档 fallback）。
 
-    回退策略：
+    6 档 fallback 本期只做 1-3 档 + 兜底 404（Q8 拍板）；4/5 档留 P2。
 
-    1. **可归因池**：``kp_verified=1 AND kp_id IS NOT NULL``，且回避最近 7 天做过的题；
-    2. 数量不够 → **自动放开**到全 L1 安全池（含 ``kp_id`` 为空的 docx 新题），
-       仍回避最近 7 天；
-    3. 仍为空 → 放弃「回避最近 7 天」这一层，保证学生总有题可练。
+    出参新增 4 字段（与 ``DrawResponse`` 一一对应）：
 
-    只要实际用的池不是第 1 级，``auto_relaxed=True``，并在出参里给出该池的
-    ``unmapped_count``（不可归因题数），由结果页**诚实披露**，不静默降级。
+    * ``actual_count``：本轮实际抽到的题数（可能 < requested_count，少给不凑数）；
+    * ``miss_count`` = ``requested_count - actual_count``；
+    * ``relaxed_to_level``：1-3（实际放宽到的档）+ 6（兜底完全没题）；
+    * ``relaxation_steps``：逐档尝试记录，前端原样逐行展示。
+
+    出参同时保留旧字段 ``auto_relaxed`` 作为兼容老客户端的布尔位
+    （``auto_relaxed = (relaxed_to_level > 1)``，与旧版语义一致）。
 
     Args:
-        db: 数据库会话（本函数内部 commit）。
+        db: 数据库会话（内部 commit）。
         student_id: 学生 ID。
         grade: 年级（升入年级口径）。
         edition: 教材版本（青岛版/苏教版）。
-        section: 册内分区（温故/预习/...）。
+        section: 册内分区。
         kp_id: 指定知识点 ID。
         difficulty: 难度 1/3/5。
         count: 题量，夹在 ``[1, 30]``，默认 10。
 
     Returns:
-        ``{"session_id", "questions", "pool_size", "unmapped_count", "auto_relaxed", "requested_count"}``。
+        ``{session_id, questions, pool_size, unmapped_count, auto_relaxed,
+        requested_count, actual_count, miss_count, relaxed_to_level,
+        relaxation_steps}``。
 
     Raises:
-        ApiError: code=400 参数非法；code=404 当前筛选条件下没有可练的题。
+        ApiError: code=400 参数非法；code=404 当前筛选条件下没有可练的题（3 档全空）。
     """
     sid = to_uuid(student_id, "student_id")
     want = _clamp_count(count)
     target_kp = to_uuid(kp_id, "kp_id") if kp_id else None
 
     recent = _recent_question_ids(db, sid)
-    common = {
+    common: Dict[str, Any] = {
         "grade": grade,
         "edition": edition,
         "section": section,
@@ -415,42 +607,36 @@ def draw_questions(
         "difficulty": difficulty,
     }
 
-    auto_relaxed = False
-    rows = _candidate_rows(db, attributable_only=True, exclude_ids=recent, **common)
+    picked_ids, steps, meta = _draw_with_relaxation(
+        db,
+        common=common,
+        recent=recent,
+        want=want,
+    )
 
-    if len(rows) < want:
-        relaxed = _candidate_rows(db, attributable_only=False, exclude_ids=recent, **common)
-        if len(relaxed) > len(rows):
-            rows = relaxed
-            auto_relaxed = True
-
-    if not rows:
-        # 最后一层：连「回避最近 7 天」都放弃，避免学生看到空白页
-        rows = _candidate_rows(db, attributable_only=False, exclude_ids=(), **common)
-        auto_relaxed = True
-
-    if not rows:
+    # ---- 兜底 404：所有档位都没有可抽题 --------------------------------------
+    if not picked_ids:
         raise ApiError(CODE_NOT_FOUND, "这个筛选条件下暂时没有可以练的题，换个条件试试")
-
-    pool_size = len(rows)
-    unmapped_count = _unmapped_of(rows)
-
-    picked = random.sample(rows, k=min(want, pool_size))
-    picked_ids = [row[0] for row in picked]
 
     task = create_session(db, student_id=sid, question_ids=picked_ids)
 
     questions = db.execute(select(Question).where(Question.id.in_(picked_ids))).scalars().all()
-    by_id = {question.id: question for question in questions}
+    by_id = {q.id: q for q in questions}
     payload = [_question_payload(by_id[qid]) for qid in picked_ids if qid in by_id]
 
     return {
         "session_id": str(task.id),
         "questions": payload,
-        "pool_size": pool_size,
-        "unmapped_count": unmapped_count,
-        "auto_relaxed": auto_relaxed,
-        "requested_count": want,
+        "pool_size": meta["pool_size"],
+        "unmapped_count": meta["unmapped_count"],
+        # 旧字段保留，老客户端不破
+        "auto_relaxed": meta["auto_relaxed"],
+        "requested_count": meta["requested_count"],
+        # 新增 4 字段（设计 §1.5 / §3.3）
+        "actual_count": meta["actual_count"],
+        "miss_count": meta["miss_count"],
+        "relaxed_to_level": meta["relaxed_to_level"],
+        "relaxation_steps": steps,
     }
 
 
@@ -721,6 +907,35 @@ def _weak_points(
     return ordered[:WEAK_POINT_LIMIT]
 
 
+def _resolve_kp_name(db: Session, question_id: uuid.UUID) -> Optional[str]:
+    """根据 ``Question.kp_id`` 取出 L1/L2 知识点名（仅展示用，可空）。"""
+    row = db.execute(
+        select(KnowledgePoint.name)
+        .join(Question, Question.kp_id == KnowledgePoint.id)
+        .where(Question.id == question_id)
+    ).first()
+    if not row:
+        return None
+    name = row[0]
+    return str(name).strip() if name else None
+
+
+def _human_error_text(kp_name: Optional[str], error_type_code: str) -> str:
+    """错题入本时的人话 error_reason 文案（设计 §1.7 / §5.2 P1-I）。
+
+    格式：「知识点「{kp_name}」{五类中文标签}」；kp_name 为空时退化为「该题{标签}」。
+    上限 ``HUMAN_ERROR_TEXT_LIMIT``（=100）字；超过截断并加省略号。
+    """
+    label = error_label(error_type_code) or "其他"
+    if kp_name:
+        text = f"知识点「{kp_name}」{label}"
+    else:
+        text = f"该题{label}"
+    if len(text) > HUMAN_ERROR_TEXT_LIMIT:
+        text = text[: HUMAN_ERROR_TEXT_LIMIT - 1] + "…"
+    return text
+
+
 def finish_session(db: Session, *, student_id: Any, session_id: Any) -> Dict[str, Any]:
     """结算一次练习：错题入本 + 掌握度缓存失效 + 统计出参。
 
@@ -770,7 +985,14 @@ def finish_session(db: Session, *, student_id: Any, session_id: Any) -> Dict[str
         (correct_ids if attempt.is_correct else wrong_ids).append(qid)
 
     # ---- C4 错题自动入本（幂等）------------------------------------------
+    # 设计 §1.7 / Q5 拍板：
+    #   - ``error_type`` 仍写五类机器码（聚合 / 画像 / 雷达图 / 家长周报需要）；
+    #   - ``error_reason`` 走人话（家长可读），由 ``_human_error_text`` 生成。
+    # 练习模块入口走这里；AI 老师入口另走 ``ai_exercise_service._safe_error_code``，
+    # 两条路径共存，机器码落库口径一处不改。
     mistakes_created = 0
+    # 缓存一次题 → 知识点名查表，循环里 N+1 会拖垮结算（最多几十道题）
+    kp_name_cache: Dict[uuid.UUID, Optional[str]] = {}
     for qid in wrong_ids:
         before = db.execute(
             select(Mistake.id).where(
@@ -779,12 +1001,19 @@ def finish_session(db: Session, *, student_id: Any, session_id: Any) -> Dict[str
                 Mistake.solved.is_(False),
             )
         ).first()
+        if qid not in kp_name_cache:
+            kp_name_cache[qid] = _resolve_kp_name(db, qid)
+        kp_name = kp_name_cache[qid]
+        # 五类机器码：默认 CALC（设计 §1.7：占位以「计算错」为兜底；后续如要更
+        # 细分可接 judge_engine 的 outcome.reason 走 classify_error()）。本期简化
+        # 为 CALC 不引入新枚举值，**这不影响 AI 老师入口**（它走自己的归一路径）。
+        human_reason = _human_error_text(kp_name, "CALC")
         learning_service.record_mistake(
             db,
             student_id=sid,
             question_id=qid,
-            error_type="练习错题",
-            error_reason="题库练习中作答错误，自动入错题本",
+            error_type="CALC",
+            error_reason=human_reason,
         )
         if before is None:
             mistakes_created += 1
@@ -1028,4 +1257,15 @@ __all__ = [
     "ITEM_DONE",
     "SESSION_DOING",
     "SESSION_DONE",
-]
+    # T5/T11 新增（保持稳定导入点，方便测试与脚本复用）
+    "RELAXATION_LABELS",
+    "HUMAN_ERROR_TEXT_LIMIT",
+    "_options_status",
+    "_draw_with_relaxation",
+    "_sample_and_meta",
+    "_human_error_text",
+    "OPTIONS_STATUS_COMPLETE",
+    "OPTIONS_STATUS_PARTIAL",
+    "OPTIONS_STATUS_MISSING",
+    "OPTIONS_STATUS_NA",
+]  # noqa: E501

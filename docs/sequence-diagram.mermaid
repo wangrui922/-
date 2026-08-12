@@ -1,43 +1,140 @@
+---
+title: 练习模块增量重设计 · 时序图
+---
+
+# 练习会话创建：6 档 fallback + 逐档披露
+
+```mermaid
 sequenceDiagram
     autonumber
-    participant S as 学生
-    participant V as AiTeacher.vue
-    participant API as api/exercise.py
-    participant O as orchestrator.generate_exercise
-    participant AES as ai_exercise_service.get_weak_profile
-    participant DB as mistakes（只读）
-    participant EX as agents/exercise.gen_exercises
-    participant M as ark_client
+    participant U as 学生
+    participant V as Practice.vue
+    participant F as PracticeFilterCard.vue
+    participant API as api/practice.py
+    participant S as stores/practice.ts
+    participant SRV as practice_service.draw_questions
+    participant CE as judge_engine
+    participant DB as questions/answers
 
-    S->>V: 点【再出两道】
-    V->>API: POST /exercise/gen {sessionId}
-    API->>O: generate_exercise(session_id, db)
-    O->>O: _get_session() + _pick_analysis() → kp/error_type/difficulty（当前错题）
+    U->>F: 选「6 年级+苏教版+5 道」
+    F->>V: emit start(params)
+    V->>S: startPractice(params)
+    S->>API: POST /practice/session
+    API->>SRV: draw_questions(student_id, grade=6, edition=苏教版, count=5)
 
-    Note over O,AES: ★ ① 先算薄弱画像（纯本地 SQL，零外网）
-    O->>AES: get_weak_profile(db, student_id=session.student_id, top_n=2)
-    AES->>DB: SELECT error_type, COUNT(*) ... WHERE student_id=? AND error_type IN (五类) GROUP BY error_type ORDER BY cnt DESC LIMIT 2
-    DB-->>AES: [(METHOD,12),(READ,9)] / 空
-    AES-->>O: {"weak_tags":[{"code":"METHOD","label":"方法错"},{"code":"READ","label":"读题错"}], "source":"profile"}
-    Note over O: 空画像 → source="fallback"，weak_context=""
+    Note over SRV,DB: === 第 1 档：可归因 + 回避 7 天 ===
+    SRV->>DB: _candidate_rows(attributable_only=True, exclude_ids=recent[7d])
+    DB-->>SRV: 1 行
+    SRV->>CE: is_l1_safe(q) 复核
+    CE-->>SRV: 1 行通过
+    SRV->>SRV: steps.append({level:1, label:"优先可归因", pool_size:1})
 
-    Note over O,EX: ★ ② 注入弱项（context 后缀，知识点仍锚定当前错题）
-    O->>O: weak_context = "【定向推题】该学生历史上反复出错的薄弱错因是：方法错、读题错。请在保持薄弱知识点「{kp}」不变的前提下，让这两道练习题的变式专门去反复练习和踩这些薄弱错因的坑…"（source=profile 时）
-    O->>EX: gen_exercises(error_type=当前错因, kp=当前kp, difficulty=, context=weak_context)
-    EX->>M: ark_respond(...)
+    Note over SRV,DB: 1 < 5，进入第 2 档
+    SRV->>DB: _candidate_rows(attributable_only=True, exclude_ids=[])
+    DB-->>SRV: 2 行
+    SRV->>SRV: steps.append({level:2, label:"已放开：包含最近做过的题", pool_size:2})
 
-    Note over O: ★ ③ 照旧落库（D1：archived + ai_gen，零迁移）
-    O->>O: persist_exercises(...)；写 EXERCISE_PREFIX 消息；session_state=practicing
+    Note over SRV,DB: 2 < 5，进入第 3 档
+    SRV->>DB: _candidate_rows(attributable_only=False, exclude_ids=[])
+    DB-->>SRV: 5 行
+    SRV->>SRV: steps.append({level:3, label:"已放开：包含无知识点题", pool_size:5})
 
-    Note over O,API: ★ ④ 返回 weak_tags / weak_source
-    O-->>API: {"exercises":[...], "weak_tags":[...], "weak_source":"profile"}
-    API-->>V: 200 ok({exercises, weak_tags, weak_source})
+    Note over SRV: 第 3 档命中，want=5 ≤ pool_size=5
+    SRV->>SRV: picked = sample(5, 5); actual=5; miss=0; relaxed_to=3
+    SRV->>DB: create_session(items=[5 qid], status='doing')
+    DB-->>SRV: LearningTask(id=...)
+    SRV->>DB: SELECT questions WHERE id IN (5)
+    DB-->>SRV: 5 rows
+    SRV->>SRV: payload = [_question_payload(q) for q in questions]
+    Note over SRV: ★ 每题附 options_status（complete/partial/missing/n/a）
+    SRV-->>API: {session_id, questions, pool_size, requested_count, actual_count, miss_count, relaxed_to_level, relaxation_steps}
+    API-->>S: 200 OK
+    S->>S: pool.relaxation_steps = steps; pool.actual_count = 5
+    S->>S: phase = 'doing'
+    S-->>V: reactive update
+    V->>V: disclosures = relaxation_steps 逐行
+    V-->>U: 顶部条「本次放宽到第 3 档」+ 三行披露
+```
 
-    Note over V: ★ ⑤ 前端整批横幅展示
-    V->>V: weakTags=result.weakTags; weakSource=result.weakSource
-    alt source=profile 且 weakTags 非空
-        V-->>S: 🎯 本次练习针对你的薄弱点：[方法错][读题错]（横幅，引导区上方）
-    else source=fallback（新学生/无历史错题）
-        V-->>S: 🎯 这次先按当前这道题的类型练一练（柔和兜底横幅）
+## 全部 0 道场景（场景 6）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant V as Practice.vue
+    participant API as api/practice.py
+    participant SRV as practice_service.draw_questions
+    participant DB as questions
+
+    V->>API: POST /practice/session {grade:6, edition:苏教版, count:5}
+    API->>SRV: draw_questions(...)
+    SRV->>DB: _candidate_rows(3 档全空)
+    DB-->>SRV: 0 行
+    SRV->>SRV: raise ApiError(404, "这个筛选条件下暂时没有可以练的题")
+    SRV-->>API: ApiError
+    API-->>V: 404 {code: 404, msg: "..."}
+    V->>V: drawError = "..."; drawEmpty = true
+    V-->>V: 渲染通用空态卡：「换个条件试试」
+```
+
+# 做题 + 判分 + 错题入本：人话 error_type
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as 学生
+    participant V as Practice.vue
+    participant CARD as BankQuestionCard.vue
+    participant S as stores/practice.ts
+    participant API as api/practice.py
+    participant SRV as practice_service.submit_answer
+    participant JE as judge_engine
+    participant LS as learning_service
+    participant EC as error_categories
+    participant DB as attempts/mistakes
+
+    U->>CARD: 点 B 选项
+    CARD->>V: emit select('B')
+    V->>S: chooseOption('B')
+    U->>V: 点「提交这道题」
+    V->>S: submitCurrent()
+    S->>API: POST /practice/answer {session_id, question_id, selected_answer:'B'}
+    API->>SRV: submit_answer(...)
+    SRV->>SRV: 校验 question_id 在本次 items 中
+    SRV->>SRV: _load_question(qid)
+    SRV->>JE: judge(q.type, q.options, correct_answer, 'B')
+    JE-->>SRV: JudgeOutcome(is_correct=False, level=1, reason="...")
+    SRV->>LS: record_attempt(student_id, qid, 'B', is_correct=False, ...)
+    LS->>DB: INSERT attempts (幂等 by client_event_id)
+    SRV->>DB: _patch_item(task, qid, {status:'done', is_correct:False, ...})
+    DB-->>SRV: ok
+    SRV-->>API: {is_correct:false, level:1, reason:"..."}
+    API-->>S: 200 OK
+    S->>S: practiceState.feedback[qid] = result
+    S-->>V: reactive update
+    V-->>U: AnswerFeedbackBar: 红色 + 「让老师带我想一想」
+
+    Note over U,V: 学生做完全部 5 道，点「交卷看结果」
+    U->>V: 点「交卷看结果」
+    V->>S: finishPractice()
+    S->>API: POST /practice/finish {session_id}
+    API->>SRV: finish_session(...)
+    SRV->>SRV: _latest_attempts(...) 重算 correct_ids / wrong_ids
+    loop 每道错题
+        SRV->>EC: classify_error(outcome.reason) → 五类机器码
+        EC-->>SRV: "CALC"
+        SRV->>SRV: kp_name = KnowledgePoint.find(q.kp_id)
+        SRV->>SRV: error_reason = f"练习中作答错误：{_human_error_text(kp_name, 'CALC')}"
+        Note over SRV: ★ 人话文案：「练习中作答错误：知识点「加减法」计算错」
+        SRV->>LS: record_mistake(student_id, qid, error_type='CALC', error_reason='...')
+        LS->>DB: INSERT mistakes (幂等 by student+question+solved=false)
     end
-    V->>V: 打开第 1 题 GuideChatPanel（既有对话式作答流程不变）
+    SRV->>DB: 失效 student_mastery 缓存 (可归因题)
+    SRV->>DB: task.status='done', finished_at=now
+    SRV-->>API: {session_id, total, correct, wrong, mistakes_created, weak_points, ...}
+    API-->>S: 200 OK
+    S->>S: practiceState.result = data; phase='result'
+    S-->>V: reactive update
+    V->>V: <PracticeResult :result="..."> 渲染
+    V-->>U: 薄弱点 + 「再练 加减法」按钮
+```

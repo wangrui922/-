@@ -9,6 +9,11 @@
  * 判分结论与「看答案」入口在 AnswerFeedbackBar 里，本卡片只用 locked 控制能否改选。
  *
  * 诚实披露：kp_id 为空的题会挂一条「本题暂未关联知识点，不计入掌握度」的说明。
+ *
+ * P0-D 设计 §1.4：选项不完整时（`options_status ∈ {partial, missing}`）：
+ *   - 选项按钮 disabled + 灰色；
+ *   - 顶部加 amber 提示「这道题的选项不完整，做完不算分（disabled）」；
+ *   - 由父页面（Practice.vue）按 `options_status === 'partial'` 决定是否禁用提交。
  */
 import { computed } from 'vue'
 
@@ -18,6 +23,7 @@ import {
   QUESTION_TYPE_JUDGE,
   type BankQuestion,
 } from '@/api/practice'
+import type { OptionsStatus } from '@/types/practice'
 
 const props = defineProps<{
   question: BankQuestion
@@ -41,6 +47,22 @@ interface ChoiceItem {
 
 /** 是否判断题（判断题后端返回的 options 是空数组，前端自己造两个大按钮）。 */
 const isJudge = computed<boolean>(() => props.question.type === QUESTION_TYPE_JUDGE)
+
+/**
+ * 选项完整性 —— 后端 `options_status` 决定整体按钮是否可点。
+ *
+ * 解析顺序：props.question.options_status → 默认 'n/a'（与 schema 默认值对齐）。
+ * 设计 §3.1：n/a = 非选择题，正常渲染；partial/missing = 选项不完整，全 disabled。
+ */
+const optionsStatus = computed<OptionsStatus>(
+  () => props.question.options_status ?? 'n/a',
+)
+const isPartial = computed<boolean>(() => optionsStatus.value === 'partial')
+const isMissing = computed<boolean>(() => optionsStatus.value === 'missing')
+/** 选项按钮是否要 disabled：partial / missing 都关掉，避免孩子以为真的只 1 个选项。 */
+const optionsDisabled = computed<boolean>(
+  () => isPartial.value || isMissing.value || props.locked,
+)
 
 /** 统一成 {key, text} 列表：判断题造 √ / ×，选择题用后端给的 options。 */
 const choices = computed<ChoiceItem[]>(() => {
@@ -75,13 +97,16 @@ const metaTags = computed<string[]>(() => {
 const isUnmapped = computed<boolean>(() => !props.question.kp_id)
 
 function handleSelect(key: string): void {
-  if (props.locked) return
+  if (optionsDisabled.value) return
   emit('select', key)
 }
 
 /** 选项按钮配色：选中蓝，锁定后灰，其余白。 */
 function optionClass(key: string): string {
   const active = props.selected === key
+  if (optionsDisabled.value) {
+    return 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+  }
   if (active) {
     return props.locked
       ? 'border-brand-500 bg-brand-50 text-brand-700'
@@ -98,6 +123,17 @@ function badgeClass(key: string): string {
     ? 'bg-brand-500 text-white'
     : 'bg-slate-100 text-slate-500'
 }
+
+/** 顶部 amber 提示文案（partial / missing 各自一套人话）。 */
+const optionsBanner = computed<string | null>(() => {
+  if (isPartial.value) {
+    return '这道题的选项不完整，做完不算分（disabled）'
+  }
+  if (isMissing.value) {
+    return '这道题没有可选项，先跳过它吧'
+  }
+  return null
+})
 </script>
 
 <template>
@@ -115,6 +151,14 @@ function badgeClass(key: string): string {
         {{ tag }}
       </span>
     </header>
+
+    <!-- P0-D：选项不完整 amber 提示（partial/missing 时显示） -->
+    <p
+      v-if="optionsBanner"
+      class="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700"
+    >
+      ⚠ {{ optionsBanner }}
+    </p>
 
     <!-- 诚实披露：这道题不计入掌握度 -->
     <p
@@ -137,7 +181,7 @@ function badgeClass(key: string): string {
         type="button"
         class="flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition"
         :class="optionClass(item.key)"
-        :disabled="locked"
+        :disabled="optionsDisabled"
         @click="handleSelect(item.key)"
       >
         <span
@@ -152,7 +196,10 @@ function badgeClass(key: string): string {
       </button>
     </div>
 
-    <p v-if="choices.length === 0" class="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500">
+    <p
+      v-if="!isMissing && choices.length === 0"
+      class="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500"
+    >
       这道题没有可选项，先跳过它吧
     </p>
   </article>

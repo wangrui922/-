@@ -34,6 +34,7 @@ import {
   type SubmitResult,
 } from '@/api/practice'
 import type { GuideMessage } from '@/types/guide'
+import type { RelaxationStep } from '@/types/practice'
 
 /** 页面三态。 */
 export type PracticePhase = 'filter' | 'doing' | 'result'
@@ -64,6 +65,15 @@ export interface PoolInfo {
   unmapped_count: number
   auto_relaxed: boolean
   requested_count: number
+  // ---- T5/T7 新增字段（设计 §3.3）----
+  /** 本轮实际抽到的题数；可能 < requested_count（少给不凑数） */
+  actual_count: number
+  /** requested_count - actual_count；>0 时前端该提示「少给几道」 */
+  miss_count: number
+  /** 实际放宽到的档位：1-3 / 6 兜底 */
+  relaxed_to_level: number
+  /** 逐档尝试记录，答题页顶部的常驻披露条直接渲染 */
+  relaxation_steps: ReadonlyArray<RelaxationStep>
 }
 
 /**
@@ -135,7 +145,16 @@ export interface PracticeState {
 const MS_PER_SEC = 1000
 
 function emptyPool(): PoolInfo {
-  return { pool_size: 0, unmapped_count: 0, auto_relaxed: false, requested_count: 0 }
+  return {
+    pool_size: 0,
+    unmapped_count: 0,
+    auto_relaxed: false,
+    requested_count: 0,
+    actual_count: 0,
+    miss_count: 0,
+    relaxed_to_level: 1,
+    relaxation_steps: [],
+  }
 }
 
 function emptyGuide(): GuideState {
@@ -371,6 +390,10 @@ export async function startPractice(params: DrawParams = {}): Promise<boolean> {
       unmapped_count: data.unmapped_count ?? 0,
       auto_relaxed: Boolean(data.auto_relaxed),
       requested_count: data.requested_count ?? data.questions.length,
+      actual_count: data.actual_count ?? data.questions.length,
+      miss_count: data.miss_count ?? Math.max(0, (data.requested_count ?? data.questions.length) - data.questions.length),
+      relaxed_to_level: data.relaxed_to_level ?? (data.auto_relaxed ? 2 : 1),
+      relaxation_steps: data.relaxation_steps ?? [],
     }
     practiceState.index = 0
     practiceState.phase = 'doing'

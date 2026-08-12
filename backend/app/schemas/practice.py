@@ -83,6 +83,16 @@ class DrawQuestionOut(PracticeBase):
     type: str = Field("", description="题型：选择/判断")
     stem: str = Field("", description="题干")
     options: List[OptionOut] = Field(default_factory=list, description="选项（判断题为空）")
+    # ★ T5/T6 新增：选项完整性枚举。前端 ``BankQuestionCard`` 按这个字段
+    # 渲染兜底态。后端 ``_options_status()`` 计算：
+    #   - "complete"  归一化后 ≥4 个选项（选择题正常态）
+    #   - "partial"   1~3 个选项（前端 disabled + amber 提示）
+    #   - "missing"   0 个选项
+    #   - "n/a"       非选择题（前端跳过 disabled 逻辑）
+    # 默认 "n/a" 保持老客户端（不读此字段）行为不变。
+    options_status: str = Field(
+        "n/a", description="选项完整性枚举：complete / partial / missing / n/a"
+    )
     difficulty: Optional[int] = Field(None, description="难度 1/3/5")
     grade: Optional[int] = Field(None, description="年级")
     edition: Optional[str] = Field(None, description="教材版本")
@@ -90,15 +100,51 @@ class DrawQuestionOut(PracticeBase):
     kp_id: Optional[str] = Field(None, description="知识点 ID，新题可能为空")
 
 
+class RelaxationStepOut(PracticeBase):
+    """抽题 6 档 fallback 的逐档尝试记录（设计 §3.2）。
+
+    字段：
+
+    * ``level``：档位编号 1/2/3（4/5 留 P2，本期不输出）；
+    * ``label``：给前端展示的人话标签，**纯展示**，不参与判分；
+    * ``pool_size``：该档候选池大小，**0 道也可写入**（让前端看到
+      「放宽到这档仍是 0 道」）；
+    * ``applied_at``：尝试时间戳；
+    * ``applied``：本档是否真的放宽过（口径与 pool_size > 0 对齐）。
+
+    整个数组按尝试顺序追加；不命中则不写该档。兜底 404 时返回空数组，
+    外层 ``relaxed_to_level`` 此时为 6。
+    """
+
+    level: int = Field(..., ge=0, description="档位编号 1/2/3/6 兜底")
+    label: str = Field("", description="人话标签")
+    pool_size: int = Field(0, ge=0, description="该档候选池大小")
+    applied_at: str = Field("", description="本次尝试的 ISO 时间戳")
+    applied: bool = Field(False, description="本档是否真的放宽过")
+
+
 class DrawResponse(PracticeBase):
-    """``/session`` 响应 data。"""
+    """``/session`` 响应 data。
+
+    ⚠️ T5/T6 新增 4 字段（设计 §1.5 / §3.3）：``actual_count`` /
+    ``miss_count`` / ``relaxed_to_level`` / ``relaxation_steps``。老客户端
+    不读新字段行为不变（响应壳里多几个字段不破）；新字段一律有默认值，
+    不会出现 KeyError。
+    """
 
     session_id: str = Field(..., description="练习会话 ID")
     questions: List[DrawQuestionOut] = Field(default_factory=list, description="本次题目")
     pool_size: int = Field(0, description="实际使用的抽题池大小")
     unmapped_count: int = Field(0, description="池中不可归因（无知识点）的题数，诚实披露")
-    auto_relaxed: bool = Field(False, description="是否自动放开到了全 L1 安全池")
+    auto_relaxed: bool = Field(False, description="是否自动放开到了非第 1 档（兼容老客户端的布尔位 = (relaxed_to_level > 1)）")
     requested_count: int = Field(0, description="请求题量（夹取后）")
+    # ---- T5/T6 新增（Q7/Q8 拍板）----
+    actual_count: int = Field(0, description="本轮实际抽到的题数（可能 < requested_count）")
+    miss_count: int = Field(0, description="requested_count - actual_count（少给不凑数）")
+    relaxed_to_level: int = Field(1, ge=1, le=6, description="实际放宽到的档位（1-3 / 6 兜底）")
+    relaxation_steps: List[RelaxationStepOut] = Field(
+        default_factory=list, description="逐档尝试记录，按尝试顺序追加"
+    )
 
 
 class SubmitResponse(PracticeBase):
@@ -189,4 +235,6 @@ __all__ = [
     "FinishResponse",
     "GuideResponse",
     "JsonDict",
-]
+    # T6 新增（设计 §3.2）
+    "RelaxationStepOut",
+]  # noqa: E501

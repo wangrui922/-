@@ -17,6 +17,8 @@
  */
 import { post } from '@/api/http'
 
+import type { OptionsStatus, RelaxationStep } from '@/types/practice'
+
 // ==================================================================== 常量
 
 /** 判分层级：规则判分可信。 */
@@ -92,6 +94,17 @@ export interface BankQuestion {
   stem: string
   /** 判断题为空数组 */
   options: BankOption[]
+  /**
+   * 选项完整性枚举（设计 §3.1）。前端 `BankQuestionCard` 按这个值渲染兜底态：
+   *
+   * - `complete`  归一化后 ≥4 个选项（正常渲染）；
+   * - `partial`   1~3 个选项 → 选项按钮 disabled + amber 提示；
+   * - `missing`   0 个选项；
+   * - `n/a`       非选择题，跳过 disabled 逻辑。
+   *
+   * 默认 `'n/a'` 让老组件（不读此字段）行为不变。
+   */
+  options_status?: OptionsStatus
   difficulty: number | null
   grade: number | null
   edition: string | null
@@ -108,10 +121,19 @@ export interface DrawResult {
   pool_size: number
   /** 池中不可归因（无知识点）的题数 —— 诚实披露，不许藏 */
   unmapped_count: number
-  /** 是否自动放开到了全 L1 安全池 —— 要提示用户 */
+  /** 是否自动放开到了非第 1 档 —— 兼容老客户端的布尔位 = (relaxed_to_level > 1) */
   auto_relaxed: boolean
   /** 请求题量（夹取后） */
   requested_count: number
+  // ---- T5/T7 新增 4 字段（设计 §3.3）----
+  /** 本轮实际抽到的题数；可能 < requested_count（少给不凑数） */
+  actual_count?: number
+  /** requested_count - actual_count；前端看到 >0 就该提示「少给几道」 */
+  miss_count?: number
+  /** 实际放宽到的档位：1-3 命中某档；6 兜底（其实不会有，因为是 404） */
+  relaxed_to_level?: number
+  /** 逐档尝试记录，前端原样逐行展示 */
+  relaxation_steps?: ReadonlyArray<RelaxationStep>
 }
 
 /** POST /practice/answer 入参。 */

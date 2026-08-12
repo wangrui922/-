@@ -56,6 +56,11 @@ const props = defineProps<{
   hasNext: boolean
   /** 引导抽屉是否正在请求（防重复点击） */
   guideLoading: boolean
+  /**
+   * 选项完整性（T8/P0-D）。partial/missing 时在结论条加一段「不计分」补充
+   * —— 设计 §1.6.5：判分后给一句解释，与 BankQuestionCard 的 amber 提示对齐。
+   */
+  optionsStatus?: 'complete' | 'partial' | 'missing' | 'n/a'
 }>()
 
 const emit = defineEmits<{
@@ -159,6 +164,13 @@ function cancelReveal(): void {
       <p class="text-base font-bold">{{ bannerTitle }}</p>
       <p v-if="bannerDetail" class="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed">
         {{ bannerDetail }}
+      </p>
+      <!-- P0-D：选项不完整时判分后给一句补充（设计 §1.6.5） -->
+      <p
+        v-if="optionsStatus === 'partial' || optionsStatus === 'missing'"
+        class="mt-2 text-xs leading-relaxed text-amber-800"
+      >
+        这题不计分，因为选项不完整
       </p>
     </div>
 

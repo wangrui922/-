@@ -44,7 +44,6 @@ import {
   goPrev,
   goTo,
   isAllAnswered,
-  isShortPool,
   markSelfCheck,
   openGuide,
   practiceState,
@@ -133,12 +132,31 @@ const deepLinkEmpty = computed<boolean>(
  * `_candidate_rows`，所以放宽**从不丢掉知识点过滤**——放宽的只是
  * 「是否只要人工核对过的题」和「是否回避最近 7 天做过的题」。
  * 也就是说指定知识点时抽到的题**必然还是这个知识点的**，说成「练了别的」是假话。
+ *
+ * T5/T10 重构期：本计算属性追加 ``relaxation_steps`` 逐行渲染（设计 §1.5），
+ * 顺序就是后端追加的顺序，每条用「第 N 档：{label}（候选 {pool_size} 道）」。
  */
 const disclosures = computed<string[]>(() => {
   const list: string[] = []
   const kp_name = deepLinkName.value
+  const steps = practiceState.pool.relaxation_steps ?? []
 
-  if (practiceState.pool.auto_relaxed) {
+  // P0-E：逐档披露（设计 §1.5 / §1.6.4）。只在实际放宽过的时候才显示当前档的 tag 行。
+  if (steps.length > 0) {
+    const top = steps[steps.length - 1]
+    if (typeof top?.level === 'number' && top.level > 1) {
+      list.push(`本次放宽到了第 ${top.level} 档`)
+    }
+    steps.forEach((step, idx) => {
+      // 只显示有内容的档；既没放宽也没候选题的档跳过（不刷屏）。
+      if ((step.applied ?? step.pool_size > 0) && step.label) {
+        list.push(`第 ${step.level} 档：${step.label}（候选 ${step.pool_size} 道）`)
+      }
+      // 避免循环内未用报错（linter 友好）
+      void idx
+    })
+  } else if (practiceState.pool.auto_relaxed) {
+    // 老后端（仅有 auto_relaxed 布尔位、没 steps 时）的兜底文案
     if (kp_name) {
       list.push(
         `「${kp_name}」能自动判分的题不多，这次有一些是你最近刚练过的，又给你抽上来了`,
@@ -148,8 +166,20 @@ const disclosures = computed<string[]>(() => {
     }
   }
 
-  // 池子比想要的题量小：后端不给任何标记，只能前端自己比对后如实说
-  if (isShortPool()) {
+  // 池子比想要的题量小：后端会给 `miss_count` > 0 标记，按设计 §1.6.4 显式提示
+  if (practiceState.pool.miss_count > 0) {
+    const size = practiceState.pool.actual_count ?? practiceState.pool.pool_size
+    if (kp_name) {
+      list.push(`「${kp_name}」现在只有 ${size} 道能自动判分的题，这次就先练这 ${size} 道`)
+    } else {
+      list.push(`这个条件下只凑齐了 ${size} 道题，比你要的少一些`)
+    }
+  } else if (
+    practiceState.pool.pool_size > 0 &&
+    practiceState.pool.requested_count > 0 &&
+    practiceState.pool.pool_size < practiceState.pool.requested_count
+  ) {
+    // 兼容老后端：仅有 pool_size / requested_count，没 miss_count
     const size = practiceState.pool.pool_size
     if (kp_name) {
       list.push(`「${kp_name}」现在只有 ${size} 道能自动判分的题，这次就先练这 ${size} 道`)
@@ -168,6 +198,20 @@ const disclosures = computed<string[]>(() => {
   }
   return list
 })
+
+/** 当前题 options_status 决定了提交按钮是否要 disabled（P0-D）。
+ *
+ * 用类型守卫落到受约束的联合类型上，避免 BankQuestionCard 报错。
+ */
+const currentOptionsStatus = computed<'complete' | 'partial' | 'missing' | 'n/a'>(() => {
+  const v = question.value?.options_status ?? 'n/a'
+  return v === 'complete' || v === 'partial' || v === 'missing' || v === 'n/a'
+    ? v
+    : 'n/a'
+})
+const submitDisabledByOptions = computed<boolean>(
+  () => currentOptionsStatus.value === 'partial' || currentOptionsStatus.value === 'missing',
+)
 
 /** 题号导航的圆点样式。 */
 function dotClass(idx: number): string {
@@ -214,6 +258,28 @@ function handleFinish(): void {
 
 function handleAgain(): void {
   void restartSame()
+}
+
+/**
+ * T10：薄弱点一键再练。跳到 `/practice?kp_id=...&kp_name=...`，
+ * 由 `consumeDeepLink()` 接住并直接调 `startDeepLink()` 开练。
+ *
+ * 这里**重新走一遍路由**而不是直调 `startPractice`：因为页面已经处于
+ * `result` 阶段，状态需要先回到 `filter`/`doing` 才不会撞残留 state。
+ */
+function handleRePractice(payload: { kp_id: string; kp_name: string }): void {
+  void router
+    .push({
+      name: 'practice',
+      query: {
+        kp_id: payload.kp_id,
+        kp_name: payload.kp_name,
+      },
+    })
+    .then(() => {
+      // consumeDeepLink() 在 onMounted 跑了，但路由 query 变化不会自动再跑；这里手补一次
+      consumeDeepLink()
+    })
 }
 
 function handleBack(): void {
@@ -480,10 +546,10 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="btn-primary h-14 w-full text-lg"
-            :disabled="practiceState.submitting || !selected"
+            :disabled="practiceState.submitting || !selected || submitDisabledByOptions"
             @click="handleSubmit"
           >
-            {{ practiceState.submitting ? '提交中…' : '提交这道题' }}
+            {{ practiceState.submitting ? '提交中…' : submitDisabledByOptions ? '这道题选项不完整，做完不算分' : '提交这道题' }}
           </button>
           <div class="flex gap-3">
             <button
@@ -511,6 +577,7 @@ onBeforeUnmount(() => {
           :self-check="selfCheck"
           :has-next="hasNext"
           :guide-loading="practiceState.guide.loading"
+          :options-status="currentOptionsStatus"
           @guide="handleGuide"
           @reveal="handleReveal"
           @self-check="handleSelfCheck"
@@ -564,6 +631,7 @@ onBeforeUnmount(() => {
           @back="handleBack"
           @retry="handleFinish"
           @mistakes="handleGoMistakes"
+          @re-practice="handleRePractice"
         />
       </template>
     </div>
