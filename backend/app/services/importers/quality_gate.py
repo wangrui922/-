@@ -154,6 +154,50 @@ def validate_choice_options(
     return True
 
 
+def validate_question_integrity(
+    q_type: Optional[str],
+    options: Any = None,
+    correct_answer: Optional[str] = None,
+) -> List[str]:
+    """入库完整性卡口（防新增死题）。
+
+    与批处理归档脚本共用 ``judge_engine`` 的解析函数（单点真相），命中任一即判
+    ``review``（落 ``archived``），从源头杜绝「缺题型 / 缺答案 / 答案无法解析」的
+    死题混进 ``active`` 推荐池。
+
+    判定（与 ``20260812_archive_dead_inventory.py`` 口径一致）：
+      * 题型缺失（``q_type`` 为空）→ 无法渲染/筛选；
+      * 答案缺失（``correct_answer`` 为空）→ 永远判不了分；
+      * 选择题 ``correct_answer`` 抽不出合法键位；
+      * 判断题 ``correct_answer`` 无法归一成布尔。
+
+    Args:
+        q_type: 题型（``选择`` / ``判断`` / ``填空`` / ``计算`` / ``应用`` / ``图形``）。
+        options: 选择题选项（dict / list / None）。
+        correct_answer: 标准答案。
+
+    Returns:
+        原因列表；空列表代表可入库。
+    """
+    reasons: List[str] = []
+    if not (q_type or "").strip():
+        reasons.append("题型缺失")
+    if not (correct_answer or "").strip():
+        reasons.append("正确答案缺失")
+    else:
+        t = (q_type or "").strip()
+        if t == "选择":
+            keys = judge_engine.option_keys(_coerce_options(options))
+            if judge_engine.extract_choice_key(
+                correct_answer, allowed=tuple(keys) if keys else None
+            ) is None:
+                reasons.append("选择题正确答案无法解析")
+        elif t == "判断":
+            if judge_engine.normalize_judge_value(correct_answer) is None:
+                reasons.append("判断题正确答案无法解析")
+    return reasons
+
+
 def choice_options_reasons(
     options: Any,
     correct_answer: Optional[str] = None,
@@ -364,6 +408,7 @@ __all__ = [
     "REQUIRED_CHOICE_KEYS",
     "STRICT_ABCD",
     "validate_choice_options",
+    "validate_question_integrity",
     "choice_options_reasons",
     "normalize",
     "has_chinese",

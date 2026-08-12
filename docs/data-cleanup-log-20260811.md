@@ -1111,3 +1111,51 @@
 - CSV：D:\制作网页\cuotixiaolaoshi\docs\residual-choice-patched-20260812.csv
 - 不动字段：correct_answer
 
+## 死题批量归档（有问题的题都剔除）
+
+- 脚本：scripts/data_cleanup/20260812_archive_dead_inventory.py
+- 时间：2026-08-12T12:04:48.862081+00:00
+- 模式：dry-run
+- 扫描：active 题 1397 道
+- 命中归档：362 道
+- 原因分布：{'dead_no_answer': 116, 'dead_no_type': 243, 'dead_broken_answer': 3}
+- 期望核对：未设（跳过熔断）
+- 备份表：questions_removed_backup_20260812_opt
+- CSV：（未写出）
+
+## 死题批量归档（有问题的题都剔除）
+
+- 脚本：scripts/data_cleanup/20260812_archive_dead_inventory.py
+- 时间：2026-08-12T12:05:23.444543+00:00
+- 模式：实际执行
+- 扫描：active 题 1397 道
+- 命中归档：362 道
+- 原因分布：{'dead_no_answer': 116, 'dead_no_type': 243, 'dead_broken_answer': 3}
+- 期望核对：--expect 362
+- 备份表：questions_removed_backup_20260812_opt
+- CSV：D:\制作网页\cuotixiaolaoshi\docs\dead-inventory-removed-20260812.csv
+
+## 死题批量归档（有问题的题都剔除）
+
+- 脚本：scripts/data_cleanup/20260812_archive_dead_inventory.py
+- 时间：2026-08-12T12:05:38.220419+00:00
+- 模式：dry-run
+- 扫描：active 题 1035 道
+- 命中归档：0 道
+- 原因分布：{}
+- 期望核对：未设（跳过熔断）
+- 备份表：questions_removed_backup_20260812_opt
+- CSV：（未写出）
+
+## 死题批量归档（有问题的题都剔除）
+
+- 脚本：scripts/data_cleanup/20260812_archive_dead_inventory.py
+- 时间：2026-08-12T14:59:59.188058+00:00
+- 模式：dry-run
+- 扫描：active 题 1035 道
+- 命中归档：0 道
+- 原因分布：{}
+- 期望核对：未设（跳过熔断）
+- 备份表：questions_removed_backup_20260812_opt
+- CSV：（未写出）
+

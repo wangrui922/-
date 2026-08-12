@@ -122,5 +122,9 @@ backend/repro_500.py
 backend/dev.db-shm.bak-*
 backend/dev.db-wal.bak-*
 
-# pytest è¿è¡Œæ—¶ä¸´æ—¶ç›®å½•ï¼ˆæµ‹è¯•äº§ç”Ÿï¼Œä¸å…¥åº“ï¼‰
+# pytest è¿è¡Œæ—¶ä¸´æ—¶ç›®å½•ï¼ˆæµ‹è¯•äº§ç”Ÿï¼Œä¸å…¥åº“ï¼?
 backend/.pytest-tmp/
+
+# 2026-08-12 ËÀÌâÖÎÀí£ºÒ»´ÎĞÔÉó¼Æ½Å±¾ÓëÀä±¸£¨±£Áô´ÅÅÌ£¬²»Èë¿â£©
+_dbbackups/
+backend/scripts/_audit_*.py

@@ -41,6 +41,7 @@ from app.models.content import (
 from app.services.importers.quality_gate import (
     VERDICT_CLEAN,
     classify_question,
+    validate_question_integrity,
 )
 from app.services.importers.schema import LoadStats, ParsedQuestion, ParseOutcome
 
@@ -146,9 +147,16 @@ def _upsert_question(
             q_type=parsed.q_type,
             options=parsed.options,
         )
+        # 防新增死题卡口：缺题型/缺答案/选择·判断答案无法解析的题强制 review。
+        # 与批处理归档脚本共用 judge_engine 口径（单点真相），不各自判断。
+        integrity_reasons = validate_question_integrity(
+            parsed.q_type, parsed.options, parsed.correct_answer
+        )
+        all_reasons = reasons + integrity_reasons
     else:
         verdict, reasons = VERDICT_CLEAN, []
-    is_clean = verdict == VERDICT_CLEAN
+        all_reasons = []
+    is_clean = verdict == VERDICT_CLEAN and not integrity_reasons
     target_status = QUESTION_STATUS_ACTIVE if is_clean else QUESTION_STATUS_ARCHIVED
 
     qid = question_uuid(parsed.stable_key)
@@ -199,7 +207,7 @@ def _upsert_question(
         else:
             stats.gated_review += 1
 
-    return qid, verdict, reasons
+    return qid, verdict, all_reasons
 
 
 def _upsert_answer(
