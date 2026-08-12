@@ -128,3 +128,6 @@ backend/.pytest-tmp/
 # 2026-08-12 死题治理：一次性审计脚本与冷备（保留磁盘，不入库）
 _dbbackups/
 backend/scripts/_audit_*.py
+
+# 后端进程守护启动器日志目录（start_server.ps1 自动生成）
+backend/logs/

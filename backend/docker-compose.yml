@@ -1,0 +1,34 @@
+# AI Math Coach backend - docker compose (reserved for cloud deployment).
+# Local Windows dev uses start_server.bat; this file is for when you move to a
+# Linux server or cloud VM.  Usage:
+#   cd backend
+#   docker compose up -d --build
+#   docker compose logs -f
+#   docker compose down
+#
+# The SQLite database is stored in a mounted ./data directory (not a file
+# mount) to avoid Docker's "mounting a non-existent file creates a directory"
+# gotcha.  The app auto-creates tables on first boot if dev.db is absent.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-math-coach-backend
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      # persist the SQLite database directory (dev.db + WAL/SHM all live here)
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    environment:
+      # point the app at the mounted data dir; app auto-creates dev.db on boot
+      - DATABASE_URL=sqlite:////app/data/dev.db
+      - TZ=Asia/Shanghai
