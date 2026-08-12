@@ -1,0 +1,40 @@
+classDiagram
+    class quality_gate {
+        +REQUIRED_CHOICE_KEYS: frozenset
+        +STRICT_ABCD: bool
+        +validate_choice_options(options, correct_answer=None) bool
+        +choice_options_reasons(options, correct_answer=None) List~str~
+        +classify_question(content, answer, *, q_type, options) Tuple
+    }
+    class judge_engine {
+        +normalize_options(options) List~OptionItem~
+        +option_keys(options) List~str~
+        +extract_choice_key(raw, allowed) str
+        +is_l1_safe(type, options, answer) bool
+    }
+    class loader {
+        +_upsert_question(session, parsed, outcome, stats, is_new_bank) Tuple
+    }
+    class _residual_common {
+        +dumps_like_ormtype(value) str
+        +ensure_removed_backup(conn, reason, rows) int
+        +export_removed_csv(path, rows) void
+        +resolve_uuid_prefix(conn, prefix) str
+    }
+    class Question {
+        +id: UUID
+        +options: Any
+        +status: str
+        +kp_id: UUID
+    }
+    class Answer {
+        +question_id: UUID
+        +correct_answer: str
+    }
+    quality_gate ..> judge_engine : 归一真相源
+    loader ..> quality_gate : 入库卡口调用
+    _residual_common ..> Question : 备份/导出
+    20260812_fix_screenshot_four ..> _residual_common
+    20260812_archive_residual_choices ..> _residual_common
+    20260812_archive_residual_choices ..> quality_gate : validate_choice_options
+    Question "1" --> "1" Answer

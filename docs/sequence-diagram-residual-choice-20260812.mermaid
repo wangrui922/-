@@ -1,0 +1,36 @@
+sequenceDiagram
+    autonumber
+    participant Dev as 运维/CI
+    participant Fix as 20260812_fix_screenshot_four.py (T02)
+    participant Arc as 20260812_archive_residual_choices.py (T03)
+    participant QG as quality_gate.validate_choice_options
+    participant JE as judge_engine.normalize_options
+    participant DB as questions (dev.db)
+    participant BK as 备份表+CSV
+    participant Loader as loader._upsert_question (P1 卡口)
+    participant Imp as docx importer
+
+    Note over Dev,DB: === 存量止血（批处理轨）===
+    Dev->>Fix: 运行 --dry-run → 确认 3 补 1 归档
+    Fix->>DB: resolve_uuid_prefix(LIKE '9a4f1461%')
+    Fix->>DB: UPDATE options(JSONObject+={'D':值}) 保留 A|B|C
+    Fix->>DB: UPDATE status='archived' WHERE 9cf5259e
+    Fix->>BK: 写 options_backup_20260812 + CSV
+
+    Dev->>Arc: 运行 --dry-run --expect 312
+    Arc->>DB: SELECT active 选择题
+    Arc->>JE: normalize_options(options)
+    Arc->>QG: validate_choice_options(opts) -- 不传答案
+    QG-->>Arc: False（缺 D）→ 累加命中
+    Note over Arc: 命中 312 且偏差≤5% 才放行
+    Arc->>DB: UPDATE status='archived' WHERE id IN(...)
+    Arc->>BK: INSERT removed_backup(reason=residual_choice_missing_abcd)
+    Arc->>BK: 导出 residual-choice-removed-20260812.csv
+
+    Note over Dev,Imp: === 增量防御（闸门轨，P1）===
+    Imp->>Loader: load_outcome() 逐题 _upsert_question
+    Loader->>QG: classify_question(..., q_type, options)
+    QG->>JE: normalize_options(options)
+    QG-->>Loader: VERDICT_REVIEW + reasons（缺选项）
+    Loader->>DB: status='archived'（拒绝进 active 池）
+    Note over Loader: 新题残缺即落档，杜绝新增
