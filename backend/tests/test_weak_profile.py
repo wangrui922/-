@@ -82,12 +82,12 @@ def _seed_mistakes_for(student_id: uuid.UUID, *pairs: Tuple[Optional[str], int])
 
 
 def _auth(client, phone: str) -> Tuple[Dict[str, str], uuid.UUID]:
-    """dev 万能码登录，返回 ``(请求头, 学生 uuid)``。"""
-    resp = client.post("/api/auth/login", json={"phone": phone, "code": "000000"})
-    assert resp.status_code == 200, resp.text
-    data = resp.json()["data"]
+    """随机验证码登录，返回 ``(请求头, 学生 uuid)``。"""
+    from conftest import login_with_code
+
+    data = login_with_code(client, phone)
     student_id = data["user"]["studentId"]
-    assert student_id, f"dev 登录应自动建学生档案，studentId 不应为空: {data}"
+    assert student_id, f"登录应自动建学生档案，studentId 不应为空: {data}"
     return {"Authorization": f"Bearer {data['access']}"}, uuid.UUID(str(student_id))
 
 

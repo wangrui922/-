@@ -1,6 +1,6 @@
-"""鉴权接口（T02 · 2.1）。
+"""鉴权接口。
 
-    POST /api/auth/code     下发验证码（V4.1 mock 通道，只打日志）
+    POST /api/auth/code     下发验证码（随机 6 位，5min 过期；dev 环境回带方便自测）
     POST /api/auth/login    手机号 + 验证码登录，首次登录自动建号
     POST /api/auth/refresh  用 refresh 换新令牌
     GET  /api/auth/me       当前登录态自检（受保护，无 token 返 401）
@@ -8,7 +8,9 @@
 硬约定：
     * 响应恒为 ``{"code":0,"msg":"ok","data":{}}``，失败由 ``ApiError`` 经全局 handler 转换；
     * access 2h / refresh 30d，HS256，payload ``{sub: user_id, role, sid: student_id|null}``；
-    * **dev 环境万能码 ``000000``**（``settings.dev_sms_code``），无短信通道也能联调。
+    * 验证码为随机 6 位数字，5 分钟过期，一次性使用；
+    * dev 环境 ``/api/auth/code`` 返回体带 ``devCode`` 字段回传验证码方便前端自测；
+    * 限流：发码 60s 冷却 + 1h 5 次；登录 15min 10 次。
 """
 
 from __future__ import annotations
@@ -27,9 +29,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/code")
 async def send_code(payload: SendCodeIn, db: Session = Depends(get_db)) -> dict:
-    """下发登录验证码。
+    """下发验证码。
 
-    V4.1 未接真实短信：mock 通道只打日志，dev 环境直接回带万能码方便前端自测。
+    随机 6 位验证码，5 分钟过期。dev 环境回带 ``devCode`` 方便前端自测。
+    限流：同一手机号 60s 冷却 + 1h 最多 5 次。
     """
     return ok(auth_service.send_login_code(payload.phone))
 

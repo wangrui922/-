@@ -1,15 +1,19 @@
-"""登录与令牌服务（T02 · 2.1）。
+"""登录与令牌服务。
 
 流程（``POST /api/auth/login``）：
     1. 校验手机号格式（非法 → 400）；
-    2. 校验验证码：
-       - dev / test 环境且 code == ``settings.dev_sms_code``（默认 ``000000``）→ 直接放行；
-       - 否则交给 ``app.services.sms``（V4.1 未接真通道，非 mock 会抛 NotImplementedError → 500）；
+    2. 限流检查（15min 内登录尝试上限）；
+    3. 校验验证码：
+       - ``sms.verify_code`` 校验内存中的随机验证码；
        - 校验不通过 → 401；
-    3. 首次登录自动建账号：``users(role=student)`` + ``students`` + ``student_profile``；
-    4. 签发 access(2h) / refresh(30d)，payload ``{sub: user_id, role, sid: student_id|null}``。
+    4. 首次登录自动建账号：``users(role=student)`` + ``students`` + ``student_profile``；
+    5. 签发 access(2h) / refresh(30d)，payload ``{sub: user_id, role, sid: student_id|null}``。
 
 事务：本模块只 ``flush``，``commit`` 交给 ``app.db.get_db`` 依赖收口。
+
+安全改进（P0-3）：
+    * 废弃固定万能码 ``000000``，改用随机 6 位验证码（5 分钟过期，一次性）；
+    * 新增限流：发码 60s 冷却 + 1h 5 次；登录 15min 10 次。
 """
 
 from __future__ import annotations
@@ -22,7 +26,23 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.response import ApiError, CODE_BAD_REQUEST, CODE_FORBIDDEN, CODE_SERVER_ERROR, CODE_UNAUTHORIZED
+from app.core.ratelimit import (
+    LOGIN_ATTEMPT_MAX,
+    LOGIN_ATTEMPT_SEC,
+    SEND_CODE_COOLDOWN_SEC,
+    SEND_CODE_HOURLY_MAX,
+    SEND_CODE_HOURLY_SEC,
+    code_send_limiter,
+    login_attempt_limiter,
+)
+from app.core.response import (
+    ApiError,
+    CODE_BAD_REQUEST,
+    CODE_FORBIDDEN,
+    CODE_SERVER_ERROR,
+    CODE_TOO_MANY_REQUESTS,
+    CODE_UNAUTHORIZED,
+)
 from app.core.security import (
     ROLE_STUDENT,
     TOKEN_TYPE_REFRESH,
@@ -47,14 +67,6 @@ USER_STATUS_FROZEN: str = "frozen"
 
 
 # ==================================================================== 验证码
-def _is_dev_bypass(code: str) -> bool:
-    """dev/test 环境的万能码放行判定。"""
-    if not settings.is_dev:
-        return False
-    expected = (settings.dev_sms_code or "").strip()
-    return bool(expected) and (code or "").strip() == expected
-
-
 def verify_login_code(phone: str, code: str) -> None:
     """校验登录验证码，不通过直接抛 ``ApiError``。
 
@@ -65,18 +77,29 @@ def verify_login_code(phone: str, code: str) -> None:
     Raises:
         ApiError: 401 验证码错误；500 短信通道未接入。
     """
-    if _is_dev_bypass(code):
-        logger.info("[auth] dev 万能码放行: phone=%s", phone)
-        return
-
     try:
         passed = sms.verify_code(phone, code)
     except NotImplementedError as exc:
         logger.error("[auth] 短信通道未接入: %s", exc)
-        raise ApiError(CODE_SERVER_ERROR, "短信验证码服务尚未接入，请使用开发环境万能码登录") from exc
+        raise ApiError(CODE_SERVER_ERROR, "短信验证码服务尚未接入") from exc
 
     if not passed:
         raise ApiError(CODE_UNAUTHORIZED, "验证码错误或已失效")
+
+
+# ==================================================================== 限流
+def _check_send_rate(phone: str) -> None:
+    """发码限流：60s 冷却 + 1h 5 次。超限抛 429。"""
+    if not code_send_limiter.check(f"cooldown:{phone}", 1, SEND_CODE_COOLDOWN_SEC):
+        raise ApiError(CODE_TOO_MANY_REQUESTS, f"操作过于频繁，请 {SEND_CODE_COOLDOWN_SEC} 秒后再试")
+    if not code_send_limiter.check(f"hourly:{phone}", SEND_CODE_HOURLY_MAX, SEND_CODE_HOURLY_SEC):
+        raise ApiError(CODE_TOO_MANY_REQUESTS, "验证码请求次数过多，请稍后再试")
+
+
+def _check_login_rate(phone: str) -> None:
+    """登录限流：15min 10 次。超限抛 429。"""
+    if not login_attempt_limiter.check(f"login:{phone}", LOGIN_ATTEMPT_MAX, LOGIN_ATTEMPT_SEC):
+        raise ApiError(CODE_TOO_MANY_REQUESTS, "登录尝试过于频繁，请 15 分钟后再试")
 
 
 # ==================================================================== 账号
@@ -212,18 +235,20 @@ def login_by_code(session: Session, phone: str, code: str) -> Dict[str, Any]:
     Args:
         session: 数据库会话。
         phone: 手机号。
-        code: 验证码（dev 环境用 ``000000``）。
+        code: 验证码（通过 ``/api/auth/code`` 获取）。
 
     Returns:
         ``{access, refresh, accessToken, refreshToken, tokenType, expiresIn, isNewUser, user}``。
 
     Raises:
-        ApiError: 400 手机号非法；401 验证码错误；403 账号冻结；500 短信通道未接入。
+        ApiError: 400 手机号非法；401 验证码错误；403 账号冻结；
+                  429 频率超限；500 短信通道未接入。
     """
     normalized_phone = (phone or "").strip()
     if not sms.is_valid_phone(normalized_phone):
         raise ApiError(CODE_BAD_REQUEST, "手机号格式不正确")
 
+    _check_login_rate(normalized_phone)
     verify_login_code(normalized_phone, code)
 
     user, student, is_new = get_or_create_user(session, normalized_phone)
@@ -271,29 +296,40 @@ def refresh_tokens(session: Session, refresh_token: str) -> Dict[str, Any]:
 
 
 def send_login_code(phone: str) -> Dict[str, Any]:
-    """下发登录验证码（V4.1 mock 通道只打日志）。
+    """下发登录验证码。
+
+    限流：60s 冷却 + 1h 5 次。
+    dev 环境：通过 ``sms.get_last_sent_code()`` 拿到随机码回传前端，方便自测。
+    生产环境：不回传验证码（需接真短信通道）。
 
     Args:
         phone: 手机号。
 
     Returns:
-        ``{"sent": bool, "devCode": str|None}``；dev 环境回带万能码方便自测。
+        ``{"sent": bool, "devCode": str|None}``；dev 环境回带验证码方便自测。
 
     Raises:
-        ApiError: 400 手机号非法；500 通道未接入。
+        ApiError: 400 手机号非法；429 频率超限；500 通道未接入。
     """
     normalized_phone = (phone or "").strip()
     if not sms.is_valid_phone(normalized_phone):
         raise ApiError(CODE_BAD_REQUEST, "手机号格式不正确")
 
+    _check_send_rate(normalized_phone)
+
     try:
         sent = sms.send_code(normalized_phone)
     except NotImplementedError as exc:
-        raise ApiError(CODE_SERVER_ERROR, "短信验证码服务尚未接入，请使用开发环境万能码登录") from exc
+        raise ApiError(CODE_SERVER_ERROR, "短信验证码服务尚未接入") from exc
+
+    # dev 环境回带随机验证码，前端自动填充
+    dev_code: Optional[str] = None
+    if settings.is_dev and sent:
+        dev_code = sms.get_last_sent_code(normalized_phone)
 
     return {
         "sent": bool(sent),
-        "devCode": settings.dev_sms_code if settings.is_dev else None,
+        "devCode": dev_code,
     }
 
 

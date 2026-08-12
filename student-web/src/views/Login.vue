@@ -1,12 +1,14 @@
 <script setup lang="ts">
 /**
- * 登录页：手机号 + 验证码（dev 万能码 000000）。
+ * 登录页：手机号 + 验证码。
  *
  * 契约（backend/app/api/auth.py）：
  *   POST /api/auth/code   { phone }        -> { sent, devCode }
  *   POST /api/auth/login  { phone, code }  -> { access, refresh, accessToken,
  *                                               refreshToken, tokenType, expiresIn,
  *                                               isNewUser, user: { userId, studentId, ... } }
+ *
+ * 验证码为随机 6 位数字（5min 过期）；dev 环境 /api/auth/code 回带 devCode 自动填充。
  */
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -42,7 +44,7 @@ const router = useRouter()
 const route = useRoute()
 
 const phone = ref<string>('')
-const code = ref<string>('000000') // dev 万能码，直接预填方便联调
+const code = ref<string>('') // 验证码（dev 环境自动填充）
 const loading = ref<boolean>(false)
 const sending = ref<boolean>(false)
 const errorMsg = ref<string>('')
@@ -53,7 +55,7 @@ const canSubmit = computed<boolean>(
   () => phoneValid.value && code.value.trim().length > 0 && !loading.value,
 )
 
-/** 下发验证码（V4.1 mock 通道，dev 环境直接回带万能码）。 */
+/** 下发验证码（随机 6 位，5min 过期；dev 环境回带 devCode 自动填充）。 */
 async function handleSendCode(): Promise<void> {
   if (!phoneValid.value || sending.value) return
   sending.value = true
@@ -137,7 +139,7 @@ async function handleLogin(): Promise<void> {
             type="text"
             inputmode="numeric"
             maxlength="6"
-            placeholder="开发环境用 000000"
+            placeholder="请输入验证码"
             class="h-12 min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 text-base outline-none focus:border-brand-500 focus:bg-white"
           />
           <button

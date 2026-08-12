@@ -14,11 +14,11 @@ class LoginIn(BaseSchema):
 
     Attributes:
         phone: 手机号（中国大陆 11 位）。
-        code: 短信验证码；dev 环境用万能码 ``000000``。
+        code: 验证码（通过 ``/api/auth/code`` 获取，6 位数字）。
     """
 
     phone: str = Field(..., min_length=1, max_length=20, description="手机号")
-    code: str = Field(..., min_length=1, max_length=10, description="验证码，dev 环境用 000000")
+    code: str = Field(..., min_length=1, max_length=10, description="验证码")
 
 
 class SendCodeIn(BaseSchema):
@@ -75,7 +75,7 @@ class SendCodeOut(BaseSchema):
     """验证码下发结果。"""
 
     sent: bool = Field(..., description="是否已下发")
-    dev_code: Optional[str] = Field(default=None, description="dev 环境万能码，生产为 null")
+    dev_code: Optional[str] = Field(default=None, description="dev 环境回带验证码，生产为 null")
 
 
 __all__ = [

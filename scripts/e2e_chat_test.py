@@ -7,9 +7,13 @@ BASE = "http://127.0.0.1:5173"
 
 def main():
     with httpx.Client(timeout=120.0) as c:
-        # 1) Login (dev 万能码)
+        # 1) Login（随机验证码：先发码拿 devCode，再登录）
+        phone = "13800000099"
+        r = c.post(f"{BASE}/api/auth/code", json={"phone": phone})
+        print("SEND-CODE", r.status_code, r.text[:200])
+        dev_code = r.json()["data"]["devCode"]
         r = c.post(f"{BASE}/api/auth/login",
-                   json={"phone": "13800000099", "code": "000000"})
+                   json={"phone": phone, "code": dev_code})
         print("LOGIN", r.status_code, r.text[:200])
         tok = r.json()["data"]["access"]
         hdr = {"Authorization": f"Bearer {tok}"}

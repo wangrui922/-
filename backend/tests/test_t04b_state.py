@@ -23,8 +23,10 @@ SAMPLE_QUESTION: str = "解方程：2x + 3 = 7"
 
 # ------------------------------------------------------------------ 公共工具
 def _auth(client) -> Tuple[Dict[str, str], uuid.UUID]:
-    resp = client.post("/api/auth/login", json={"phone": "13800000000", "code": "000000"})
-    data = resp.json()["data"]
+    """随机验证码登录，返回 ``(请求头, 学生 uuid)``。"""
+    from conftest import login_with_code
+
+    data = login_with_code(client)
     sid = uuid.UUID(str(data["user"]["studentId"]))
     return {"Authorization": f"Bearer {data['access']}"}, sid
 

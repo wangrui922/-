@@ -84,10 +84,10 @@ class VerdictFakeArk(FakeArk):
 
 # ==================================================================== 公共工具
 def _login(client, phone: str) -> Dict[str, Any]:
-    """dev 万能码登录，返回登录响应的 ``data``（首次登录自动建号 + 建学生档案）。"""
-    resp = client.post("/api/auth/login", json={"phone": phone, "code": "000000"})
-    assert resp.status_code == 200, resp.text
-    return resp.json()["data"]
+    """随机验证码登录，返回登录响应的 ``data``（首次登录自动建号 + 建学生档案）。"""
+    from conftest import login_with_code
+
+    return login_with_code(client, phone)
 
 
 def _auth(client, phone: str) -> Tuple[Dict[str, str], uuid.UUID]:

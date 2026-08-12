@@ -35,6 +35,13 @@ _LOCAL_ORIGINS = [
 
 def create_app() -> FastAPI:
     """工厂函数：构建并装配 FastAPI 应用。"""
+    # ---- 生产环境安全检查 ----------------------------------------------
+    if not settings.jwt_secret_safe:
+        raise RuntimeError(
+            "生产环境 (APP_ENV=prod) 必须设置安全的 JWT_SECRET "
+            "（至少 16 字符，不能使用默认值）。请在环境变量或 .env 中配置。"
+        )
+
     app = FastAPI(
         title="AI 数学教练",
         version="4.1",

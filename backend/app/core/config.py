@@ -75,7 +75,8 @@ class Settings(BaseSettings):
 
     # ---------- 短信 ----------
     sms_provider: str = "mock"
-    dev_sms_code: str = "000000"
+    # dev_sms_code 已废弃：验证码改为随机生成，不再使用固定万能码
+    dev_sms_code: str = ""
 
     # ---------------------------------------------------------------- 派生属性
     @property
@@ -93,6 +94,13 @@ class Settings(BaseSettings):
     @property
     def is_prod(self) -> bool:
         return self.app_env.lower() in {"prod", "production"}
+
+    @property
+    def jwt_secret_safe(self) -> bool:
+        """生产环境检查 JWT secret 是否安全（非默认值）。"""
+        if not self.is_prod:
+            return True
+        return self.jwt_secret != "dev-secret-change-me" and len(self.jwt_secret) >= 16
 
     @property
     def storage_path(self) -> Path:

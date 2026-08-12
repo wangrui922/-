@@ -32,10 +32,10 @@ SAMPLE_QUESTION: str = "解方程：2x + 3 = 7"
 
 # ------------------------------------------------------------------ 公共工具
 def _login(client) -> Dict[str, Any]:
-    """dev 万能码登录，返回登录响应的 ``data``（自动建号 + 建学生档案）。"""
-    resp = client.post("/api/auth/login", json={"phone": "13800000000", "code": "000000"})
-    assert resp.status_code == 200, resp.text
-    return resp.json()["data"]
+    """随机验证码登录，返回登录响应的 ``data``（自动建号 + 建学生档案）。"""
+    from conftest import login_with_code
+
+    return login_with_code(client)
 
 
 def _auth(client) -> Tuple[Dict[str, str], uuid.UUID]:

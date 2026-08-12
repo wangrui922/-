@@ -30,13 +30,16 @@ from app.models.student_mastery import StudentMastery
 # 直接复用 T03 的断言与插桩，保持全项目一套口径
 from t03_helpers import assert_fail, assert_ok, patch_ark  # noqa: F401
 
-#: dev 万能验证码（``settings.dev_sms_code``）
-DEV_CODE = "000000"
+#: 验证码已改为随机生成，DEV_CODE 保留仅为向后兼容引用
+DEV_CODE = ""
 
 
 # ==================================================================== 登录
 def login(client, phone: str = "13800000000") -> Tuple[Dict[str, str], uuid.UUID]:
-    """dev 万能码登录，返回 ``(请求头, 学生 uuid)``。
+    """随机验证码登录，返回 ``(请求头, 学生 uuid)``。
+
+    流程：发码 → 取 devCode → 登录。
+    需在 conftest ``_reset_rate_limiters`` autouse fixture 作用下使用。
 
     Args:
         client: ``TestClient``。
@@ -45,11 +48,18 @@ def login(client, phone: str = "13800000000") -> Tuple[Dict[str, str], uuid.UUID
     Returns:
         ``({"Authorization": "Bearer ..."}, student_id)``。
     """
-    resp = client.post("/api/auth/login", json={"phone": phone, "code": DEV_CODE})
-    assert resp.status_code == 200, resp.text
+    # 发码
+    resp = client.post("/api/auth/code", json={"phone": phone})
+    assert resp.status_code == 200, f"发码失败: {resp.text}"
+    code = resp.json()["data"].get("devCode")
+    assert code, f"dev 环境应回带验证码: {resp.text}"
+
+    # 登录
+    resp = client.post("/api/auth/login", json={"phone": phone, "code": code})
+    assert resp.status_code == 200, f"登录失败: {resp.text}"
     data = resp.json()["data"]
     student_id = data["user"]["studentId"]
-    assert student_id, f"dev 登录应自动建学生档案: {data}"
+    assert student_id, f"登录应自动建学生档案: {data}"
     return {"Authorization": f"Bearer {data['access']}"}, uuid.UUID(str(student_id))
 
 

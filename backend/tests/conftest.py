@@ -16,7 +16,7 @@ import os
 # ⚠️ 必须最先执行：在 import app 任何模块前固定测试库为内存 SQLite
 os.environ["DATABASE_URL"] = os.environ.get("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("JWT_SECRET", "test-secret-do-not-use-in-prod")
-os.environ.setdefault("ENVIRONMENT", "test")
+os.environ.setdefault("APP_ENV", "test")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -26,6 +26,22 @@ from app.core.security import (  # noqa: E402
     create_access_token,
 )
 from app.main import app  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """每个测试前清空限流器和验证码存储，避免跨用例相互限流。"""
+    from app.core.ratelimit import code_send_limiter, login_attempt_limiter
+    from app.services.sms import MockSmsProvider
+
+    code_send_limiter.clear_all()
+    login_attempt_limiter.clear_all()
+    MockSmsProvider._reset()
+    yield
+    # 测试结束后也清一次，防止状态泄漏
+    code_send_limiter.clear_all()
+    login_attempt_limiter.clear_all()
+    MockSmsProvider._reset()
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -108,4 +124,22 @@ def new_phone():
     return _make
 
 
-__all__ = ["client", "make_token", "auth_headers", "new_phone", "_create_schema"]
+__all__ = ["client", "make_token", "auth_headers", "new_phone", "_create_schema", "login_with_code"]
+
+
+def login_with_code(client: TestClient, phone: str = "13800000000") -> dict:
+    """共享登录 helper：发码 → 取随机码 → 登录，返回 ``data`` 字典。
+
+    替代旧版直接用 ``000000`` 万能码登录的方式。
+    需在 ``_reset_rate_limiters`` autouse fixture 作用下使用（每个测试自动清限流器）。
+    """
+    # 1) 发码（dev 环境回带随机验证码）
+    r = client.post("/api/auth/code", json={"phone": phone})
+    assert r.status_code == 200, f"发码失败: {r.text}"
+    dev_code = r.json()["data"].get("devCode")
+    assert dev_code, f"dev 环境应回带验证码: {r.text}"
+
+    # 2) 用随机码登录
+    r = client.post("/api/auth/login", json={"phone": phone, "code": dev_code})
+    assert r.status_code == 200, f"登录失败: {r.text}"
+    return r.json()["data"]
