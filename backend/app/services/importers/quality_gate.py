@@ -21,8 +21,11 @@ QA 全量扫描发现：docx 解析出的 1154 道新题里约 21.8% 带**结构
 
 from __future__ import annotations
 
+import json
 import re
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
+
+from app.services import judge_engine
 
 #: 判定结果：干净，可直接进推荐池
 VERDICT_CLEAN = "clean"
@@ -74,6 +77,112 @@ _PLACEHOLDER_SHAPE_RE = re.compile(r"[□○]")
 
 #: token 切分：按「非汉字且非数字」的连续片段切开
 _TOKEN_SPLIT_RE = re.compile(r"[^\u4e00-\u9fff0-9]+")
+
+
+# ==================================================================== 选择题完整性卡口（P0/P1）
+#: 商业落地要求：选择题选项必须正好 A/B/C/D 四键。
+REQUIRED_CHOICE_KEYS: frozenset[str] = frozenset({"A", "B", "C", "D"})
+
+#: ``True`` = 严格相等 ``{A,B,C,D}``；``False`` = 子集语义（含额外键如 E 也放过）。
+#:
+#: 决策 4「不允许合法 3 选项题」的直译。若 T04 全库跑出预期外的归档量、确认
+#: 题库存在合法 5 选项题，把本开关置 ``False`` 即切换为 ``⊇`` 语义，无需改其他代码
+#: （设计 §5 U1）。
+STRICT_ABCD: bool = True
+
+
+def _coerce_options(options: Any) -> Any:
+    """把库里读出的 options 原始值规整成 ``normalize_options`` 可消费的结构。
+
+    SQLite 的 ``JSONType`` 列在裸 ``text()`` 查询下返回的是 JSON 字符串，而 ORM
+    读回已是 list/dict。两处调用方（入库卡口用 ORM / 批处理脚本用裸 SQL）形态
+    不一，这里统一兜底，保证 ``validate_choice_options`` 是唯一真相源、不各自判断。
+    """
+    if isinstance(options, str):
+        try:
+            return json.loads(options)
+        except (TypeError, ValueError):
+            return None
+    if isinstance(options, (bytes, bytearray)):
+        try:
+            return json.loads(options.decode("utf-8", errors="replace"))
+        except (TypeError, ValueError, UnicodeDecodeError):
+            return None
+    return options
+
+
+def validate_choice_options(
+    options: Any,
+    correct_answer: Optional[str] = None,
+) -> bool:
+    """选择题 options 完整性单点真相（与 ``judge_engine.normalize_options`` 同源）。
+
+    口径（设计 §1.4，宪法条文）：
+
+    ``残缺选择题 ⟺ set(option_keys(options)) != {A,B,C,D}``
+
+    * **严格相等**：``{A,B,C,E}``（4 个键但缺 D）判残缺；``{A,B,C,D,E}``（5 选项）
+      在 ``STRICT_ABCD=True`` 时同样判残缺（缺完整的 A-D 才叫完整）。
+    * **两个用法，口径不分裂**：
+      - 批量归档 / CI 不变式不传 ``correct_answer`` → 纯 key 集合判定（与查实的 312 道严格对齐）；
+      - 入库卡口传 ``correct_answer`` → 额外要求答案命中归一化后的键集合（满足 PRD P1.1）。
+
+    Args:
+        options: ``Question.options`` 原始值（dict / list / list-of-dict / JSON 串 / None）。
+        correct_answer: 可选。传入时额外要求 ``correct_answer`` 落在归一化键集合内
+            （入库卡口 P1.1 强制口径）；批量归档不传 → 纯 key 口径。
+
+    Returns:
+        合法（完整 A-D 且答案命中）返回 ``True``；否则 ``False``。
+    """
+    if (options is None) or (not options):
+        return False
+
+    keys = set(judge_engine.option_keys(_coerce_options(options)))
+
+    if STRICT_ABCD:
+        if keys != REQUIRED_CHOICE_KEYS:
+            return False
+    else:  # 子集语义：只要含齐 A-D 即放行（允许合法的 5 选项题）
+        if not REQUIRED_CHOICE_KEYS.issubset(keys):
+            return False
+
+    if correct_answer is not None:
+        return (
+            judge_engine.extract_choice_key(correct_answer, allowed=tuple(keys)) is not None
+        )
+    return True
+
+
+def choice_options_reasons(
+    options: Any,
+    correct_answer: Optional[str] = None,
+) -> List[str]:
+    """返回选择题不合法原因列表（空列表代表合法）。供 ``classify_question`` / 日志复用。
+
+    Args:
+        options: 同 :func:`validate_choice_options`。
+        correct_answer: 可选，传入时额外校验答案是否命中选项键。
+
+    Returns:
+        原因字符串列表；合法时返回空列表。
+    """
+    reasons: List[str] = []
+    if options is None or not options:
+        return ["选择题无选项"]
+    if isinstance(options, str) and not options.strip():
+        return ["选择题无选项"]
+
+    keys = set(judge_engine.option_keys(_coerce_options(options)))
+    missing = REQUIRED_CHOICE_KEYS - keys
+    extra = keys - REQUIRED_CHOICE_KEYS
+    if missing:
+        reasons.append(f"选择题缺选项键{missing}")
+    if extra and STRICT_ABCD:
+        reasons.append(f"选择题含非法选项键{extra}")
+    if correct_answer is not None and not validate_choice_options(options, correct_answer):
+        reasons.append("正确答案未命中任一选项")
+    return reasons
 
 
 def normalize(content: Optional[str]) -> str:
@@ -175,6 +284,9 @@ def count_question_markers(content: Optional[str]) -> int:
 def classify_question(
     content: str,
     answer: Optional[str] = None,
+    *,
+    q_type: Optional[str] = None,
+    options: Optional[Any] = None,
 ) -> Tuple[str, List[str]]:
     """给一道题定性：可上架（``clean``）还是需人工复核（``review``）。
 
@@ -185,6 +297,9 @@ def classify_question(
         content: 题干原文。
         answer: 该题答案原文。当前规则只看题干，保留此参数以便后续扩展
             （如「答案与题干重复」判定），传入不影响结果。
+        q_type: 可选，题型。传入 ``"选择"`` 且 ``options`` 非空时，追加选择题
+            选项完整性卡口（缺 A-D 任一键即 ``review``）。带默认值，**既有调用零改动**。
+        options: 可选，选择题选项（dict / list / None）。与 ``q_type`` 配合做卡口。
 
     Returns:
         ``(判定, 原因列表)``。``clean`` 时原因列表为空。
@@ -214,6 +329,11 @@ def classify_question(
     if markers >= MAX_QUESTION_MARKERS:
         reasons.append(f"题干含多个题号疑似粘连（{markers}个）")
 
+    # 选择题硬性卡口（P1 入库卡口）：与批处理轨共用同一口径（不传答案，纯 key 判定）。
+    # 命中即 ``review``，绝不自动改写 options。
+    if q_type == "选择" and options is not None:
+        reasons.extend(choice_options_reasons(options, None))
+
     if reasons:
         return VERDICT_REVIEW, reasons
     return VERDICT_CLEAN, []
@@ -241,6 +361,10 @@ __all__ = [
     "MAX_DUPLICATE_RATIO",
     "MIN_TOKENS_FOR_DUPLICATE_CHECK",
     "MAX_QUESTION_MARKERS",
+    "REQUIRED_CHOICE_KEYS",
+    "STRICT_ABCD",
+    "validate_choice_options",
+    "choice_options_reasons",
     "normalize",
     "has_chinese",
     "is_placeholder_only",

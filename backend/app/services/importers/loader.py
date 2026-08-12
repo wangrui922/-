@@ -140,7 +140,12 @@ def _upsert_question(
     """
     # 新题逐题过闸门；种子题不受闸门影响
     if is_new_bank:
-        verdict, reasons = classify_question(parsed.content, parsed.correct_answer)
+        verdict, reasons = classify_question(
+            parsed.content,
+            parsed.correct_answer,
+            q_type=parsed.q_type,
+            options=parsed.options,
+        )
     else:
         verdict, reasons = VERDICT_CLEAN, []
     is_clean = verdict == VERDICT_CLEAN
