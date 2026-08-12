@@ -107,3 +107,11 @@ backend/import_reports*
 
 # Îó½¨Ç¶Ì×Ä¿Â¼
 backend/backend/
+
+# 2026-08-12 practice module: audit temp artifacts (kept on disk, not committed)
+docs/audit-*.txt
+docs/audit-result-*.json
+docs/unmapped-human-triage-*.csv
+
+docs/audit2-*.txt
+docs/audit*.json
