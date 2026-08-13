@@ -1,0 +1,134 @@
+{
+  "ship_ready": 1,
+  "source_doc": "exam_yunnan_2021",
+  "source_tag": "green",
+  "exam_meta": {
+    "year": 2021,
+    "province": "云南",
+    "type": "中考",
+    "grade": 9,
+    "total_score": 120
+  },
+  "questions": [
+    {
+      "q_no": 1, "type": "选择", "difficulty": 1, "score": 4,
+      "content": "某地区2021年元旦的最高气温为9℃，最低气温为-2℃，那么该地区这天的最低气温比最高气温低（　）",
+      "options": {"A": "7℃", "B": "-7℃", "C": "11℃", "D": "-11℃"},
+      "answer_key": "C",
+      "explanation": "9-(-2)=9+2=11℃。",
+      "kp_code": "CZ_RATIONAL_OPS"
+    },
+    {
+      "q_no": 2, "type": "选择", "difficulty": 2, "score": 4,
+      "content": "如图，直线c与直线a、b都相交，若a∥b，∠1=55°，则∠2=（　）",
+      "options": {"A": "60°", "B": "55°", "C": "50°", "D": "45°"},
+      "answer_key": "B",
+      "explanation": "由对顶角相等得∠3=∠1=55°，由平行线性质得∠2=∠3=55°。",
+      "kp_code": "CZ_PARA_LINE"
+    },
+    {
+      "q_no": 3, "type": "选择", "difficulty": 1, "score": 4,
+      "content": "一个十边形的内角和等于（　）",
+      "options": {"A": "1800°", "B": "1660°", "C": "1440°", "D": "1200°"},
+      "answer_key": "C",
+      "explanation": "(10-2)×180°=1440°。",
+      "kp_code": "CZ_POLY_ANGLE"
+    },
+    {
+      "q_no": 4, "type": "选择", "difficulty": 2, "score": 4,
+      "content": "在△ABC中，∠ABC=90°，若AC=100，sinA=3/5，则AB的长是（　）",
+      "options": {"A": "500/3", "B": "503/5", "C": "60", "D": "80"},
+      "answer_key": "D",
+      "explanation": "sinA=BC/AC=3/5 ⇒ BC=60，由勾股定理AB=√(AC²-BC²)=80。",
+      "kp_code": "CZ_TRI_TRIG"
+    },
+    {
+      "q_no": 5, "type": "选择", "difficulty": 2, "score": 4,
+      "content": "若一元二次方程ax²+2x+1=0有两个不相等的实数根，则实数a的取值范围是（　）",
+      "options": {"A": "a<1", "B": "a≤1", "C": "a≤1且a≠0", "D": "a<1且a≠0"},
+      "answer_key": "D",
+      "explanation": "a≠0且Δ=4-4a>0 ⇒ a<1且a≠0。",
+      "kp_code": "CZ_QUAD_DISC"
+    },
+    {
+      "q_no": 6, "type": "选择", "difficulty": 3, "score": 4,
+      "content": "按一定规律排列的单项式：a², 4a³, 9a⁴, 16a⁵, 25a⁶，……第n个单项式是（　）",
+      "options": {"A": "n²a^(n+1)", "B": "n²a^(n-1)", "C": "n^n a^(n+1)", "D": "(n+1)²a^n"},
+      "answer_key": "A",
+      "explanation": "系数为序号的平方(n²)，a的指数对应序号加1(n+1)，故第n个为n²a^(n+1)。",
+      "kp_code": "CZ_PATTERN"
+    },
+    {
+      "q_no": 7, "type": "选择", "difficulty": 3, "score": 4,
+      "content": "如图，等边△ABC的三个顶点都在⊙O上，AD是⊙O的直径. 若OA=3，则劣弧BD的长是（　）",
+      "options": {"A": "π/2", "B": "π", "C": "3π/2", "D": "2π"},
+      "answer_key": "B",
+      "explanation": "等边△ABC ⇒ ∠BAC=60°，∠BOC=120°，由SSS证△AOB≌△AOC ⇒ ∠BAO=∠CAO=30°，∠BOD=60°，弧BD长=60π×3/180=π。",
+      "kp_code": "CZ_CIRCLE_ANGLE"
+    },
+    {
+      "q_no": 8, "type": "选择", "difficulty": 3, "score": 4,
+      "content": "2020年以来，我国部分地区出现了新冠疫情，一时间，疫情就是命令，防控就是责任. 一方有难八方支援，某公司在疫情期间为疫区生产A、B、C、D四种型号的帐篷共20000顶，有关信息见如下统计图. 下列判断正确的是（　）",
+      "options": {"A": "单独生产B型帐篷的天数是单独生产C型帐篷天数的3倍", "B": "单独生产B型帐篷的天数是单独生产A型帐篷天数的1.5倍", "C": "单独生产A型帐篷与单独生产D型帐篷的天数相等", "D": "每天单独生产C型帐篷的数量最多"},
+      "answer_key": "C",
+      "explanation": "A型帐篷总数=20000×45%=9000，每天4500 ⇒ 天数=9000/4500=2天；D型=20000×10%=2000，每天1000 ⇒ 2天，相等。",
+      "kp_code": "CZ_STAT_CHART"
+    },
+    {
+      "q_no": 9, "type": "填空", "difficulty": 2, "score": 4,
+      "content": "已知a、b都是实数. 若√(a+1)+(b-2)²=0，则a-b=____.",
+      "answer": "-3",
+      "explanation": "由非负性：a+1=0 ⇒ a=-1；b-2=0 ⇒ b=2；所以a-b=-1-2=-3。",
+      "kp_code": "CZ_QUAD_ROOT"
+    },
+    {
+      "q_no": 10, "type": "填空", "difficulty": 2, "score": 4,
+      "content": "若反比例函数的图象经过点(1,-2)，则该反比例函数的解析式（解析式也称表达式）为____.",
+      "answer": "y=-2/x",
+      "explanation": "设y=k/x(k≠0)，代入(1,-2)得k=-2，故y=-2/x。",
+      "kp_code": "CZ_INVERSE_PROP"
+    },
+    {
+      "q_no": 11, "type": "填空", "difficulty": 3, "score": 4,
+      "content": "如图是某几何体的三视图（其中主视图也称正视图，左视图也称侧视图）. 已知主视图和左视图是两个全等的矩形. 若主视图的相邻两边长分别为2和3，俯视图是直径等于2的圆，则这个几何体的体积为____.",
+      "answer": "3π",
+      "explanation": "三视图分析得几何体为圆柱：底面直径2 ⇒ 半径1；高3；V=π×1²×3=3π。",
+      "kp_code": "CZ_3VIEW"
+    },
+    {
+      "q_no": 12, "type": "填空", "difficulty": 3, "score": 4,
+      "content": "如图，在△ABC中，点D、E分别是BC、AC的中点，AD与BE相交于点F，若BF=6，则BE的长是____.",
+      "answer": "9",
+      "explanation": "D、E为中点 ⇒ DE=½AB, DE∥AB；△DEF∽△ABF ⇒ DE/AB=EF/BF=½ ⇒ EF=3，BE=BF+EF=9。",
+      "kp_code": "CZ_SIM_TRI"
+    },
+    {
+      "q_no": 13, "type": "填空", "difficulty": 2, "score": 4,
+      "content": "分解因式：x³-4x=____.",
+      "answer": "x(x+2)(x-2)",
+      "explanation": "提取公因式x：x³-4x=x(x²-4)=x(x+2)(x-2)。",
+      "kp_code": "CZ_FACTOR"
+    },
+    {
+      "q_no": 14, "type": "填空", "difficulty": 3, "score": 4,
+      "content": "已知△ABC的三个顶点都是同一个正方形的顶点，∠ABC的平分线与线段AC交于点D. 若△ABC的一条边长为6，则点D到直线AB的距离为____.",
+      "answer": "3√2-6",
+      "explanation": "由角平分线性质：点D到AB的距离=D到BC的距离；设正方形边长为6，△ABC为直角三角形，AB=BC=6, AC=6√2；由面积等分法：D到AB的距离=...=3√2-6。",
+      "kp_code": "CZ_TRI_PROP"
+    },
+    {
+      "q_no": 15, "type": "解答", "difficulty": 2, "score": 6,
+      "content": "计算：(-3)²+tan45°/2+(√2-1)⁰-2⁻¹+2/3×(-6).",
+      "answer": "8",
+      "explanation": "(-3)²=9, tan45°/2=½, (√2-1)⁰=1, 2⁻¹=½, 2/3×(-6)=-4；原式=9+½+1-½-4=6。",
+      "kp_code": "CZ_RATIONAL_OPS"
+    },
+    {
+      "q_no": 16, "type": "解答", "difficulty": 2, "score": 6,
+      "content": "如图，在四边形ABCD中，AD=BC, AC=BD, AC与BD相交于点E. 求证：∠DAC=∠CBD.",
+      "answer": "∠DAC=∠CBD",
+      "explanation": "在△DAC和△CBD中，AD=CB, AC=BD, DC=DC ⇒ △DAC≌△CBD(SSS) ⇒ ∠DAC=∠CBD。",
+      "kp_code": "CZ_TRI_CONGR"
+    }
+  ]
+}

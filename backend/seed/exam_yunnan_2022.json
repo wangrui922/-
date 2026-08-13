@@ -1,0 +1,173 @@
+{
+  "ship_ready": 1,
+  "source_doc": "exam_yunnan_2022",
+  "source_tag": "green",
+  "exam_meta": {
+    "year": 2022,
+    "province": "云南",
+    "type": "中考",
+    "grade": 9,
+    "total_score": 120
+  },
+  "questions": [
+    {
+      "q_no": 1, "type": "选择", "difficulty": 1, "score": 4,
+      "content": "赤道长约为40 000 000m，用科学记数法可以把数字40 000 000表示为（　）",
+      "options": {"A": "4×10^7", "B": "40×10^6", "C": "400×10^5", "D": "4000×10^3"},
+      "answer_key": "A",
+      "explanation": "40 000 000=4×10^7。",
+      "kp_code": "CZ_INT_PROD"
+    },
+    {
+      "q_no": 2, "type": "选择", "difficulty": 1, "score": 4,
+      "content": "中国是最早采用正负数表示具有相反意义的量，并进行负数运算的国家. 若零上10℃记作+10℃，则零下10℃可记作（　）",
+      "options": {"A": "10℃", "B": "0℃", "C": "-10℃", "D": "-20℃"},
+      "answer_key": "C",
+      "explanation": "正负具有相对性，零下用\"-\"表示。",
+      "kp_code": "CZ_RATIONAL_OPS"
+    },
+    {
+      "q_no": 3, "type": "选择", "difficulty": 2, "score": 4,
+      "content": "如图，已知直线c与直线a、b都相交，若a∥b，∠1=85°，则∠2=（　）",
+      "options": {"A": "110°", "B": "105°", "C": "100°", "D": "95°"},
+      "answer_key": "D",
+      "explanation": "a∥b，∠1与∠2互补，∠2=180°-85°=95°。",
+      "kp_code": "CZ_PARA_LINE"
+    },
+    {
+      "q_no": 4, "type": "选择", "difficulty": 2, "score": 4,
+      "content": "反比例函数y=6/x的图象位于（　）",
+      "options": {"A": "第一、第三象限", "B": "第一、第四象限", "C": "第二、第三象限", "D": "第二、第四象限"},
+      "answer_key": "A",
+      "explanation": "反比例函数y=k/x，k>0时图象位于第一、第三象限。",
+      "kp_code": "CZ_INVERSE_PROP"
+    },
+    {
+      "q_no": 5, "type": "选择", "difficulty": 3, "score": 4,
+      "content": "如图，在△ABC中，D、E分别是BC、BA上的点，若△EBD∽△ABC，且S₂/S₁=？（BE=BD/AB=BC=1/2）",
+      "options": {"A": "1/2", "B": "1/4", "C": "3/4", "D": "7/8"},
+      "answer_key": "B",
+      "explanation": "△EBD∽△ABC相似比为1/2，面积比为(1/2)²=1/4。",
+      "kp_code": "CZ_SIM_TRI"
+    },
+    {
+      "q_no": 6, "type": "选择", "difficulty": 1, "score": 4,
+      "content": "为庆祝中国共产主义青年团建团100周年，某校团委组织以\"扬爱国精神，展青春风采\"为主题的合唱活动，下表是九年级一班的得分情况. 数据9.9、9.7、9.6、10、9.8的中位数是（　）",
+      "options": {"A": "9.6", "B": "9.7", "C": "9.8", "D": "9.9"},
+      "answer_key": "C",
+      "explanation": "排序后9.6、9.7、9.8、9.9、10，中位数=9.8。",
+      "kp_code": "CZ_STAT_MEDIAN"
+    },
+    {
+      "q_no": 7, "type": "选择", "difficulty": 2, "score": 4,
+      "content": "下列图形是某几何体的三视图（其中主视图也称正视图，左视图也称侧视图），则这个几何体是（　）",
+      "options": {"A": "三棱柱", "B": "三棱锥", "C": "四棱柱", "D": "圆柱"},
+      "answer_key": "D",
+      "explanation": "主视图矩形、俯视图矩形、左视图圆，符合圆柱三视图。",
+      "kp_code": "CZ_3VIEW"
+    },
+    {
+      "q_no": 8, "type": "选择", "difficulty": 3, "score": 4,
+      "content": "按一定规律排列的单项式：x，3x²，5x³，7x^4，9x^5，……第n个单项式是（　）",
+      "options": {"A": "(2n-1)x^n", "B": "(2n+1)x^n", "C": "(n-1)x^n", "D": "(n+1)x^n"},
+      "answer_key": "A",
+      "explanation": "系数为2n-1，x的指数为n。",
+      "kp_code": "CZ_PATTERN"
+    },
+    {
+      "q_no": 9, "type": "选择", "difficulty": 3, "score": 4,
+      "content": "如图，已知AB是⊙O的直径，CD是⊙O的弦，AB⊥CD，垂足为E. 若AB=26，CD=24，则∠OCE的余弦值为（　）",
+      "options": {"A": "7/13", "B": "12/13", "C": "7/12", "D": "13/12"},
+      "answer_key": "B",
+      "explanation": "CE=½CD=12，OC=13，∠OEC=90°，cos∠OCE=CE/OC=12/13。",
+      "kp_code": "CZ_CIRCLE_ANGLE"
+    },
+    {
+      "q_no": 10, "type": "选择", "difficulty": 2, "score": 4,
+      "content": "下列运算正确的是（　）",
+      "options": {"A": "√2+√3=√5", "B": "3⁰=0", "C": "(-2a)³=-8a³", "D": "a^6÷a³=a²"},
+      "answer_key": "C",
+      "explanation": "A.二次根式不能合并；B.3⁰=1；C.(-2a)³=-8a³正确；D.a^6÷a³=a³。",
+      "kp_code": "CZ_POWER"
+    },
+    {
+      "q_no": 11, "type": "选择", "difficulty": 3, "score": 4,
+      "content": "如图，OB平分∠AOC，D、E、F分别是射线OA、射线OB、射线OC上的点，D、E、F与O点都不重合，连接ED、EF. 若添加下列条件中的某一个，就能使△DOE≌△FOE，你认为要添加的那个条件是（　）",
+      "options": {"A": "OD=OE", "B": "OE=OF", "C": "∠ODE=∠OED", "D": "∠ODE=∠OFE"},
+      "answer_key": "D",
+      "explanation": "由OB平分∠AOC得∠AOB=∠BOC；又OE为公共边；若∠ODE=∠OFE，则△DOE≌△FOE (AAS)。",
+      "kp_code": "CZ_TRI_CONGR"
+    },
+    {
+      "q_no": 12, "type": "选择", "difficulty": 3, "score": 4,
+      "content": "某地开展建设绿色家园活动，活动期间，计划每天种植相同数量的树木. 该活动开始后，实际每天比原计划每天多植树50棵，实际植树400棵所需时间与原计划植树300棵所需时间相同. 设实际每天植树x棵，则下列方程正确的是（　）",
+      "options": {"A": "400/(x-50)=300/x", "B": "300/(x-50)=400/x", "C": "400/(x+50)=300/x", "D": "300/(x+50)=400/x"},
+      "answer_key": "B",
+      "explanation": "原计划每天x-50棵，实际400棵需时=原计划300棵需时：400/x=300/(x-50)。",
+      "kp_code": "CZ_FRAC_EQ"
+    },
+    {
+      "q_no": 13, "type": "填空", "difficulty": 1, "score": 4,
+      "content": "若代数式√(x+1)有意义，则实数x的取值范围是____.",
+      "answer": "x≥-1",
+      "explanation": "二次根式有意义，被开方数x+1≥0 ⇒ x≥-1。",
+      "kp_code": "CZ_QUAD_ROOT"
+    },
+    {
+      "q_no": 14, "type": "填空", "difficulty": 1, "score": 4,
+      "content": "点A(1,-5)关于原点的对称点为点B，则点B的坐标为____.",
+      "answer": "(-1,5)",
+      "explanation": "关于原点对称，横纵坐标均互为相反数。",
+      "kp_code": "CZ_COORD"
+    },
+    {
+      "q_no": 15, "type": "填空", "difficulty": 2, "score": 4,
+      "content": "分解因式：x²-9=____.",
+      "answer": "(x+3)(x-3)",
+      "explanation": "平方差公式：x²-9=(x+3)(x-3)。",
+      "kp_code": "CZ_FACTOR"
+    },
+    {
+      "q_no": 16, "type": "填空", "difficulty": 2, "score": 4,
+      "content": "方程2x²+1=3x的解为____.",
+      "answer": "x₁=1, x₂=1/2",
+      "explanation": "移项：2x²-3x+1=0 ⇒ (2x-1)(x-1)=0 ⇒ x₁=1, x₂=1/2。",
+      "kp_code": "CZ_QUAD_EQ"
+    },
+    {
+      "q_no": 17, "type": "填空", "difficulty": 3, "score": 4,
+      "content": "某中学开展劳动实习，学生到教具加工厂制作圆锥，他们制作的圆锥，母线长为30cm，底面圆的半径为10cm. 这种锥的侧面展开图的圆心角度数是____.",
+      "answer": "120°",
+      "explanation": "弧长=30nπ/180=2π×10 ⇒ n=120。",
+      "kp_code": "CZ_CONE_SURFACE"
+    },
+    {
+      "q_no": 18, "type": "填空", "difficulty": 3, "score": 4,
+      "content": "已知△ABC是等腰三角形，若∠A=40°，则△ABC的顶角度数是____.",
+      "answer": "40°或100°",
+      "explanation": "分类讨论：①∠A为顶角时顶角=40°；②∠A为底角时顶角=180°-40°-40°=100°。",
+      "kp_code": "CZ_TRI_PROP"
+    },
+    {
+      "q_no": 19, "type": "解答", "difficulty": 3, "score": 8,
+      "content": "临近端午节，某学校数学兴趣小组到社区参加社会实践活动，帮助有关部门了解某小区居民对去年销量较好的鲜花粽、火腿粽、豆沙粽、蛋黄粽四种粽子的喜爱情况. 在对该小区居民进行抽样调查后，根据统计结果绘制如下统计图（扇形+条形）. (1)补全条形统计图；(2)若该小区有1820人，估计喜爱火腿粽的有多少人？",
+      "answer": "(2)喜爱火腿粽的约546人",
+      "explanation": "(1)总人数=70÷35%=200人，火腿粽=200-70-40-30=60人；(2)1820×30%=546人。",
+      "kp_code": "CZ_STAT_CHART"
+    },
+    {
+      "q_no": 20, "type": "解答", "difficulty": 3, "score": 8,
+      "content": "某班甲、乙两名同学被推荐到学校艺术节上表演节目. 计划用抽签综合奏一首乐曲，要合奏的乐曲是用游戏的方式在《月光下的凤尾竹》与《彩云之南》中确定一首. 游戏规则如下：在一个不透明的口袋中装有分别标有数字1、2、3、4的四个小球（除标号外，其余都相同），甲从口袋中任意摸出1个小球，小球上的数字记为a. 在另一个不透明的口袋中装有分别标有数字1、2的两张卡片（除标号外，其余都相同），乙从口袋里任意摸出1张卡片上的数字记为b. 然后计算这两个数的和，即a+b，若a+b为奇数，则演奏《月光下的凤尾竹》，否则，演奏《彩云之南》. (1)用列表法或画树状图法中的一种方法，求(a,b)所有可能出现的结果总数；(2)你认为这个游戏公平吗？如果公平，请说明理由；如果不公平，哪一首乐曲更可能被选中？",
+      "answer": "(1)8种；(2)游戏公平",
+      "explanation": "(1)4×2=8种等可能结果；(2)和为奇数4种，偶数4种，概率都是1/2，游戏公平。",
+      "kp_code": "CZ_PROB_LIST"
+    },
+    {
+      "q_no": 21, "type": "解答", "difficulty": 3, "score": 8,
+      "content": "如图，在平行四边形ABCD中，连接BD，E为线段AD的中点，延长BE与CD的延长线交于点F，连接AF. ∠BDF=90°. (1)求证：四边形ABDF是矩形；(2)若AD=5，DF=3，求四边形ABCF的面积S.",
+      "answer": "(2)S=21",
+      "explanation": "(1)由△DEF≌△BEA得AF∥BF, AF=BF, 又AF⊥BF（∠BDF=90°转化为对角线性质）；(2)AD=5, DF=3, ∠ADF=90° ⇒ AF=√(AD²+DF²)=√34；S(ABCF)=S(△ABF)+S(△BCF)=...=21。",
+      "kp_code": "CZ_SIM_TRI"
+    }
+  ]
+}

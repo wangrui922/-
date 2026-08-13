@@ -1,0 +1,183 @@
+{
+  "ship_ready": 1,
+  "source_doc": "exam_yunnan_2023",
+  "source_tag": "green",
+  "exam_meta": {
+    "year": 2023,
+    "province": "云南",
+    "type": "中考",
+    "grade": 9,
+    "total_score": 120
+  },
+  "questions": [
+    {
+      "q_no": 1, "type": "填空", "difficulty": 1, "score": 3,
+      "content": "2的相反数是____.",
+      "answer": "-2",
+      "explanation": "相反数的定义：符号相反、绝对值相等。",
+      "kp_code": "CZ_RATIONAL_OPS"
+    },
+    {
+      "q_no": 2, "type": "填空", "difficulty": 2, "score": 3,
+      "content": "已知关于x的方程2x+a+5=0的解是x=1，则a的值____.",
+      "answer": "-7",
+      "explanation": "代入x=1：2(1)+a+5=0 ⇒ a=-7。",
+      "kp_code": "CZ_LINEAR_EQ"
+    },
+    {
+      "q_no": 3, "type": "填空", "difficulty": 2, "score": 3,
+      "content": "如图，在△ABC中，D、E分别为AB、AC上的点，若DE∥BC，AD/AB=1/3，则(AD+DE+AE)/(AB+BC+AC)=____.",
+      "answer": "1/3",
+      "explanation": "DE∥BC ⇒ △ADE∽△ABC，周长比=相似比=AD/AB=1/3。",
+      "kp_code": "CZ_SIM_TRI"
+    },
+    {
+      "q_no": 4, "type": "填空", "difficulty": 1, "score": 3,
+      "content": "使√(9-x)有意义的x的取值范围为____.",
+      "answer": "x≤9",
+      "explanation": "二次根式有意义，被开方数9-x≥0 ⇒ x≤9。",
+      "kp_code": "CZ_QUAD_ROOT"
+    },
+    {
+      "q_no": 5, "type": "填空", "difficulty": 3, "score": 3,
+      "content": "如图，边长为4的正方形ABCD外切于⊙O，切点分别为E、F、G、H，则图中阴影部分的面积为____.",
+      "answer": "16-4π",
+      "explanation": "正方形面积-圆面积=4²-π·(4/2)²=16-4π。",
+      "kp_code": "CZ_CIRCLE_AREA"
+    },
+    {
+      "q_no": 6, "type": "填空", "difficulty": 3, "score": 3,
+      "content": "已知点A(a,b)在双曲线y=5/x上，若a、b都是正整数，则图象经过B(a,0)、C(0,b)两点的一次函数的解析式（也称关系式）为____.",
+      "answer": "y=-(b/a)x+b",
+      "explanation": "直线BC经过(a,0)和(0,b)，由截距式得y=-(b/a)x+b。",
+      "kp_code": "CZ_INVERSE_PROP"
+    },
+    {
+      "q_no": 7, "type": "选择", "difficulty": 1, "score": 4,
+      "content": "作为世界文化遗产的长城，其总长大约为6700000m，将6700000用科学记数法表示为（　）",
+      "options": {"A": "6.7×10^5", "B": "6.7×10^6", "C": "0.67×10^7", "D": "67×10^5"},
+      "answer_key": "B",
+      "explanation": "6700000=6.7×10^6。",
+      "kp_code": "CZ_INT_PROD"
+    },
+    {
+      "q_no": 8, "type": "选择", "difficulty": 2, "score": 4,
+      "content": "下面长方体的主视图（主视图也称正视图）是（　）",
+      "options": {"A": "正方形", "B": "横向矩形", "C": "纵向矩形", "D": "三角形"},
+      "answer_key": "B",
+      "explanation": "长方体主视图为横向矩形（长边方向），故选B。",
+      "kp_code": "CZ_3VIEW"
+    },
+    {
+      "q_no": 9, "type": "选择", "difficulty": 2, "score": 4,
+      "content": "下列计算正确的是（　）",
+      "options": {"A": "2a×3a=5a", "B": "(-2a)³=-6a³", "C": "6a÷2a=3a", "D": "(-a³)²=a^6"},
+      "answer_key": "D",
+      "explanation": "A.应为6a²；B.应为-8a³；C.应为3；D.(-a³)²=a^6，正确。",
+      "kp_code": "CZ_POWER"
+    },
+    {
+      "q_no": 10, "type": "选择", "difficulty": 2, "score": 4,
+      "content": "已知一个多边形的内角和是900°，则这个多边形是（　）",
+      "options": {"A": "五边形", "B": "六边形", "C": "七边形", "D": "八边形"},
+      "answer_key": "C",
+      "explanation": "(n-2)×180=900 ⇒ n-2=5 ⇒ n=7。",
+      "kp_code": "CZ_POLY_ANGLE"
+    },
+    {
+      "q_no": 11, "type": "选择", "difficulty": 1, "score": 4,
+      "content": "sin60°的值为（　）",
+      "options": {"A": "√3/2", "B": "√3", "C": "√2/2", "D": "1/2"},
+      "answer_key": "A",
+      "explanation": "特殊角三角函数值，sin60°=√3/2。",
+      "kp_code": "CZ_TRI_TRIG"
+    },
+    {
+      "q_no": 12, "type": "选择", "difficulty": 2, "score": 4,
+      "content": "下列说法正确的是（　）",
+      "options": {"A": "了解灯泡的使用寿命破坏性极大，只能采用抽样调查的方法", "B": "4位同学的数学期末成绩分别为100、95、105、110，则这4位同学数学期末成绩的中位数为102.5", "C": "甲、乙两人各自跳远10次，若他们跳远成绩的平均数相同，甲、乙跳远成绩的方差分别为0.51和0.62", "D": "某次抽奖活动中，中奖的概率为1/50表示每抽奖50次就有一次中奖"},
+      "answer_key": "A",
+      "explanation": "B中位数为102.5而非102.5(原数据小到大排序后取中间两数平均)；C方差不同不能确定稳定性；D概率1/50不是必然。",
+      "kp_code": "CZ_STAT_VAR"
+    },
+    {
+      "q_no": 13, "type": "选择", "difficulty": 3, "score": 4,
+      "content": "已知圆锥的侧面展开图是个半圆，若该圆锥的体积等于9√3π，则这个圆锥的高等于（　）",
+      "options": {"A": "5√3π", "B": "5√3", "C": "3√3π", "D": "3√3"},
+      "answer_key": "D",
+      "explanation": "展开图为半圆 ⇒ πR=π·2r ⇒ R=2r；由h=√3r及V=⅓πr²h=9√3π ⇒ r=3, h=3√3。",
+      "kp_code": "CZ_CONE_SURFACE"
+    },
+    {
+      "q_no": 14, "type": "选择", "difficulty": 3, "score": 4,
+      "content": "如图，B、C是⊙A上的两点，AB的垂直平分线与⊙A交于E、F两点，与线段AC交于D点. 若∠BCF=20°，则∠DBC=（　）",
+      "options": {"A": "30°", "B": "29°", "C": "28°", "D": "20°"},
+      "answer_key": "A",
+      "explanation": "∠BAC=2∠BCF=40°；EF为AB垂直平分线 ⇒ AD=BD ⇒ ∠ABD=∠BAC=40°，∠DBC=70°-40°=30°。",
+      "kp_code": "CZ_CIRCLE_ANGLE"
+    },
+    {
+      "q_no": 15, "type": "解答", "difficulty": 2, "score": 6,
+      "content": "如图，点E、C在线段BF上，BE=CF，AB=DE，AC=DF. 求证：∠ABC=∠DEF.",
+      "answer": "∠ABC=∠DEF",
+      "explanation": "由BE=CF ⇒ BE+EC=CF+EC ⇒ BC=EF，又AB=DE，AC=DF，故△ABC≌△DEF(SSS)，∴∠ABC=∠DEF。",
+      "kp_code": "CZ_TRI_CONGR"
+    },
+    {
+      "q_no": 16, "type": "解答", "difficulty": 2, "score": 6,
+      "content": "观察下列各个等式的规律：第一个等式：(2²-1²-1)/2=1；第二个等式：(3²-2²-1)/2=2；第三个等式：(4²-3²-1)/2=3. 请用上述等式反映出的规律解决下列问题：(1)直接写出第四个等式；(2)猜想第n个等式（用n的代数式表示），并证明你猜想的等式是正确的.",
+      "answer": "(1)(5²-4²-1)/2=4；(2)((n+1)²-n²-1)/2=n",
+      "explanation": "(2)证明：((n+1)²-n²-1)/2=((n+1+n)(n+1-n)-1)/2=((2n+1)-1)/2=2n/2=n。",
+      "kp_code": "CZ_PATTERN"
+    },
+    {
+      "q_no": 17, "type": "解答", "difficulty": 3, "score": 8,
+      "content": "某初级中学正在展开\"文明城市创建人人参与，志愿服务我当先行\"的创文活动. 为了了解该校志愿者参与服务情况，现对该校全体志愿者进行随机抽样调查. 根据调查数据绘制了如下所示不完整统计图. 条形统计图中七年级、八年级、九年级、教师分别指七年级、八年级、九年级、教师志愿者中被抽到的志愿者，扇形统计图中的百分数指的是该年级被抽到的志愿者数与样本容量的比. (1)请补全条形统计图；(2)若该校共有志愿者600人，则该校九年级大约有多少志愿者？",
+      "answer": "(2)该校九年级大约有120名志愿者",
+      "explanation": "(1)总人数=20÷40%=50人，八年级50×30%=15人，九年级50×20%=10人；(2)600×20%=120人。",
+      "kp_code": "CZ_STAT_CHART"
+    },
+    {
+      "q_no": 18, "type": "解答", "difficulty": 3, "score": 6,
+      "content": "某商店用1000元人民币购进水果销售，过了一段时间，又用2400元人民币购进这种水果，所购数量是第一次购进数量的2倍，但每千克的价格比第一次购进的贵了2元. (1)该商店第一次购进水果多少千克？(2)假设该商店两次购进的水果按相同的标价销售，最后剩下的20千克按标价的五折优惠销售. 若两次购进水果全部售完，利润不低于950元，则每千克水果的标价至少是多少元？",
+      "answer": "(1)第一次购进100千克；(2)每千克标价至少15元",
+      "explanation": "(1)(1000/x+2)×2x=2400 ⇒ x=100；(2)(100+100×2-20)x+20×0.5x≥1000+2400+950 ⇒ 290x≥4350 ⇒ x≥15。",
+      "kp_code": "CZ_FRAC_EQ"
+    },
+    {
+      "q_no": 19, "type": "解答", "difficulty": 3, "score": 7,
+      "content": "在一个不透明的盒子中，装有3个分别写有数字6、2、7的小球，他们的形状、大小、质地完全相同，搅拌均匀后，先从盒子里随机抽取1个小球，记下小球上的数字后放回盒子，搅拌均匀后再随机取出1个小球，记下小球上的数字. (1)用列表法或树状图法（树状图也称树形图）中的一种方法，写出所有可能出现的结果；(2)求两次取出的小球上的数字相同的概率P.",
+      "answer": "(1)9种等可能结果；(2)P=3/9=1/3",
+      "explanation": "(1)共3×3=9种等可能情形；(2)相同情形有(6,6)(2,2)(7,7)共3种，P=3/9=1/3。",
+      "kp_code": "CZ_PROB_LIST"
+    },
+    {
+      "q_no": 20, "type": "解答", "difficulty": 3, "score": 8,
+      "content": "如图，△ABC是以BC为底的等腰三角形，AD是边BC上的高，点E、F分别是AB、AC的中点. (1)求证：四边形AEDF是菱形；(2)如果四边形AEDF的周长为12，两条对角线的和等于7，求四边形AEDF的面积S.",
+      "answer": "(2)S=13/4",
+      "explanation": "(1)Rt△ABD中DE=½AB=AE，Rt△ACD中DF=½AC=AF，又AB=AC ⇒ AE=AF=DE=DF ⇒ AEDF是菱形。(2)AE=3，设EF=x, AD=y，则x+y=7，x²+2xy+y²=49，x²+y²=36 ⇒ 2xy=13 ⇒ xy=13/2 ⇒ S=½xy=13/4。",
+      "kp_code": "CZ_SIM_TRI"
+    },
+    {
+      "q_no": 21, "type": "解答", "difficulty": 3, "score": 8,
+      "content": "已知二次函数y=2x²+bx+c图象的顶点坐标为(3,8)，该二次函数图象的对称轴与x轴的交点为A，M是这个二次函数图象上的点，O是原点. (1)不等式b²+2c+8≥0是否成立？请说明理由；(2)设S是△AMO的面积，求满足S=9的所有点M的坐标.",
+      "answer": "(1)成立，b=12, c=-10, b²+2c+8=132>0；(2)M(2,6)或(4,6)或(3+√7,-6)或(3-√7,-6)",
+      "explanation": "(1)由顶点(3,8)得y=2(x-3)²+8=2x²-12x+10 ⇒ b=-12, c=10，即|b|=12, c=10，b²+2c+8=144+20+8>0成立。(2)设M(m,n)，由S=9 = ½×3×|n| ⇒ n=±6。",
+      "kp_code": "CZ_QUAD_FUNC"
+    },
+    {
+      "q_no": 22, "type": "解答", "difficulty": 3, "score": 9,
+      "content": "某学校计划组织全校1441名师生到相关部门规划的林区植树，决定租用当地租车公司一共62辆A、B两种型号客车作为交通工具. A型车每辆载客30人，租金380元；B型车每辆载客20人，租金280元. (1)设租用A型客车x辆，租车总费用为y元，求y与x的函数解析式，并直接写出x的取值范围；(2)若要使租车总费用不超过21940元，一共有几种租车方案？哪种租车方案最省钱？",
+      "answer": "(1)y=100x+17360, 21≤x≤62；(2)共25种方案，x=21最省钱19460元",
+      "explanation": "(1)y=380x+280(62-x)=100x+17360；30x+20(62-x)≥1441 ⇒ x≥20.1 ⇒ x≥21。(2)100x+17360≤21940 ⇒ x≤45.8 ⇒ x≤45；共21≤x≤45种共25种；y随x增大而增大，故x=21最省钱。",
+      "kp_code": "CZ_LP_SIMPLE"
+    },
+    {
+      "q_no": 23, "type": "解答", "difficulty": 3, "score": 12,
+      "content": "已知AB是⊙O的直径，PB是⊙O的切线，C是⊙O上的点，AC∥OP，M是直径AB上的动点，A与直线CM上的点连线距离的最小值为d，B与直线CM上的点连线距离的最小值为f. (1)求证：PC是⊙O的切线；(2)设OP=3/2 AC，求∠CPO的正弦值；(3)设AC=9, AB=15，求d+f的取值范围.",
+      "answer": "(1)证明PC⊥OC；(2)sin∠CPO=√3/3；(3)9≤d+f≤12",
+      "explanation": "(1)连接OC，证△POC≌△POB；(2)OD⊥AC于D，△ODC∽△PCO ⇒ OC/OP=CD/OC = √3/3；(3)连接BC，BC=12，当M=A时d+f=12，M=B时d+f=9，故9≤d+f≤12。",
+      "kp_code": "CZ_CIRCLE_TANGENT"
+    }
+  ]
+}
