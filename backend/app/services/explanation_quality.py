@@ -11,10 +11,12 @@
 裁判调用走 ``app.ai.ark_respond``（与 tutor.next_question 同一客户端、
 同一 Key），不新增任何密钥或网络依赖。本模块**纯同步**，与 tutor agent 一致。
 
-质量闸门（可扩展）
+质量闸门（已接入生产流）
 ----------------
-``ExplanationQuality.passes(threshold)`` 可直接当质量闸门：评测低于阈值就
-标记人工复核 / 触发重生成。接入 ``tutor.next_question`` 的闸门改动留待后续。
+``ensure_explanation_quality(...)`` 把"评测 → 不达标则重生成"做成了在线闸门，
+已在 ``app.ai.orchestrator.continue_session`` 的 **DEMO 讲解**路径接入：学生点
+「不会做，给我讲」时，生成讲解后自动评一次分，低于阈值（默认 3）就重讲一次。
+开关见 ``config.explanation_quality_gate_enabled``（默认关闭，确认稳定后再开启）。
 
 典型用法
 --------
@@ -30,12 +32,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.ai import ark_respond
 from app.ai.ark_client import ArkError
+
+logger = logging.getLogger("app.services.explanation_quality")
 
 #: 5 维 rubric 的权威定义（key 同时是裁判 JSON 的字段名，勿改）
 RUBRIC_DIMENSIONS: List[Dict[str, str]] = [
@@ -271,10 +276,102 @@ def evaluate_explanation(
     )
 
 
+def _empty_quality(error: str = "") -> ExplanationQuality:
+    """评测未执行 / 不可判定时的兜底结果（parsed_ok=False）。"""
+    return ExplanationQuality(parsed_ok=False, error=error or "评测未执行")
+
+
+def ensure_explanation_quality(
+    *,
+    question: str,
+    student_attempt: str,
+    ai_explanation: str,
+    error_type: Optional[str] = None,
+    regenerate: Optional[Callable[[], str]] = None,
+    threshold: int = 3,
+    max_retries: int = 1,
+    timeout: float = 60.0,
+) -> Tuple[str, ExplanationQuality]:
+    """评测讲解质量；低于阈值且提供 ``regenerate`` 时，重生成最多 ``max_retries`` 次。
+
+    #67→生产流接入点（DEMO 讲解闸门）。设计原则：**best-effort，绝不阻塞主流程**——
+
+    * 评测本身抛 ``ArkError``（Key 缺失 / 网络 / 超时 / 上游错误）→ 直接返回原始讲解，不重试；
+    * 评测拿到结果但解析异常（``parsed_ok=False``）→ 视为「无法判定」，返回原始讲解；
+    * ``regenerate`` 回调抛异常 → 捕获并停止重试，以当前最优讲解返回；
+    * 所有路径都返回 ``(最终采用的讲解文本, 最近一次质量结果)``。
+
+    Args:
+        question: 题目文本。
+        student_attempt: 学生的作答或错误描述（裁判上下文）。
+        ai_explanation: 当前要评测的 AI 讲解文本。
+        error_type: 可选错因类型。
+        regenerate: 可选的「重生成」回调，返回一段新的讲解文本；为 ``None`` 时不做重试。
+        threshold: 质量闸门阈值（综合分 1-5），低于该值才重试。
+        max_retries: 最大重生成次数（内部夹紧到 1-3）。
+        timeout: 评测裁判调用超时（秒）。
+
+    Returns:
+        ``(text, quality)``：``text`` 是最终采用的讲解；``quality`` 是最后一次评测结果
+        （即使未执行也返回结构化兜底，``parsed_ok=False``）。
+
+    Note:
+        本函数**纯同步**，与 ``tutor.next_question`` 一致；调用方应在 ``run_in_threadpool`` 内包裹。
+    """
+    threshold = max(1, min(5, int(threshold)))
+    current_text = ai_explanation
+    quality: ExplanationQuality = _empty_quality()
+
+    try:
+        quality = evaluate_explanation(
+            question=question,
+            student_attempt=student_attempt,
+            ai_explanation=current_text,
+            error_type=error_type,
+            timeout=timeout,
+        )
+    except ArkError as exc:
+        logger.warning("讲解质量评测调用失败，跳过闸门：%s", exc)
+        return current_text, _empty_quality(error=str(exc))
+
+    # 已达标（或解析失败无法判定）→ 直接采用
+    if quality.parsed_ok and quality.passes(threshold):
+        return current_text, quality
+
+    # 低于阈值 → 尝试重生成（最多 max_retries 次，每次重新评测）
+    for _ in range(max(1, min(3, max_retries))):
+        if regenerate is None:
+            break
+        try:
+            candidate = regenerate()
+        except Exception as exc:  # 重生成失败不应拖垮主流程
+            logger.warning("讲解重生成回调异常，停止重试：%s", exc)
+            break
+        if not candidate or not candidate.strip():
+            break
+        current_text = candidate
+        try:
+            quality = evaluate_explanation(
+                question=question,
+                student_attempt=student_attempt,
+                ai_explanation=current_text,
+                error_type=error_type,
+                timeout=timeout,
+            )
+        except ArkError as exc:
+            logger.warning("重生成后评测失败，沿用当前讲解：%s", exc)
+            return current_text, _empty_quality(error=str(exc))
+        if quality.parsed_ok and quality.passes(threshold):
+            return current_text, quality
+
+    return current_text, quality
+
+
 __all__ = [
     "RUBRIC_DIMENSIONS",
     "DIMENSION_KEYS",
     "parse_quality",
     "evaluate_explanation",
+    "ensure_explanation_quality",
     "ExplanationQuality",
 ]

@@ -264,4 +264,8 @@ __all__ = [
     "SOURCE_TYPE_VALUES",
     "SECTION_VALUES",
     "SOURCE_TAG_VALUES",
+    "GRADE_BANDS",
+    "BAND_GRADE_RANGE",
+    "grade_band",
+    "grades_of_band",
 ]

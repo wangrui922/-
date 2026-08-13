@@ -31,6 +31,7 @@ ARK_PATCH_TARGETS = (
     "app.ai.agents.diagnose.ark_respond",
     "app.ai.answer_guard.ark_respond",  # T04B 输出检查器（tutor 经此调用方舟）
     "app.api.file.ark_respond",
+    "app.services.explanation_quality.ark_respond",  # #67 讲解质量评测裁判
 )
 
 #: 假 AI 默认给出的两道练习题

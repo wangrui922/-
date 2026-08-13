@@ -109,3 +109,107 @@ def test_dimension_keys_stable():
         "relevance",
         "warmth",
     ]
+
+
+# ------------------------------------------------------------------ 在线闸门
+class _FakeJudge:
+    """可控的方舟裁判 mock：按 ``scores`` 顺序返回综合分。"""
+
+    def __init__(self, scores: list[int]) -> None:
+        self.scores = scores
+        self.calls = 0
+
+    def __call__(self, *, messages, system=None, image_b64=None, timeout=60.0):
+        score = self.scores[min(self.calls, len(self.scores) - 1)]
+        self.calls += 1
+        return (
+            f'{{"guidance":{score},"correctness":{score},"clarity":{score},'
+            f'"relevance":{score},"warmth":{score},"overall":{score},"suggestion":"x"}}'
+        )
+
+
+def test_ensure_skips_regenerate_when_quality_ok(monkeypatch):
+    """讲解已达标 → 不调用 regenerate，直接返回原讲解。"""
+    judge = _FakeJudge([5])
+    monkeypatch.setattr(eq_module, "ark_respond", judge)
+    spy = {"called": False}
+
+    def _regen():
+        spy["called"] = True
+        return "重讲版本"
+
+    text, quality = eq_module.ensure_explanation_quality(
+        question="q",
+        student_attempt="a",
+        ai_explanation="原讲解",
+        regenerate=_regen,
+        threshold=3,
+    )
+    assert text == "原讲解"
+    assert quality.overall == 5
+    assert spy["called"] is False
+
+
+def test_ensure_regenerates_once_when_low(monkeypatch):
+    """讲解不达标 + 提供 regenerate → 重讲一次，返回重讲后的高质量讲解。"""
+    judge = _FakeJudge([2, 5])  # 首次低分触发重讲，重讲后高分达标
+    monkeypatch.setattr(eq_module, "ark_respond", judge)
+    regen_calls = []
+
+    def _regen():
+        regen_calls.append(1)
+        return "重讲版本"
+
+    text, quality = eq_module.ensure_explanation_quality(
+        question="q",
+        student_attempt="a",
+        ai_explanation="原讲解",
+        regenerate=_regen,
+        threshold=3,
+    )
+    assert text == "重讲版本"
+    assert quality.overall == 5
+    assert len(regen_calls) == 1
+
+
+def test_ensure_arkerror_returns_original(monkeypatch):
+    """评测调用抛 ArkError → 返回原讲解，不触发重讲（best-effort）。"""
+
+    def _boom(*, messages, system=None, image_b64=None, timeout=60.0):
+        raise ArkError("key missing")
+
+    monkeypatch.setattr(eq_module, "ark_respond", _boom)
+    spy = {"called": False}
+
+    def _regen():
+        spy["called"] = True
+        return "重讲版本"
+
+    text, quality = eq_module.ensure_explanation_quality(
+        question="q",
+        student_attempt="a",
+        ai_explanation="原讲解",
+        regenerate=_regen,
+        threshold=3,
+    )
+    assert text == "原讲解"
+    assert quality.parsed_ok is False
+    assert spy["called"] is False
+
+
+def test_ensure_regenerate_raises_returns_original(monkeypatch):
+    """重讲回调自身抛异常 → 捕获并回落原讲解，不崩溃。"""
+    judge = _FakeJudge([2])  # 首次低分，会尝试重讲
+    monkeypatch.setattr(eq_module, "ark_respond", judge)
+
+    def _regen():
+        raise RuntimeError("重讲失败")
+
+    text, quality = eq_module.ensure_explanation_quality(
+        question="q",
+        student_attempt="a",
+        ai_explanation="原讲解",
+        regenerate=_regen,
+        threshold=3,
+    )
+    assert text == "原讲解"

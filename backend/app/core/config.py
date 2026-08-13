@@ -10,6 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import List
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/app/core/config.py -> parents: [core, app, backend, <项目根>]
@@ -72,6 +73,14 @@ class Settings(BaseSettings):
     # 家长免登录访问的公开页部署地址；生成接口会把 token 拼成
     # ``{public_base_url}/r/{token}`` 返回给前端。生产环境务必改成真实域名。
     public_base_url: str = "http://localhost:5173"
+
+    # ---------- 讲解质量闸门（#67 接入生产流）----------
+    # DEMO 讲解（学生点「不会做，给我讲」）自动评一次分，低于阈值重讲一次。
+    # 默认关闭：开启会为每个 DEMO 讲解额外消耗一次模型调用（评测），
+    # 上线确认模型稳定、且确认 ArkError 降级符合预期后再设
+    # EXPLANATION_QUALITY_GATE_ENABLED=1 打开。
+    explanation_quality_gate_enabled: bool = False
+    explanation_quality_gate_threshold: int = Field(default=3, ge=1, le=5)
 
     # ---------- 短信 ----------
     sms_provider: str = "mock"

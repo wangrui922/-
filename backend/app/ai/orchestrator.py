@@ -30,6 +30,7 @@ from app.ai.state_machine import (  # T04B 状态机
     SESSION_STATE_INTRO,
     SESSION_STATE_PRACTICING,
 )
+from app.core.config import settings
 from app.core.response import ApiError, CODE_BAD_REQUEST
 from app.db import SessionLocal  # noqa: F401  (只读脚本按需自建会话，写操作一律用传入的 db)
 from app.models.ai import AiMessage, AiSession
@@ -208,6 +209,16 @@ def continue_session(
         mode=active_mode,
     )
 
+    # #67→生产流：DEMO 讲解过质量闸门（低于阈值自动重讲一次），默认关闭需显式开启
+    if active_mode == MODE_DEMO and settings.explanation_quality_gate_enabled:
+        reply = _apply_demo_quality_gate(
+            db=db,
+            session=session,
+            student_text=content,
+            reply=reply,
+            threshold=settings.explanation_quality_gate_threshold,
+        )
+
     db.add(AiMessage(session_id=session.id, role="user", content=content))
     db.add(AiMessage(session_id=session.id, role="assistant", content=reply))
     # T04B 状态机：步数 +1；开场首轮后即转入引导阶段
@@ -221,6 +232,57 @@ def continue_session(
     next_mode = MODE_GUIDE if active_mode == MODE_DEMO else active_mode
 
     return {"reply": reply, "mode": active_mode, "next_mode": next_mode}
+
+
+def _apply_demo_quality_gate(
+    *,
+    db: Session,
+    session: AiSession,
+    student_text: str,
+    reply: str,
+    threshold: int,
+) -> str:
+    """DEMO 讲解的质量闸门（#67→生产流）：评测讲解，低于阈值自动重讲一次。
+
+    非阻塞：评测或重生成任何异常都回落到原讲解。本函数延迟导入
+    ``app.services.explanation_quality``，避免 ``app.ai`` ↔ ``app.services`` 在
+    模块级形成 import 环（``ai_exercise_service`` 已用同款延迟导入）。
+
+    Args:
+        db: 调用方传入的 SQLAlchemy 会话。
+        session: 当前 AI 会话 ORM 对象。
+        student_text: 学生这一轮的话（作讲解上下文 + 重讲的 regenerate 输入）。
+        reply: 已生成的 DEMO 讲解文本。
+        threshold: 质量闸门阈值（综合分 1-5）。
+
+    Returns:
+        最终采用的讲解文本（达标的原讲解，或重讲后的新讲解，或异常时原讲解）。
+    """
+    from app.services import explanation_quality
+
+    messages = _load_messages(session.id, db)
+    history = _to_history(messages)
+    first_user = next((m["content"] for m in history if m["role"] == "user"), "")
+    analysis = _pick_analysis(messages)
+    error_type = str(analysis.get("error") or "").strip() or None
+
+    def _regenerate() -> str:
+        return tutor.next_question(
+            session_messages=history + [{"role": "user", "content": student_text}],
+            state=session.session_state,
+            mode=MODE_DEMO,
+        )
+
+    final_text, _quality = explanation_quality.ensure_explanation_quality(
+        question=first_user,
+        student_attempt=student_text,
+        ai_explanation=reply,
+        error_type=error_type,
+        regenerate=_regenerate,
+        threshold=threshold,
+        max_retries=1,
+    )
+    return final_text
 
 
 def _pick_analysis(messages: List[AiMessage]) -> Dict[str, Any]:
