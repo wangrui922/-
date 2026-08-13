@@ -1,0 +1,218 @@
+{
+  "ship_ready": 1,
+  "source_doc": "exam_yunnan_2024",
+  "source_tag": "green",
+  "exam_meta": {
+    "year": 2024,
+    "province": "云南",
+    "type": "中考",
+    "grade": 9,
+    "total_score": 100
+  },
+  "questions": [
+    {
+      "q_no": 1, "type": "选择", "difficulty": 1, "score": 2,
+      "content": "中国是最早使用正负数表示具有相反意义的量的国家. 若向北运动100米记作 +100米，则向南运动100米可记作（　）",
+      "options": {"A": "100米", "B": "-100米", "C": "200米", "D": "-200米"},
+      "answer_key": "B",
+      "explanation": "正负具有相对性，向北运动用\"+\"表示，那么向南运动就用\"-\"表示。",
+      "kp_code": "CZ_RATIONAL_OPS"
+    },
+    {
+      "q_no": 2, "type": "选择", "difficulty": 1, "score": 2,
+      "content": "某市今年参加初中学业水平考试的学生大约有57800人，57800用科学记数法可以表示为（　）",
+      "options": {"A": "5.78×10^4", "B": "57.8×10^3", "C": "578×10^2", "D": "5780×10"},
+      "answer_key": "A",
+      "explanation": "57800=5.78×10^4，科学记数法a×10^n中1≤|a|<10，n为整数。",
+      "kp_code": "CZ_INT_PROD"
+    },
+    {
+      "q_no": 3, "type": "选择", "difficulty": 2, "score": 2,
+      "content": "下列计算正确的是（　）",
+      "options": {"A": "x^3+5x^3=6x^4", "B": "x^6+x^3=x^9", "C": "(a^2)^3=a^6", "D": "(ab)^3=a^3b^3"},
+      "answer_key": "D",
+      "explanation": "A.同类项合并应为6x^3，错误；B.只有乘方可加指数；C.(a^2)^3=a^6正确但题目问正确选项；D.(ab)^3=a^3b^3正确。",
+      "kp_code": "CZ_POWER"
+    },
+    {
+      "q_no": 4, "type": "选择", "difficulty": 1, "score": 2,
+      "content": "若√x在实数范围内有意义，则实数x的取值范围为（　）",
+      "options": {"A": "x≥0", "B": "x≤0", "C": "x>0", "D": "x<0"},
+      "answer_key": "A",
+      "explanation": "二次根式有意义，被开方数须≥0。",
+      "kp_code": "CZ_QUAD_ROOT"
+    },
+    {
+      "q_no": 5, "type": "选择", "difficulty": 2, "score": 2,
+      "content": "某图书馆的一个装饰品是由几个几何体组合而成的. 其中一个几何体的三视图（主视图也称正视图，左视图也称侧视图）如图所示. 这个几何体是（　）",
+      "options": {"A": "正方体", "B": "圆柱", "C": "圆锥", "D": "长方体"},
+      "answer_key": "D",
+      "explanation": "三个视图都是矩形，故该几何体是长方体。",
+      "kp_code": "CZ_3VIEW"
+    },
+    {
+      "q_no": 6, "type": "选择", "difficulty": 2, "score": 2,
+      "content": "一个七边形的内角和等于（　）",
+      "options": {"A": "540°", "B": "900°", "C": "980°", "D": "1080°"},
+      "answer_key": "B",
+      "explanation": "n边形内角和=(n-2)×180°=(7-2)×180°=900°。",
+      "kp_code": "CZ_POLY_ANGLE"
+    },
+    {
+      "q_no": 7, "type": "选择", "difficulty": 2, "score": 2,
+      "content": "甲、乙、丙、丁四名运动员参加射击项目选拔赛，每人10次射击成绩的平均数 x(单位：环) 和方差 s^2 如下表所示. 根据表中数据，从中选择一名成绩好且发挥稳定的运动员参加比赛，应该选择（　）",
+      "options": {"A": "甲", "B": "乙", "C": "丙", "D": "丁"},
+      "answer_key": "A",
+      "explanation": "甲、乙平均数较大但甲的方差更小，故甲发挥更稳定。",
+      "kp_code": "CZ_STAT_VAR"
+    },
+    {
+      "q_no": 8, "type": "选择", "difficulty": 2, "score": 2,
+      "content": "已知AF是等腰△ABC底边BC上的高，若点F到直线AB的距离为3，则点F到直线AC的距离为（　）",
+      "options": {"A": "3/2", "B": "2", "C": "3", "D": "7/2"},
+      "answer_key": "C",
+      "explanation": "AF是等腰△ABC顶角∠BAC的平分线，由角平分线性质得F到AC的距离等于到AB的距离=3。",
+      "kp_code": "CZ_TRI_PROP"
+    },
+    {
+      "q_no": 9, "type": "选择", "difficulty": 2, "score": 2,
+      "content": "两年前生产1千克甲种药品的成本为80元，随着生产技术的进步，现在生产1千克甲种药品的成本为60元. 设甲种药品成本的年平均下降率为x，根据题意，下列方程正确的是（　）",
+      "options": {"A": "80(1-x²)=60", "B": "80(1-x)²=60", "C": "80(1-x)=60", "D": "80(1-2x)=60"},
+      "answer_key": "B",
+      "explanation": "两年下降，关系式为80(1-x)²=60。",
+      "kp_code": "CZ_QUAD_EQ"
+    },
+    {
+      "q_no": 10, "type": "选择", "difficulty": 3, "score": 2,
+      "content": "按一定规律排列的代数式：2x，3x²，4x³，5x^4，6x^5，…，第n个代数式是（　）",
+      "options": {"A": "2x^n", "B": "(n-1)x^n", "C": "nx^{n+1}", "D": "(n+1)x^n"},
+      "answer_key": "D",
+      "explanation": "系数为n+1，x的指数为n，第n个为(n+1)x^n。",
+      "kp_code": "CZ_PATTERN"
+    },
+    {
+      "q_no": 11, "type": "选择", "difficulty": 1, "score": 2,
+      "content": "中华文明，源远流长；中华汉字，寓意深广. 下列四个选项中，是轴对称图形的为（　）",
+      "options": {"A": "爱", "B": "国", "C": "敬", "D": "业"},
+      "answer_key": "D",
+      "explanation": "D\"业\"字为轴对称图形，其他三字均不对称。",
+      "kp_code": "CZ_SYM_AXIS"
+    },
+    {
+      "q_no": 12, "type": "选择", "difficulty": 2, "score": 2,
+      "content": "如图，在△ABC中，若∠B=90°，AB=3，BC=4，则tanA=（　）",
+      "options": {"A": "4/5", "B": "3/5", "C": "4/3", "D": "3/4"},
+      "answer_key": "C",
+      "explanation": "tanA=对边/邻边=BC/AB=4/3。",
+      "kp_code": "CZ_TRI_TRIG"
+    },
+    {
+      "q_no": 13, "type": "选择", "difficulty": 3, "score": 2,
+      "content": "如图，CD是⊙O的直径，点A、B在⊙O上. 若弧AC=弧BC，∠AOC=36°，则∠D=（　）",
+      "options": {"A": "9°", "B": "18°", "C": "36°", "D": "45°"},
+      "answer_key": "B",
+      "explanation": "连接AD，等弧对等圆周角：∠ADC=∠BDC=½∠AOC=18°。",
+      "kp_code": "CZ_CIRCLE_ANGLE"
+    },
+    {
+      "q_no": 14, "type": "选择", "difficulty": 2, "score": 2,
+      "content": "分解因式：a³-9a=（　）",
+      "options": {"A": "a(a-3)(a+3)", "B": "a(a²+9)", "C": "(a-3)(a+3)", "D": "a²(a-9)"},
+      "answer_key": "A",
+      "explanation": "a³-9a=a(a²-9)=a(a-3)(a+3)。",
+      "kp_code": "CZ_FACTOR"
+    },
+    {
+      "q_no": 15, "type": "选择", "difficulty": 2, "score": 2,
+      "content": "某校九年级学生参加社会实践，学习编织圆锥型工艺品. 若这种圆锥的母线长为40厘米，底面圆的半径为30厘米，则该圆锥的侧面积为（　）",
+      "options": {"A": "700π平方厘米", "B": "900π平方厘米", "C": "1200π平方厘米", "D": "1600π平方厘米"},
+      "answer_key": "C",
+      "explanation": "圆锥侧面积=½×2πr×l=πrl=π×30×40=1200π。",
+      "kp_code": "CZ_CONE_SURFACE"
+    },
+    {
+      "q_no": 16, "type": "填空", "difficulty": 2, "score": 2,
+      "content": "若一元二次方程x²-2x+c=0无实数根，则实数c的取值范围为____.",
+      "answer": "c>1",
+      "explanation": "无实根要求Δ=4-4c<0，即c>1。",
+      "kp_code": "CZ_QUAD_DISC"
+    },
+    {
+      "q_no": 17, "type": "填空", "difficulty": 2, "score": 2,
+      "content": "已知点P(2,n)在反比例函数y=10/x的图象上，则n=____.",
+      "answer": "5",
+      "explanation": "代入：n=10/2=5。",
+      "kp_code": "CZ_INVERSE_PROP"
+    },
+    {
+      "q_no": 18, "type": "填空", "difficulty": 3, "score": 2,
+      "content": "如图，AB与CD交于点O，且AC∥BD. 若(OA+OC+AC)/(OB+OD+BD)=1/2，则AC/BD=____.",
+      "answer": "1/2",
+      "explanation": "AC∥BD ⇒ △AOC∽△BOD，三角形相似比等于周长比AC/BD=1/2。",
+      "kp_code": "CZ_SIM_TRI"
+    },
+    {
+      "q_no": 19, "type": "填空", "difficulty": 2, "score": 2,
+      "content": "某中学为了丰富学生的校园体育锻炼生活，决定根据学生的兴趣爱好采购一批体育用品供学生课后锻炼使用. 学校数学兴趣小组为给学校提出合理的采购意见，随机抽取了该校学生100人，了解他们喜欢的体育项目，将收集的数据整理，绘制成如下统计图。若该校共有学生1000人，则该校喜欢跳绳的学生大约有____人.",
+      "answer": "120",
+      "explanation": "1000×12%=120(人)。",
+      "kp_code": "CZ_STAT_CHART"
+    },
+    {
+      "q_no": 20, "type": "解答", "difficulty": 2, "score": 7,
+      "content": "计算：7⁰+(1/6)^(-1)+|-1/2|-(√5)²-sin30°.",
+      "answer": "2",
+      "explanation": "7⁰=1, (1/6)^(-1)=6, |-1/2|=1/2, (√5)²=5, sin30°=1/2，原式=1+6+1/2-5-1/2=2。",
+      "kp_code": "CZ_RATIONAL_OPS"
+    },
+    {
+      "q_no": 21, "type": "解答", "difficulty": 2, "score": 6,
+      "content": "如图，在△ABC和△AED中，AB=AE，∠BAE=∠CAD，AC=AD. 求证：△ABC≌△AED.",
+      "answer": "△ABC≌△AED (SAS)",
+      "explanation": "由∠BAE=∠CAD ⇒ ∠BAC=∠EAD；又AB=AE，AC=AD，故△ABC≌△AED (SAS)。",
+      "kp_code": "CZ_TRI_CONGR"
+    },
+    {
+      "q_no": 22, "type": "解答", "difficulty": 2, "score": 7,
+      "content": "某旅行社组织游客从A地到B地的航天科技馆参观，已知A地到B地的路程为300千米，乘坐C型车比乘坐D型车少用2小时，C型车的平均速度是D型车的平均速度的3倍. 求D型车的平均速度.",
+      "answer": "100千米/小时",
+      "explanation": "设D型车速度为x千米/小时，则C型车为3x；300/x - 300/(3x) = 2，解得x=100。",
+      "kp_code": "CZ_FRAC_EQ"
+    },
+    {
+      "q_no": 23, "type": "解答", "difficulty": 3, "score": 6,
+      "content": "为使学生更加了解云南、热爱家乡、热爱祖国，体验\"有一种叫云南的生活\". 某校七年级年级组准备从博物馆a、植物园b两个研学基地中，随机选择一个基地研学，且每个基地被选到的可能性相等；八年级年级组准备从博物馆a、植物园b、科技馆c三个研学基地中，随机选择一个基地研学，且每个基地被选到的可能性相等. 记七年级年级组的选择为x，八年级年级组的选择为y。(1)请用列表法或画树状图法中的一种方法，求(x,y)所有可能出现的结果总数；(2)求该校七年级年级组、八年级年级组选择的研学基地互不相同的概率P.",
+      "answer": "(1) 6种；(2) P=2/3",
+      "explanation": "(1)列表：x∈{a,b}，y∈{a,b,c}共2×3=6种等可能结果；(2)互不相同有4种(a,b)(a,c)(b,a)(b,c)，P=4/6=2/3。",
+      "kp_code": "CZ_PROB_LIST"
+    },
+    {
+      "q_no": 24, "type": "解答", "difficulty": 3, "score": 8,
+      "content": "如图，在四边形ABCD中，点E、F、G、H分别是各边的中点，且AB∥CD，AD∥BC，四边形EFGH是矩形. (1)求证：四边形ABCD是菱形；(2)若矩形EFGH的周长为22，四边形ABCD的面积为10，求AB的长.",
+      "answer": "AB=√111",
+      "explanation": "(1)由AB∥CD、AD∥BC得ABCD为平行四边形；EFGH为矩形 ⇒ ∠HGF=90° ⇒ BD⊥AC ⇒ ABCD为菱形。(2)EFGH周长=2(AC/2+BD/2)=AC+BD=22，面积=½×AC×BD=10 ⇒ AC×BD=20，结合(AC+BD)²=AC²+2AC·BD+BD²，AC²+BD²=444 ⇒ AO²+BO²=111 ⇒ AB²=111 ⇒ AB=√111。",
+      "kp_code": "CZ_SIM_TRI"
+    },
+    {
+      "q_no": 25, "type": "解答", "difficulty": 3, "score": 8,
+      "content": "A、B两种型号的吉祥物具有吉祥如意、平安幸福的美好寓意，深受大家喜欢. 某超市销售A、B两种型号的吉祥物，有关信息见下表（成本：35元/个(A), 42元/个(B)；售价：a元/个(A), b元/个(B)）。若顾客在该超市购买8个A种型号吉祥物和7个B种型号吉祥物，则一共需要670元；购买4个A种型号吉祥物和5个B种型号吉祥物，则一共需要410元。(1)求a、b的值；(2)若该公司计划从该超市购买A、B两种型号的吉祥物共90个，且购买A种型号吉祥物的数量x(单位：个) 不少于B种型号吉祥物数量的4/3，又不超过B种型号吉祥物数量的2倍. 设该超市销售这90个吉祥物获得的总利润为y元，求y的最大值.",
+      "answer": "(1)a=40, b=50；(2)y_max=564",
+      "explanation": "(1)8a+7b=670，4a+5b=410 ⇒ a=40, b=50。(2)y=(40-35)x+(50-42)(90-x)=-3x+720，60≤x≤90，且x≥4/3(90-x) ⇒ x≥360/7≈51.4；x≤2(90-x) ⇒ x≤60。取x=60时y=540；实际需x为整数且满足：x≥360/7≈51.4 ⇒ x≥52；x≤60。当x=52时y_max=-3×52+720=564。",
+      "kp_code": "CZ_LP_SIMPLE"
+    },
+    {
+      "q_no": 26, "type": "解答", "difficulty": 3, "score": 8,
+      "content": "已知抛物线y=x²+bx-1的对称轴是直线x=3/2. 设m是抛物线y=x²+bx-1与x轴交点的横坐标，记M=(m^5-33)/109. (1)求b的值；(2)比较M与√13/2的大小.",
+      "answer": "(1)b=-3；(2)若m=(3+√13)/2则M>√13/2，若m=(3-√13)/2则M<√13/2",
+      "explanation": "(1)对称轴-b/(2×1)=3/2 ⇒ b=-3。(2)m²-3m-1=0 ⇒ m²=3m+1 ⇒ m^5=(3m+1)²·m=...=109m+33，故M=m。m为x²-3x-1=0的两根(3±√13)/2。",
+      "kp_code": "CZ_QUAD_EQ"
+    },
+    {
+      "q_no": 27, "type": "解答", "difficulty": 3, "score": 12,
+      "content": "如图，AB是⊙O的直径，点D、F是⊙O异于A、B的点. 点C在⊙O外，CA=CD，延长BF与CA的延长线交于点M，点N在BA的延长线上，∠AMN=∠ABM，AM·BM=AB·MN. 点H在直径AB上，∠AHD=90°，点E是线段DH的中点. (1)求∠AFB的度数；(2)求证：直线CM与⊙O相切；(3)看一看，想一想，证一证：以下与线段CE、线段EB、线段CB有关的三个结论：CE+EB<CB, CE+EB=CB, CE+EB>CB，你认为哪个正确？请说明理由.",
+      "answer": "(1)∠AFB=90°；(2)证明CM与⊙O相切；(3)CE+EB=CB正确",
+      "explanation": "(1)直径AB所对的圆周角∠AFB=90°。(2)由AM·BM=AB·MN得AM/AB=MN/BM，又∠AMN=∠ABM ⇒ △AMN∽△ABM ⇒ ∠NAM=∠MAB ⇒ OA⊥CM ⇒ CM与⊙O相切。(3)利用全等三角形和相似三角形，证明GH=GD ⇒ G为DH中点 ⇒ E与G重合 ⇒ CE+EB=CB。",
+      "kp_code": "CZ_CIRCLE_TANGENT"
+    }
+  ]
+}

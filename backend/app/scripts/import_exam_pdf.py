@@ -85,10 +85,10 @@ def _check_other(stem: str, answer: str, q_type: str, *, ctx: str) -> bool:
 
 def import_one(s: Session, source_doc: str, ship_ready: bool, default_tag: str, q: dict[str, Any]) -> str:
     """upsert 单题，返回结果状态字符串。"""
-    no = q["no"]
+    no = q.get("no") or q.get("q_no")
     q_type = q["type"]
-    stem = q["stem"]
-    raw_answer = q.get("answer", "")
+    stem = q.get("content") or q.get("stem")
+    raw_answer = q.get("answer") or q.get("answer_key") or ""
     kp_code = q.get("kp_code")
     difficulty = q.get("difficulty", 1)
     # difficulty 受 CHECK 约束 (1/3/5)；用户语义 1/2/3 → 1/3/5
@@ -179,6 +179,7 @@ def run(json_path: str, *, ship_ready_override: bool | None = None) -> dict[str,
                 counts["ok"] += 1
             else:
                 counts["skip"] += 1
+                print(f"  [import-exam-pdf] {status}", flush=True)
         s.commit()
     counts["total"] = len(qs)
     return counts
