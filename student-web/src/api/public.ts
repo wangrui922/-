@@ -16,7 +16,8 @@ import { ApiError, type ApiEnvelope } from '@/api/http'
 const PUBLIC_TIMEOUT = 30_000
 
 export const publicHttp: AxiosInstance = axios.create({
-  baseURL: '/api',
+  // 与 http.ts 同源：生产构建注入 VITE_API_BASE 后直连已托管后端。
+  baseURL: import.meta.env.VITE_API_BASE || '/api',
   timeout: PUBLIC_TIMEOUT,
 })
 

@@ -24,14 +24,6 @@ from app.api import api_router
 from app.core.config import settings
 from app.core.response import register_exception_handlers
 
-#: 本地前端常用开发地址（Vite 默认 5173，CRA/Next 常用 3000）
-_LOCAL_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-]
-
 
 def create_app() -> FastAPI:
     """工厂函数：构建并装配 FastAPI 应用。"""
@@ -51,10 +43,11 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
-    # ---- CORS：允许 localhost 前端跨域调用 -------------------------------
+    # ---- CORS：白名单取自环境变量 CORS_ORIGINS（逗号分隔），默认含常用本地地址 ----
+    # 生产部署时把前端域名（如 https://xxx.edgeone.cool）加入 CORS_ORIGINS 即可跨域。
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=_LOCAL_ORIGINS,
+        allow_origins=settings.cors_origin_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

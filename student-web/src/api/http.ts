@@ -37,7 +37,10 @@ export class ApiError extends Error {
 const HTTP_TIMEOUT = 90_000 // AI 生成较慢，给 90s
 
 export const http: AxiosInstance = axios.create({
-  baseURL: '/api',
+  // 本地/开发：走 Vite 代理到 localhost:8000（VITE_API_BASE 未设置时）；
+  // 生产：构建时注入 VITE_API_BASE（如 https://api.xxx.com）即可直连已托管后端，
+  // 无需前端持有任何密钥。
+  baseURL: import.meta.env.VITE_API_BASE || '/api',
   timeout: HTTP_TIMEOUT,
 })
 
