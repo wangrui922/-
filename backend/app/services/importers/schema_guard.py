@@ -216,10 +216,72 @@ def ensure_mistake_kp_column(engine: Engine) -> Dict[str, object]:
     return {"added": added, "backfilled": backfilled}
 
 
+def ensure_source_tag_column(engine: Engine) -> Dict[str, object]:
+    """保证 ``questions`` 表存在 ``source_tag`` 列（T06 · 溯源护栏 · examprep 借鉴）。
+
+    沿用 :func:`ensure_mistake_kp_column` 模式：先 ``inspect`` 探测列是否存在，
+    不存在则 ``ALTER TABLE ADD COLUMN`` + 回填 + 建索引。全部幂等。
+
+    回填语义（与 migrations/006_source_tag_sqlite.sql 一致）：
+        * ``source_doc = 'ai_gen'`` → ``red``（疑似编造/未核验，进待抽检队列）；
+        * 其余（docx 资料题）→ ``green``（已核验，讲解可直接信任）。
+
+    Args:
+        engine: SQLAlchemy 引擎。
+
+    Returns:
+        ``{"added": bool, "backfilled": int, "red": int, "green": int}``。
+
+    Raises:
+        SchemaGuardError: ``questions`` 表不存在。
+    """
+    columns = existing_columns(engine, table="questions")
+    if not columns:
+        raise SchemaGuardError("questions 表不存在，请先执行 Base.metadata.create_all() 或 001 迁移")
+
+    if "source_tag" in columns:
+        return {"added": False, "backfilled": 0, "red": 0, "green": 0}
+
+    added = False
+    backfilled = 0
+    red = 0
+    green = 0
+
+    with engine.begin() as conn:
+        # SQLite 不支持 NOT NULL + DEFAULT 同条，建为 nullable 再回填
+        conn.execute(text("ALTER TABLE questions ADD COLUMN source_tag VARCHAR(8)"))
+        added = True
+        logger.warning("[schema_guard] questions 表补充列: source_tag VARCHAR(8)")
+
+        r = conn.execute(
+            text("UPDATE questions SET source_tag = 'red' WHERE source_doc = 'ai_gen'")
+        )
+        red = int(r.rowcount or 0)
+        g = conn.execute(
+            text(
+                "UPDATE questions SET source_tag = 'green' "
+                "WHERE source_tag IS NULL OR source_tag <> 'red'"
+            )
+        )
+        green = int(g.rowcount or 0)
+        backfilled = red + green
+        if backfilled:
+            logger.warning(
+                "[schema_guard] 已回填 source_tag：red=%d, green=%d", red, green
+            )
+
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_questions_source_tag ON questions (source_tag)")
+        )
+
+    return {"added": added, "backfilled": backfilled, "red": red, "green": green}
+
+
 __all__ = [
     "BANK_COLUMNS",
     "BANK_INDEXES",
     "existing_columns",
     "ensure_bank_columns",
     "ensure_mistake_kp_column",
+    "ensure_source_tag_column",
 ]

@@ -1,0 +1,79 @@
+{
+  "knowledgePoints": [
+    {"code": "CZ_RATIONAL", "name": "有理数", "parentCode": null, "sort": 10, "description": "初中代数入口：相反数、绝对值、数轴、乘方与科学记数法"},
+    {"code": "CZ_RAT_OPP", "name": "相反数与绝对值", "parentCode": "CZ_RATIONAL", "sort": 10, "description": "相反数、绝对值的概念与计算"},
+    {"code": "CZ_RAT_AXIS", "name": "数轴与有理数比较", "parentCode": "CZ_RATIONAL", "sort": 20, "description": "数轴上的点、有理数大小比较"},
+    {"code": "CZ_RAT_POW", "name": "有理数的乘方", "parentCode": "CZ_RATIONAL", "sort": 30, "description": "乘方意义、符号法则与混合运算"},
+    {"code": "CZ_RAT_SCI", "name": "科学记数法", "parentCode": "CZ_RATIONAL", "sort": 40, "description": "大数/小数的科学记数法表示"},
+
+    {"code": "CZ_REAL", "name": "实数", "parentCode": null, "sort": 20, "description": "平方根、算术平方根与实数运算"},
+    {"code": "CZ_REAL_SQRT", "name": "平方根与算术平方根", "parentCode": "CZ_REAL", "sort": 10, "description": "平方根、算术平方根的求法"},
+    {"code": "CZ_REAL_OP", "name": "实数的运算", "parentCode": "CZ_REAL", "sort": 20, "description": "实数的四则运算与估算"},
+
+    {"code": "CZ_INTEGER", "name": "整式及其加减", "parentCode": null, "sort": 30, "description": "单项式、多项式与合并同类项、去括号"},
+    {"code": "CZ_INT_TERM", "name": "单项式与多项式", "parentCode": "CZ_INTEGER", "sort": 10, "description": "项、系数、次数、同类项识别"},
+    {"code": "CZ_INT_COMBINE", "name": "合并同类项", "parentCode": "CZ_INTEGER", "sort": 20, "description": "整式加减、合并同类项"},
+    {"code": "CZ_INT_BRACKET", "name": "去括号与化简", "parentCode": "CZ_INTEGER", "sort": 30, "description": "去括号法则与整式化简求值"},
+
+    {"code": "CZ_LINEAR1", "name": "一元一次方程", "parentCode": null, "sort": 40, "description": "解方程与简单应用题"},
+    {"code": "CZ_L1_SOLVE", "name": "解一元一次方程", "parentCode": "CZ_LINEAR1", "sort": 10, "description": "移项、去括号、去分母解方程"},
+    {"code": "CZ_L1_APP", "name": "一元一次方程应用题", "parentCode": "CZ_LINEAR1", "sort": 20, "description": "行程、工程、利润等列方程"},
+
+    {"code": "CZ_GEOM_BASIC", "name": "几何图形初步", "parentCode": null, "sort": 50, "description": "线、角、立体图形展开"},
+    {"code": "CZ_GB_ANGLE", "name": "角的度量与计算", "parentCode": "CZ_GEOM_BASIC", "sort": 10, "description": "度分秒、角平分线、角度计算"},
+    {"code": "CZ_GB_LINE", "name": "直线射线线段", "parentCode": "CZ_GEOM_BASIC", "sort": 20, "description": "线段中点、长短比较"},
+
+    {"code": "CZ_PARALLEL", "name": "相交线与平行线", "parentCode": null, "sort": 60, "description": "余角补角、平行线判定与性质"},
+    {"code": "CZ_PL_ANGLE", "name": "余角补角对顶角", "parentCode": "CZ_PARALLEL", "sort": 10, "description": "互余互补、对顶角性质"},
+    {"code": "CZ_PL_PARALLEL", "name": "平行线判定与性质", "parentCode": "CZ_PARALLEL", "sort": 20, "description": "平行判定、平行线性质与角度"},
+
+    {"code": "CZ_COORD", "name": "平面直角坐标系", "parentCode": null, "sort": 70, "description": "点的坐标、象限与距离"},
+    {"code": "CZ_CO_POINT", "name": "点的坐标与象限", "parentCode": "CZ_COORD", "sort": 10, "description": "象限判断、对称点"},
+    {"code": "CZ_CO_DIST", "name": "坐标系中距离", "parentCode": "CZ_COORD", "sort": 20, "description": "两点间距离、坐标轴距离"},
+
+    {"code": "CZ_LINEAR2", "name": "二元一次方程组", "parentCode": null, "sort": 80, "description": "解方程组与应用题"},
+    {"code": "CZ_L2_SOLVE", "name": "解二元一次方程组", "parentCode": "CZ_LINEAR2", "sort": 10, "description": "代入法、加减法求解"},
+    {"code": "CZ_L2_APP", "name": "二元一次方程组应用题", "parentCode": "CZ_LINEAR2", "sort": 20, "description": "鸡兔同笼、配套问题"},
+
+    {"code": "CZ_INEQ", "name": "不等式与不等式组", "parentCode": null, "sort": 90, "description": "一元一次不等式与不等式组"},
+    {"code": "CZ_IN_SOLVE", "name": "一元一次不等式", "parentCode": "CZ_INEQ", "sort": 10, "description": "不等式解法与数轴表示"},
+    {"code": "CZ_IN_SYS", "name": "一元一次不等式组", "parentCode": "CZ_INEQ", "sort": 20, "description": "不等式组解集求法"},
+
+    {"code": "CZ_TRI", "name": "三角形", "parentCode": null, "sort": 100, "description": "内角和、全等与相似"},
+    {"code": "CZ_TRI_ANGLE", "name": "三角形内角和", "parentCode": "CZ_TRI", "sort": 10, "description": "内角和、外角、边角关系"},
+    {"code": "CZ_TRI_CONG", "name": "全等三角形", "parentCode": "CZ_TRI", "sort": 20, "description": "SSS/SAS/ASA 判定与性质"},
+    {"code": "CZ_TRI_SIM", "name": "相似三角形", "parentCode": "CZ_TRI", "sort": 30, "description": "相似比、性质与计算"},
+
+    {"code": "CZ_PYTH", "name": "勾股定理", "parentCode": null, "sort": 110, "description": "直角三角形三边关系"},
+    {"code": "CZ_PYTH_BASIC", "name": "勾股定理计算", "parentCode": "CZ_PYTH", "sort": 10, "description": "已知两边求第三边"},
+    {"code": "CZ_PYTH_APP", "name": "勾股定理应用", "parentCode": "CZ_PYTH", "sort": 20, "description": "实际问题中的直角构造"},
+
+    {"code": "CZ_QUAD", "name": "四边形", "parentCode": null, "sort": 120, "description": "平行四边形与特殊四边形"},
+    {"code": "CZ_QU_PARAL", "name": "平行四边形性质", "parentCode": "CZ_QUAD", "sort": 10, "description": "对边对角对角线性质"},
+    {"code": "CZ_QU_SPECIAL", "name": "特殊平行四边形", "parentCode": "CZ_QUAD", "sort": 20, "description": "矩形菱形正方形的性质"},
+
+    {"code": "CZ_FUNC1", "name": "一次函数", "parentCode": null, "sort": 130, "description": "解析式与图像性质"},
+    {"code": "CZ_F1_EXPR", "name": "一次函数解析式", "parentCode": "CZ_FUNC1", "sort": 10, "description": "待定系数法求解析式"},
+    {"code": "CZ_F1_IMG", "name": "一次函数图像性质", "parentCode": "CZ_FUNC1", "sort": 20, "description": "k/b 与图像增减性"},
+
+    {"code": "CZ_FUNC_INV", "name": "反比例函数", "parentCode": null, "sort": 140, "description": "反比例函数解析式与图像"},
+    {"code": "CZ_FI_EXPR", "name": "反比例函数解析式", "parentCode": "CZ_FUNC_INV", "sort": 10, "description": "待定系数法求 k"},
+
+    {"code": "CZ_FRAC", "name": "分式", "parentCode": null, "sort": 150, "description": "分式化简与分式方程"},
+    {"code": "CZ_FRAC_SIMPLIFY", "name": "分式化简", "parentCode": "CZ_FRAC", "sort": 10, "description": "约分、通分、四则运算"},
+    {"code": "CZ_FRAC_EQ", "name": "分式方程", "parentCode": "CZ_FRAC", "sort": 20, "description": "解分式方程与检验"},
+
+    {"code": "CZ_RADICAL", "name": "二次根式", "parentCode": null, "sort": 160, "description": "二次根式化简与运算"},
+    {"code": "CZ_RD_SIMPLIFY", "name": "二次根式化简", "parentCode": "CZ_RADICAL", "sort": 10, "description": "最简二次根式、乘除"},
+
+    {"code": "CZ_PROB", "name": "概率初步", "parentCode": null, "sort": 170, "description": "古典概型与频率"},
+    {"code": "CZ_PR_CLASSIC", "name": "古典概型", "parentCode": "CZ_PROB", "sort": 10, "description": "等可能事件概率计算"},
+
+    {"code": "CZ_STAT", "name": "统计", "parentCode": null, "sort": 180, "description": "数据代表量与图表"},
+    {"code": "CZ_ST_MEAN", "name": "平均数中位数众数", "parentCode": "CZ_STAT", "sort": 10, "description": "集中趋势量的计算"},
+
+    {"code": "CZ_TRIG", "name": "锐角三角函数", "parentCode": null, "sort": 190, "description": "特殊角三角函数与解直角"},
+    {"code": "CZ_TG_DEF", "name": "锐角三角函数定义", "parentCode": "CZ_TRIG", "sort": 10, "description": "正弦余弦正切定义"},
+    {"code": "CZ_TG_APP", "name": "解直角三角形", "parentCode": "CZ_TRIG", "sort": 20, "description": "仰角俯角实际问题"}
+  ]
+}

@@ -52,6 +52,10 @@ EDITION_VALUES = ("青岛版", "苏教版")
 SOURCE_TYPE_VALUES = ("衔接", "期末")
 #: 册内分区枚举（T05）；同一册的温故/预习靠它区分，**不拆年级**
 SECTION_VALUES = ("温故", "预习", "提优", "摸底", "专项", "自测")
+#: 溯源标记枚举（examprep 借鉴 · 讲解质量护栏 T06）。
+#: green=来自教材/资料且已核验(可信) / yellow=AI 生成补充(正确但建议抽检) /
+#: red=疑似编造或未经核验(进待抽检队列, 不对外抽题)。
+SOURCE_TAG_VALUES = ("green", "yellow", "red")
 
 #: 学段（商业化学段选择器用）。
 #:
@@ -179,6 +183,16 @@ class Question(Base):
     kp_verified: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, comment="知识点是否人工复核通过"
     )
+    #: 溯源标记（T06 · examprep 借鉴）。
+    #:
+    #: green=来自教材/资料且已核验(讲解可直接信任) /
+    #: yellow=AI 生成补充(正确但需要抽检) / red=疑似编造或未经核验(进待抽检队列, 不抽题)。
+    #: 存量 docx 题回填 ``green``；AI 生成归档题(``source_doc='ai_gen'``)回填 ``red``；
+    #: 本库批量生成题(``scripts/generate_math_bank.py``)标 ``yellow``。
+    source_tag: Mapped[Optional[str]] = mapped_column(
+        String(8), nullable=True, default="green", server_default="green",
+        comment="溯源标记 green/yellow/red",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, comment="创建时间(UTC)"
     )
@@ -240,4 +254,5 @@ __all__ = [
     "EDITION_VALUES",
     "SOURCE_TYPE_VALUES",
     "SECTION_VALUES",
+    "SOURCE_TAG_VALUES",
 ]
