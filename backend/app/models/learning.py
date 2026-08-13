@@ -13,12 +13,14 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -203,11 +205,78 @@ class LearningTask(Base):
 if TYPE_CHECKING:
     from app.models.user import Student  # noqa: F401
 
+
+class ReviewSchedule(Base):
+    """复习排程表（学生 × 知识点，SM-2 间隔重复状态物化）—— #65「留得住」。
+
+    与 ``student_mastery``（掌握度）互补：
+        * ``student_mastery`` 回答「现在掌握得怎么样」；
+        * 本表回答「下一次什么时候该复习这道知识点」。
+
+    状态字段直接映射 ``app.services.review_scheduler.ReviewState``，
+    ``review_service`` 负责在两者间做转换与 upsert。
+    """
+
+    __tablename__ = "review_schedule"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("students.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="所属学生",
+    )
+    knowledge_point_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("knowledge_points.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="关联知识点",
+    )
+    # ---- SM-2 状态（与 review_scheduler.ReviewState 对齐） ------------------
+    ease_factor: Mapped[float] = mapped_column(
+        Float, nullable=False, default=2.5, comment="难度系数 EF(初始2.5,下限1.3)"
+    )
+    interval_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="当前间隔天数"
+    )
+    repetitions: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="连续记住次数(答错归零)"
+    )
+    last_reviewed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="上次复习时间(UTC)"
+    )
+    due_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="下次应复习时间(UTC);None=从未复习→立即到期",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, comment="创建时间(UTC)"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        comment="更新时间(UTC)",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("student_id", "knowledge_point_id", name="uq_review_schedule_student_kp"),
+        Index("idx_review_schedule_due", "student_id", "due_at"),
+        {"comment": "复习排程表(SM-2 #65)"},
+    )
+
+
 __all__ = [
     "Mistake",
     "Attempt",
     "StudentProfile",
     "LearningTask",
+    "ReviewSchedule",
     "TASK_TYPE_VALUES",
     "TASK_STATUS_VALUES",
 ]

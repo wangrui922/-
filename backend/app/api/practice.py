@@ -23,22 +23,27 @@
 from __future__ import annotations
 
 import logging
+import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Body, Depends
 from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.deps import CurrentUser, get_current_user
 from app.core.response import ok
 from app.db import get_db
+from app.models.content import KnowledgePoint
 from app.schemas.practice import (
     DrawRequest,
     GuideRequest,
     QuestionRefRequest,
+    ReviewRecordRequest,
     SessionRequest,
     SubmitRequest,
 )
-from app.services import practice_service
+from app.services import practice_service, review_service
 from app.services.learning_service import require_student_id
 
 logger = logging.getLogger("app.api.practice")
@@ -176,6 +181,76 @@ async def guide(
         work=body.work,
     )
     return ok(data)
+
+
+# ==================================================================== #65 复习排程
+@router.get("/review/today")
+def review_today(
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """今日复习清单：挑出当前学生「现在该复习」的知识点（SM-2 间隔重复）。
+
+    Returns:
+        ``{"code":0,"msg":"ok","data":{items,total}}``，
+        ``items`` 每项含 ``kp_id / kp_name / kp_code / due_at / interval_days /
+        repetitions / ease_factor``，按到期时间升序。
+
+    前端据此渲染「今日复习」入口，点进去复用 ``/practice/session``（按 kp_id 抽题）。
+    """
+    student_id = require_student_id(current.sid)
+    now = datetime.now(timezone.utc)
+    due = review_service.list_due_reviews(db, student_id, now=now)
+    kp_map: dict = {}
+    if due:
+        kp_ids = [kp for (kp, _st) in due]
+        rows = db.execute(
+            select(KnowledgePoint).where(KnowledgePoint.id.in_(kp_ids))
+        ).scalars().all()
+        kp_map = {r.id: r for r in rows}
+    items = []
+    for kp_id, st in due:
+        kp = kp_map.get(kp_id)
+        items.append({
+            "kp_id": str(kp_id),
+            "kp_name": kp.name if kp else None,
+            "kp_code": kp.code if kp else None,
+            "due_at": st.due_at.isoformat() if st.due_at else None,
+            "interval_days": st.interval_days,
+            "repetitions": st.repetitions,
+            "ease_factor": round(st.ease_factor, 4),
+        })
+    return ok({"items": items, "total": len(items)})
+
+
+@router.post("/review/record")
+def review_record(
+    body: ReviewRecordRequest,
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """记录一次复习结果（#65 间隔重复推进）。
+
+    用「对/错 + verdict」收敛成 SM-2 的 quality 后落库 ``review_schedule``，
+    下次到期时间随之更新。前端在复习作答后调用。
+
+    Returns:
+        ``{"code":0,"msg":"ok","data":{kp_id, repetitions, interval_days, ease_factor, due_at}}``。
+    """
+    student_id = require_student_id(current.sid)
+    kp_id = uuid.UUID(body.kp_id)
+    now = datetime.now(timezone.utc)
+    state = review_service.record_review_from_result(
+        db, student_id, kp_id, correct=body.correct, verdict=body.verdict or "pending", now=now
+    )
+    db.commit()
+    return ok({
+        "kp_id": body.kp_id,
+        "repetitions": state.repetitions,
+        "interval_days": state.interval_days,
+        "ease_factor": round(state.ease_factor, 4),
+        "due_at": state.due_at.isoformat() if state.due_at else None,
+    })
 
 
 __all__ = ["router"]

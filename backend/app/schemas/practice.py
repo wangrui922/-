@@ -68,6 +68,17 @@ class GuideRequest(PracticeBase):
     work: Optional[str] = Field(None, max_length=4000, description="孩子当前的作答过程")
 
 
+class ReviewRecordRequest(PracticeBase):
+    """``POST /api/practice/review/record`` 请求体（#65 复习排程记录一次复习）。"""
+
+    kp_id: str = Field(..., description="知识点 ID")
+    correct: bool = Field(..., description="本次复习是否答对")
+    verdict: Optional[str] = Field(
+        "pending",
+        description="辅导 verdict：correct=讲清且熟 / pending=蒙对或似懂 / wrong=答错",
+    )
+
+
 # ==================================================================== 响应体
 class OptionOut(PracticeBase):
     """归一化后的选项。"""

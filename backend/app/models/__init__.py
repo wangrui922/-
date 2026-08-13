@@ -12,7 +12,7 @@ from __future__ import annotations
 from app.models.base import Base
 from app.models.user import Student, User
 from app.models.content import Answer, KnowledgePoint, Question
-from app.models.learning import Attempt, LearningTask, Mistake, StudentProfile
+from app.models.learning import Attempt, LearningTask, Mistake, ReviewSchedule, StudentProfile
 from app.models.ai import AiMessage, AiSession
 from app.models.student_mastery import StudentMastery
 from app.models.weekly_report import WeeklyReport
@@ -35,6 +35,7 @@ __all__ = [
     "Attempt",
     "StudentProfile",
     "LearningTask",
+    "ReviewSchedule",
     # 画像域（T04）
     "StudentMastery",
     # 家长周报域（Epic6）
