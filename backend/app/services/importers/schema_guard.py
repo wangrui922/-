@@ -277,6 +277,58 @@ def ensure_source_tag_column(engine: Engine) -> Dict[str, object]:
     return {"added": added, "backfilled": backfilled, "red": red, "green": green}
 
 
+def ensure_ship_ready_column(engine: Engine) -> Dict[str, object]:
+    """保证 ``questions`` 表存在 ``ship_ready`` 列（T07 · 版权护栏）。
+
+    沿用 :func:`ensure_source_tag_column` 模式：先 ``inspect`` 探测列是否存在，
+    不存在则 ``ALTER TABLE ADD COLUMN`` + 回填 + 建索引。全部幂等。
+
+    回填语义（与 migrations/007_ship_ready_sqlite.sql 一致）：
+        * 存量题（导入本功能前的所有题）默认可发布 → ``ship_ready = 1``；
+        * 真实考卷导入时若版权未清/仅内部评测，由导入脚本**显式**置 ``0``。
+        * 本函数不做"置 0"的自动判定，只保证列存在且存量非空。
+
+    Args:
+        engine: SQLAlchemy 引擎。
+
+    Returns:
+        ``{"added": bool, "backfilled": int}``。
+
+    Raises:
+        SchemaGuardError: ``questions`` 表不存在。
+    """
+    columns = existing_columns(engine, table="questions")
+    if not columns:
+        raise SchemaGuardError("questions 表不存在，请先执行 Base.metadata.create_all() 或 001 迁移")
+
+    if "ship_ready" in columns:
+        return {"added": False, "backfilled": 0}
+
+    added = False
+    backfilled = 0
+
+    with engine.begin() as conn:
+        # SQLite 不支持 NOT NULL + DEFAULT 同条，建为 nullable 再回填
+        conn.execute(text("ALTER TABLE questions ADD COLUMN ship_ready BOOLEAN"))
+        added = True
+        logger.warning("[schema_guard] questions 表补充列: ship_ready BOOLEAN")
+
+        r = conn.execute(
+            text("UPDATE questions SET ship_ready = 1 WHERE ship_ready IS NULL")
+        )
+        backfilled = int(r.rowcount or 0)
+        if backfilled:
+            logger.warning(
+                "[schema_guard] 已回填 %d 道存量题的 ship_ready=1（默认可发布）", backfilled
+            )
+
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_questions_ship_ready ON questions (ship_ready)")
+        )
+
+    return {"added": added, "backfilled": backfilled}
+
+
 __all__ = [
     "BANK_COLUMNS",
     "BANK_INDEXES",
@@ -284,4 +336,5 @@ __all__ = [
     "ensure_bank_columns",
     "ensure_mistake_kp_column",
     "ensure_source_tag_column",
+    "ensure_ship_ready_column",
 ]

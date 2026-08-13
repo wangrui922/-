@@ -193,6 +193,15 @@ class Question(Base):
         String(8), nullable=True, default="green", server_default="green",
         comment="溯源标记 green/yellow/red",
     )
+    #: 是否可随产品对外发布（T07 · 版权护栏）。
+    #:
+    #: 默认 **True**（可发布）。真实考卷若版权未清/仅内部评测，导入时显式置 **False**，
+    #: 使其不进入任何对外发布/导出池（仅内部校验、讲解质量评测可用）。
+    #: 例：云南中考真题(用户声明可公开)=True；下载站模拟卷(内部金标准)=False。
+    ship_ready: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="1",
+        comment="是否可对外发布；真实卷内部金标准置0",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, comment="创建时间(UTC)"
     )

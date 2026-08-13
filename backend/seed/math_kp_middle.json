@@ -74,6 +74,10 @@
 
     {"code": "CZ_TRIG", "name": "锐角三角函数", "parentCode": null, "sort": 190, "description": "特殊角三角函数与解直角"},
     {"code": "CZ_TG_DEF", "name": "锐角三角函数定义", "parentCode": "CZ_TRIG", "sort": 10, "description": "正弦余弦正切定义"},
-    {"code": "CZ_TG_APP", "name": "解直角三角形", "parentCode": "CZ_TRIG", "sort": 20, "description": "仰角俯角实际问题"}
+    {"code": "CZ_TG_APP", "name": "解直角三角形", "parentCode": "CZ_TRIG", "sort": 20, "description": "仰角俯角实际问题"},
+
+    {"code": "CZ_QUAD_EQ", "name": "一元二次方程", "parentCode": null, "sort": 200, "description": "9年级核心：一元二次方程的解法与应用(增长率/面积/利润问题)"},
+
+    {"code": "CZ_FACTOR", "name": "因式分解", "parentCode": "CZ_INTEGER", "sort": 40, "description": "提公因式、公式法(平方差/完全平方)"}
   ]
 }
