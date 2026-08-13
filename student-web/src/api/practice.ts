@@ -68,6 +68,8 @@ export const JUDGE_ANSWER_FALSE = '×'
 export interface DrawParams {
   /** 年级 1~9（升入年级口径） */
   grade?: number
+  /** 学段：小学 / 初中 / 高中（按年级区间过滤，与 grade 叠加为交集） */
+  grade_band?: string
   /** 教材版本：青岛版 / 苏教版 */
   edition?: string
   /** 册内分区：温故 / 预习 / 提优 / 摸底 / 专项 / 自测 */
@@ -239,6 +241,7 @@ export function drawSession(params: DrawParams = {}): Promise<DrawResult> {
   if (typeof params.grade === 'number' && Number.isFinite(params.grade)) {
     body.grade = params.grade
   }
+  if (params.grade_band) body.grade_band = params.grade_band
   if (params.edition) body.edition = params.edition
   if (params.section) body.section = params.section
   if (params.kp_id) body.kp_id = params.kp_id

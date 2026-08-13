@@ -22,6 +22,7 @@ import {
   SECTIONS,
   type DrawParams,
 } from '@/api/practice'
+import { segmentState } from '@/stores/segment'
 
 defineProps<{
   loading: boolean
@@ -55,6 +56,8 @@ function chipClass(active: boolean): string {
  */
 const summary = computed<string>(() => {
   const parts: string[] = []
+  // 学段优先展示：顶栏切换的全局学段（null=不限）
+  parts.push(segmentState.band ? segmentState.band : '不限学段')
   parts.push(grade.value === null ? '不限年级' : `${grade.value}年级`)
   if (edition.value) parts.push(edition.value)
   if (section.value) parts.push(section.value)
@@ -107,6 +110,8 @@ function switchToQingdao(): void {
 function handleStart(): void {
   const params: DrawParams = { count: count.value }
   if (grade.value !== null) params.grade = grade.value
+  // 顶栏学段切换：把全局学段翻译成 grade_band 下发给后端（null=不限，不传）
+  if (segmentState.band) params.grade_band = segmentState.band
   if (edition.value) params.edition = edition.value
   if (section.value) params.section = section.value
   emit('start', params)

@@ -10,6 +10,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { logout } from '@/stores/auth'
+import { BANDS, segmentState, setBand, type Segment } from '@/stores/segment'
 
 interface NavItem {
   name: string
@@ -60,6 +61,12 @@ function handleLogout(): void {
   logout()
   void router.replace({ name: 'login' })
 }
+
+/** 顶栏学段切换：点击即设定并持久化（#68 学段 UI）。传 null 表示「不限」。 */
+function handleBand(band: Segment | null): void {
+  // 再次点击当前学段 → 切回「不限」
+  setBand(segmentState.band === band ? null : band)
+}
 </script>
 
 <template>
@@ -96,12 +103,35 @@ function handleLogout(): void {
     <!-- 右侧：顶栏 + 内容 -->
     <div class="flex min-w-0 flex-1 flex-col">
       <header
-        class="flex h-12 shrink-0 items-center justify-between border-b border-slate-100 bg-white px-4"
+        class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-slate-100 bg-white px-4"
       >
         <h1 class="truncate text-sm font-bold text-slate-800">{{ pageTitle }}</h1>
+
+        <!-- 学段切换器（#68）：小学/初中/高中/不限，全局持久化 -->
+        <div class="flex items-center gap-1 rounded-full bg-slate-100 p-0.5">
+          <button
+            v-for="band in BANDS"
+            :key="band"
+            type="button"
+            class="rounded-full px-2.5 py-1 text-xs font-medium transition"
+            :class="segmentState.band === band ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 active:text-slate-700'"
+            @click="handleBand(band)"
+          >
+            {{ band }}
+          </button>
+          <button
+            type="button"
+            class="rounded-full px-2.5 py-1 text-xs font-medium transition"
+            :class="segmentState.band === null ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-400 active:text-slate-600'"
+            @click="handleBand(null)"
+          >
+            不限
+          </button>
+        </div>
+
         <button
           type="button"
-          class="text-sm text-slate-400 transition active:text-slate-600"
+          class="shrink-0 text-sm text-slate-400 transition active:text-slate-600"
           @click="handleLogout"
         >
           退出

@@ -58,6 +58,8 @@ from app.core.response import (
 )
 from app.models.base import utcnow
 from app.models.content import (
+    BAND_GRADE_RANGE,
+    GRADE_BANDS,
     QUESTION_STATUS_ACTIVE,
     Answer,
     KnowledgePoint,
@@ -166,6 +168,7 @@ def _candidate_rows(
     *,
     attributable_only: bool,
     grade: Optional[int],
+    grade_band: Optional[str],
     edition: Optional[str],
     section: Optional[str],
     kp_id: Optional[uuid.UUID],
@@ -228,6 +231,11 @@ def _candidate_rows(
         stmt = stmt.where(Question.kp_id.isnot(None), Question.kp_verified.is_(True))
     if grade is not None:
         stmt = stmt.where(Question.grade == int(grade))
+    # 学段（小学/初中/高中）按年级区间过滤：识别不出的 band 直接忽略，
+    # 不影响其余筛选条件。与单 grade 等值过滤可叠加（交集语义）。
+    if grade_band is not None and grade_band in GRADE_BANDS:
+        lo, hi = BAND_GRADE_RANGE[grade_band]
+        stmt = stmt.where(Question.grade.between(int(lo), int(hi)))
     if edition:
         stmt = stmt.where(Question.edition == edition)
     if section:
@@ -556,6 +564,7 @@ def draw_questions(
     *,
     student_id: Any,
     grade: Optional[int] = None,
+    grade_band: Optional[str] = None,
     edition: Optional[str] = None,
     section: Optional[str] = None,
     kp_id: Optional[Any] = None,
@@ -601,6 +610,7 @@ def draw_questions(
     recent = _recent_question_ids(db, sid)
     common: Dict[str, Any] = {
         "grade": grade,
+        "grade_band": grade_band,
         "edition": edition,
         "section": section,
         "kp_id": target_kp,

@@ -30,6 +30,7 @@ class DrawRequest(PracticeBase):
     """
 
     grade: Optional[int] = Field(None, ge=1, le=9, description="年级（升入年级口径）")
+    grade_band: Optional[str] = Field(None, max_length=8, description="学段：小学/初中/高中（按年级区间过滤，与 grade 叠加为交集）")
     edition: Optional[str] = Field(None, max_length=16, description="教材版本：青岛版/苏教版")
     section: Optional[str] = Field(None, max_length=32, description="册内分区：温故/预习/提优/摸底/专项/自测")
     kp_id: Optional[str] = Field(None, description="指定知识点 ID")

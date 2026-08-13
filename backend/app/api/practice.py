@@ -70,6 +70,7 @@ def create_practice_session(
         db,
         student_id=student_id,
         grade=body.grade,
+        grade_band=body.grade_band,
         edition=body.edition,
         section=body.section,
         kp_id=body.kp_id,
