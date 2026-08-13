@@ -168,7 +168,7 @@ def _candidate_rows(
     *,
     attributable_only: bool,
     grade: Optional[int],
-    grade_band: Optional[str],
+    grade_band: Optional[str] = None,
     edition: Optional[str],
     section: Optional[str],
     kp_id: Optional[uuid.UUID],

@@ -155,6 +155,7 @@ def _upsert_question(
         all_reasons = reasons + integrity_reasons
     else:
         verdict, reasons = VERDICT_CLEAN, []
+        integrity_reasons = []
         all_reasons = []
     is_clean = verdict == VERDICT_CLEAN and not integrity_reasons
     target_status = QUESTION_STATUS_ACTIVE if is_clean else QUESTION_STATUS_ARCHIVED
