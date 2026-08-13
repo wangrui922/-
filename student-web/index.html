@@ -8,6 +8,26 @@
     />
     <meta name="theme-color" content="#2f7cf6" />
     <title>AI 数学教练 · 学生端</title>
+    <!-- #66 KaTeX：公式渲染走 CDN（本机构建环境无 npm 外网，运行时由浏览器加载）。
+         CSS 同步阻塞加载保证首屏公式不错位；JS 用 defer 不阻塞解析。 -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+      crossorigin="anonymous"
+    />
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
+      crossorigin="anonymous"
+    ></script>
+    <style>
+      /* KaTeX 加载慢/失败时的兜底：把原始 $...$ 原样显示，不白屏、不崩溃 */
+      .math-fallback {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #b91c1c;
+        white-space: pre-wrap;
+      }
+    </style>
   </head>
   <body class="bg-slate-100">
     <div id="app"></div>

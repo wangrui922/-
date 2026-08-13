@@ -10,7 +10,7 @@
 import { computed, ref, watch } from 'vue'
 
 import type { Exercise } from '@/api/chat'
-import { formatMath } from '@/utils/formatMath'
+import { renderMath } from '@/utils/renderMath'
 
 interface Props {
   question: Exercise
@@ -48,9 +48,9 @@ const difficultyLabel = computed<string>(() => {
   return '中'
 })
 
-/** 题目和答案都走 LaTeX → 纯文本兜底，避免孩子看见 $\frac{5}{13}$。 */
-const displayQuestion = computed<string>(() => formatMath(props.question.q ?? ''))
-const displayAnswer = computed<string>(() => formatMath(props.question.a ?? ''))
+/** 题目与答案都经 renderMath：文本转义防 XSS，LaTeX 段交给 KaTeX 渲染。 */
+const displayQuestion = computed<string>(() => renderMath(props.question.q ?? ''))
+const displayAnswer = computed<string>(() => renderMath(props.question.a ?? ''))
 </script>
 
 <template>
@@ -70,9 +70,7 @@ const displayAnswer = computed<string>(() => formatMath(props.question.a ?? ''))
       </span>
     </div>
 
-    <p class="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800">
-      {{ displayQuestion }}
-    </p>
+    <p class="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800" v-html="displayQuestion"></p>
 
     <div class="border-t border-dashed border-slate-200 pt-3">
       <!-- 锁住：连按钮都不给，只留一句解释，免得孩子以为坏了 -->
@@ -85,9 +83,8 @@ const displayAnswer = computed<string>(() => formatMath(props.question.a ?? ''))
         <p
           v-if="answerVisible"
           class="mt-2 whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-3 text-sm leading-relaxed text-slate-700"
-        >
-          {{ displayAnswer || '（AI 未给出参考答案）' }}
-        </p>
+          v-html="displayAnswer || '（AI 未给出参考答案）'"
+        ></p>
       </template>
     </div>
   </article>

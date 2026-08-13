@@ -117,6 +117,8 @@ const analysisText = ref<string>('')
 const inputText = ref<string>('')
 const imageDataUrl = ref<string>('')
 const imageName = ref<string>('')
+/** 拍照上传后后端顺带 OCR 出的题目文字（withOcr=true），展示给孩子核对/纠错。 */
+const ocrText = ref<string>('')
 const exercises = ref<Exercise[]>([])
 const threads = ref<ExerciseThread[]>([])
 
@@ -228,10 +230,11 @@ async function handleFileChange(event: Event): Promise<void> {
   if (!dataUrl) return
   imageDataUrl.value = dataUrl
 
-  // 存档上传：失败只提示，不影响用 base64 继续对话
+  // 存档上传并顺带 OCR（withOcr=true）：识别结果展示给孩子核对，避免浪费
   uploading.value = true
   try {
-    await uploadFile(file)
+    const up = await uploadFile(file, true)
+    ocrText.value = up.ocrText ?? ''
   } catch (error) {
     errorMsg.value = `${toMessage(error, '照片上传失败')}（不影响继续提问）`
   } finally {
@@ -602,6 +605,13 @@ function handleReset(): void {
           {{ uploading ? '照片上传中…' : imageName || '已选择照片' }}
         </span>
         <button type="button" class="shrink-0 text-xs text-slate-400" @click="clearImage">移除</button>
+      </div>
+      <div
+        v-if="ocrText"
+        class="rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600"
+      >
+        <span class="font-medium text-slate-500">识别到题目：</span>{{ ocrText }}
+        <span class="text-slate-400">（识别有偏差就直接把题目文字打出来也行）</span>
       </div>
 
       <!-- 快捷按钮：点一下 = 填话术 + 显式带 mode 发送 -->

@@ -2,7 +2,7 @@
 /** 对话气泡：AI 靠左（白底），学生靠右（蓝底）。 */
 import { computed } from 'vue'
 
-import { formatMath } from '@/utils/formatMath'
+import { renderMath } from '@/utils/renderMath'
 
 interface Props {
   /** 说话人 */
@@ -19,11 +19,9 @@ const props = withDefaults(defineProps<Props>(), { pending: false, image: '' })
 
 const isUser = computed<boolean>(() => props.role === 'user')
 
-/** 学生向：拍照只显示，不做 LaTeX 转换（图像就是图像）。
- *  AI 向：把内容里的 LaTeX/分数源码转成小学生看得懂的纯文本（如 5/13）。 */
-const displayContent = computed<string>(() =>
-  isUser.value ? props.content : formatMath(props.content),
-)
+/** 任意方向都经 renderMath 渲染：文本段转义防 XSS，LaTeX 段交给 KaTeX。
+ *  小学内容本就不含 LaTeX，渲染后仍是纯文本，不影响可读性。 */
+const displayContent = computed<string>(() => renderMath(props.content))
 
 /** 点击图片看大图 */
 function openImage(): void {
@@ -62,7 +60,7 @@ function openImage(): void {
             class="mb-1.5 block max-h-[260px] max-w-[220px] cursor-pointer rounded-lg object-cover hover:opacity-90"
             @click="openImage"
           />
-          <span class="block">{{ displayContent }}</span>
+          <span class="block" v-html="displayContent"></span>
         </template>
       </div>
     </div>
