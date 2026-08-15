@@ -62,17 +62,28 @@ popd
 GOTO :DONE
 
 :DONE
+SET "PHONE_URL=http://%LAN_IP%:5174"
+SET "BUILD_URL=http://%LAN_IP%:4173"
+
+REM 把真实地址写入剪贴板，避免用户复制源码占位符
+powershell -NoProfile -Command "Set-Clipboard -Value '%PHONE_URL%'" >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+  SET CLIP_MSG=（已复制到剪贴板，直接 Ctrl+V 粘贴发送）
+) else (
+  SET CLIP_MSG=（请手动复制下面这一行）
+)
+
 ECHO.
 ECHO ============================================================
 ECHO.
-ECHO   请复制下面这一行，发给试用者手机浏览器打开：
+ECHO   手机访问地址：%CLIP_MSG%
 ECHO.
-ECHO     http://%LAN_IP%:5174
+ECHO     %PHONE_URL%
 ECHO.
-ECHO   构建模式则为：http://%LAN_IP%:4173
+ECHO   构建模式则为：%BUILD_URL%
 ECHO.
 ECHO   注意：
-ECHO     1. 必须复制上面的真实 IP，不能用 192.168.xx / 192.168.x.x。
+ECHO     1. 上面必须是 192.168.x.x 这种真实数字，不能带 %% 号。
 ECHO     2. 手机和电脑必须连同一个 WiFi 或有线局域网。
 ECHO     3. 如果手机打不开，检查 Windows 防火墙是否放行 5174 和 8000。
 ECHO.
@@ -80,4 +91,10 @@ ECHO   后端文档：http://%LAN_IP%:8000/docs
 ECHO   停止：关闭弹出的后端/前端两个命令行窗口。
 ECHO.
 ECHO ============================================================
+
+REM 额外把地址写进 txt 文件，防止剪贴板失败
+ECHO %PHONE_URL% > "%~dp0LAN_URL.txt"
+ECHO 地址也保存到：%~dp0LAN_URL.txt
+
+pause
 ENDLOCAL

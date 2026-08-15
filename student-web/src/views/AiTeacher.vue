@@ -42,6 +42,7 @@ import { toMessage } from '@/api/http'
 import ChatBubble from '@/components/ChatBubble.vue'
 import GuideChatPanel from '@/components/guide/GuideChatPanel.vue'
 import QuestionCard from '@/components/QuestionCard.vue'
+import ImageQuestionCropper from '@/components/practice/ImageQuestionCropper.vue'
 import type { GuideMessage, QuickAction } from '@/types/guide'
 
 interface ChatItem {
@@ -117,6 +118,10 @@ const analysisText = ref<string>('')
 const inputText = ref<string>('')
 const imageDataUrl = ref<string>('')
 const imageName = ref<string>('')
+/** 选题意中间态：拍照后先框出单题，不直接把整图发给 AI。 */
+const cropping = ref<boolean>(false)
+const pendingImage = ref<string>('')
+const pendingFile = ref<File | null>(null)
 /** 拍照上传后后端顺带 OCR 出的题目文字（withOcr=true），展示给孩子核对/纠错。 */
 const ocrText = ref<string>('')
 const exercises = ref<Exercise[]>([])
@@ -207,7 +212,10 @@ function exerciseActionLabel(idx: number): string {
   return '跟老师一起做这道题'
 }
 
-/** 选图：本地转 base64 预览，并异步存档一份到后端。 */
+/**
+ * 选图：本地转 base64，但**不立即发图**——先进入「选题意」中间态，
+ * 让用户框出要讲的那一道（作业帮式），避免把整页多题混着发给 AI。
+ */
 async function handleFileChange(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -228,9 +236,24 @@ async function handleFileChange(event: Event): Promise<void> {
   })
 
   if (!dataUrl) return
-  imageDataUrl.value = dataUrl
+  // 进入选题意：先框选单题，不直接发整图
+  pendingFile.value = file
+  pendingImage.value = dataUrl
+  cropping.value = true
+}
 
-  // 存档上传并顺带 OCR（withOcr=true）：识别结果展示给孩子核对，避免浪费
+/** dataURL → File（裁切后的子图需要这个形态才能走 uploadFile 存档 + OCR）。 */
+function dataUrlToFile(dataUrl: string, name: string): File {
+  const [head, b64] = dataUrl.split(',')
+  const mime = /:(.*?);/.exec(head)?.[1] || 'image/jpeg'
+  const bin = atob(b64)
+  const arr = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+  return new File([arr], name, { type: mime })
+}
+
+/** 存档上传并顺带 OCR（withOcr=true），识别结果展示给孩子核对。 */
+async function uploadOcr(file: File): Promise<void> {
   uploading.value = true
   try {
     const up = await uploadFile(file, true)
@@ -240,6 +263,29 @@ async function handleFileChange(event: Event): Promise<void> {
   } finally {
     uploading.value = false
   }
+}
+
+/** 框选确认：裁切子图作为题目图，并上传 OCR。 */
+async function onCropConfirm(dataUrl: string): Promise<void> {
+  imageDataUrl.value = dataUrl
+  cropping.value = false
+  await uploadOcr(dataUrlToFile(dataUrl, imageName.value || 'crop.jpg'))
+}
+
+/** 用整张图：不框选，直接发原图（兜底）。 */
+async function onCropWhole(): Promise<void> {
+  if (!pendingImage.value) return
+  imageDataUrl.value = pendingImage.value
+  cropping.value = false
+  if (pendingFile.value) await uploadOcr(pendingFile.value)
+}
+
+/** 放弃本次选图。 */
+function onCropCancel(): void {
+  cropping.value = false
+  pendingImage.value = ''
+  pendingFile.value = null
+  clearImage()
 }
 
 function clearImage(): void {
@@ -510,7 +556,7 @@ function handleReset(): void {
 </script>
 
 <template>
-  <div class="flex h-full w-full flex-col overflow-x-hidden bg-slate-50">
+  <div class="relative flex h-full w-full flex-col overflow-x-hidden bg-slate-50">
     <!-- 模式指示器（常驻）：孩子随时知道老师现在在干嘛 -->
     <header class="shrink-0 border-b border-slate-100 bg-white px-4 py-2">
       <div class="flex items-center gap-2">
@@ -698,5 +744,21 @@ function handleReset(): void {
         </div>
       </template>
     </GuideChatPanel>
+
+    <!-- 选题意中间态：拍照后先框出要讲的那道单题，再发给 AI -->
+    <div
+      v-if="cropping"
+      class="absolute inset-0 z-40 flex flex-col bg-white"
+    >
+      <header class="shrink-0 border-b border-slate-100 px-4 py-2 text-sm font-medium text-slate-700">
+        选题目 · 框住你要讲的那道题
+      </header>
+      <ImageQuestionCropper
+        :src="pendingImage"
+        @confirm="onCropConfirm"
+        @whole="onCropWhole"
+        @cancel="onCropCancel"
+      />
+    </div>
   </div>
 </template>
