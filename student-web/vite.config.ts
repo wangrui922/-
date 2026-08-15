@@ -19,6 +19,9 @@ export default defineConfig({
   },
   server: {
     host: true,
+    // 试用：允许任意外部域名（localhost.run / cpolar 等穿透地址）访问 dev server。
+    // 仅 dev 生效，生产构建走 Nginx/EdgeOne，不受影响。
+    allowedHosts: true,
     port: 5174,
     proxy: {
       '/api': {
