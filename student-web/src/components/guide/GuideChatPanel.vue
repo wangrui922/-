@@ -94,6 +94,14 @@ function toggleAutoRead(): void {
   setAutoRead(!autoRead.value)
 }
 
+/** 题干「读题」按钮：点一下念完整题目，再点一下停。 */
+function onReadStem(): void {
+  if (!props.stem) return
+  const key = 'guide-stem'
+  if (isSpeaking.value && playingKey.value === key) stopSpeaking()
+  else speak(props.stem, key)
+}
+
 /** 老师消息上的朗读按钮：点一下念，再点一下停。 */
 function onTeacherSpeak(idx: number): void {
   const msg = props.messages[idx]
@@ -142,7 +150,13 @@ watch(
 watch(
   () => props.open,
   (opened) => {
-    if (opened) void scrollToBottom()
+    if (opened) {
+      void scrollToBottom()
+      // 不会看题的小朋友：打开练习题就把题目念一遍（自动朗读开着时）
+      if (autoRead.value && props.stem) void speak(props.stem, 'guide-stem')
+    } else {
+      stopSpeaking()
+    }
   },
 )
 
@@ -216,7 +230,18 @@ function handleQuickAction(action: QuickAction): void {
             </button>
           </div>
         </div>
-        <p v-if="stemPreview" class="mt-1 truncate text-xs text-slate-400">{{ stemPreview }}</p>
+        <p v-if="stemPreview" class="mt-1 flex items-center gap-2 text-xs text-slate-400">
+          <span class="min-w-0 flex-1 truncate">{{ stemPreview }}</span>
+          <button
+            v-if="ttsSupported"
+            type="button"
+            class="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-600 transition active:bg-brand-100"
+            :title="isSpeaking && playingKey === 'guide-stem' ? '停止读题' : '读题'"
+            @click="onReadStem"
+          >
+            {{ isSpeaking && playingKey === 'guide-stem' ? '⏹ 停止' : '🔊 读题' }}
+          </button>
+        </p>
         <!-- 具名插槽：AI 老师那边往这里塞「第 1/2 题 · 作答中」状态条 -->
         <slot name="header-extra" />
       </header>

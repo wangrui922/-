@@ -73,6 +73,9 @@ function splitSentences(text: string): string[] {
 }
 
 let queue: string[] = []
+/** 当前正在播放的云端音频（用于打断/停止）。 */
+let currentAudio: HTMLAudioElement | null = null
+let cloudAbort: AbortController | null = null
 
 function playNext(): void {
   if (!queue.length) {
@@ -99,11 +102,82 @@ function playNext(): void {
   window.speechSynthesis.speak(u)
 }
 
-/** 朗读一段文字（自动分句、挑中文嗓音、略慢）。返回是否成功发起朗读。 */
-export function speak(text: string, key = ''): boolean {
-  if (!ttsSupported.value) return false
+/** 停掉云端音频（如果有）。 */
+function stopCloud(): void {
+  if (cloudAbort) {
+    cloudAbort.abort()
+    cloudAbort = null
+  }
+  if (currentAudio) {
+    try {
+      currentAudio.pause()
+    } catch {
+      /* noop */
+    }
+    const url = currentAudio.src
+    if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+    currentAudio = null
+  }
+}
+
+/**
+ * 云端朗读：调后端 /api/tts（微软「小云朵」甜美中文女声，免 key、国内可达）。
+ * 成功播放 resolve；网络/后端抖动则 reject，交由 speak 回退浏览器嗓音。
+ */
+async function playCloud(clean: string, key: string): Promise<void> {
+  const base = (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE || '/api'
+  cloudAbort = new AbortController()
+  const resp = await fetch(`${base}/tts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: clean, voice: 'xiaoxiao' }),
+    signal: cloudAbort.signal,
+  })
+  if (!resp.ok) throw new Error(`tts http ${resp.status}`)
+  const blob = await resp.blob()
+  if (!blob.size) throw new Error('tts empty')
+  const url = URL.createObjectURL(blob)
+  const audio = new Audio(url)
+  currentAudio = audio
+  playingKey.value = key
+  isSpeaking.value = true
+  await new Promise<void>((resolve, reject) => {
+    audio.onended = () => {
+      URL.revokeObjectURL(url)
+      currentAudio = null
+      cloudAbort = null
+      isSpeaking.value = false
+      playingKey.value = ''
+      resolve()
+    }
+    audio.onerror = () => {
+      URL.revokeObjectURL(url)
+      currentAudio = null
+      cloudAbort = null
+      isSpeaking.value = false
+      playingKey.value = ''
+      reject(new Error('audio play error'))
+    }
+    audio.play().catch(reject)
+  })
+}
+
+/**
+ * 朗读一段文字：云端甜美嗓音优先（读题/讲题更甜，适合小朋友）；
+ * 云端不可用时自动回退到浏览器自带嗓音。返回是否成功发起朗读。
+ */
+export async function speak(text: string, key = ''): Promise<boolean> {
   const clean = cleanForSpeech(text)
   if (!clean) return false
+  stopSpeaking()
+  // 云端优先：更甜的「小云朵」小朋友嗓音
+  try {
+    await playCloud(clean, key)
+    return true
+  } catch {
+    /* 云端不可用，回退浏览器 */
+  }
+  if (!ttsSupported.value) return false
   window.speechSynthesis.cancel()
   queue = splitSentences(clean)
   playingKey.value = key
@@ -111,8 +185,9 @@ export function speak(text: string, key = ''): boolean {
   return true
 }
 
-/** 停止朗读。 */
+/** 停止朗读（云端音频 + 浏览器嗓音都停）。 */
 export function stopSpeaking(): void {
+  stopCloud()
   if (ttsSupported.value) window.speechSynthesis.cancel()
   isSpeaking.value = false
   playingKey.value = ''

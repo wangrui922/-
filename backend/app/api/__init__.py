@@ -35,6 +35,7 @@ from app.api import (
     profile,
     report,
     student,
+    tts,
 )
 
 #: 所有业务路由统一挂在 ``/api`` 前缀下
@@ -59,6 +60,9 @@ api_router.include_router(report.router)
 
 # ---- 题库消费层 · 练习闭环（抽题 / 判分 / 看答案 / 结算 / 引导）--------------
 api_router.include_router(practice.router)
+
+# ---- 云端语音合成（TTS）：读题 / 讲题更甜的嗓音 ------------------------------
+api_router.include_router(tts.router)
 
 
 __all__ = ["api_router"]
