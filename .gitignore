@@ -48,6 +48,8 @@ parent-web/dist/
 admin-web/dist/
 # 鏋勫缓鑷浜х墿锛欳I/鏈湴璺? `vite build --outDir .verify-dist` 楠岃瘉缂栬瘧鐢紝涓嶅叆搴?
 student-web/.verify-dist/
+# 部署产物（静态站副本，可由 dist/ 重建，不入库）
+student-web-deploy/
 # 鍗忎綔杩囩▼涓暀涓嬬殑鎺㈤拡/涓存椂鏂囦欢锛堜繚鐣欏湪纾佺洏渚夸簬鎺掓煡锛屼笉杩涗粨搴撳巻鍙诧級
 student-web/.probe*.txt
 

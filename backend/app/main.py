@@ -16,6 +16,8 @@ T04 说明：
 
 from __future__ import annotations
 
+import socket
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -23,6 +25,26 @@ from app import models as _models  # noqa: F401  确保全部 ORM 模型注册�
 from app.api import api_router
 from app.core.config import settings
 from app.core.response import register_exception_handlers
+
+
+def _lan_cors_origins() -> list[str]:
+    """dev 模式：把本机局域网 IP 的各常用前端端口加入 CORS 白名单，
+    手机连同一 WiFi 访问 http://<本机IP>:5174 即可跨域调用后端，免手动算 IP。
+
+    生产环境（is_prod）不启用，跨域由 CORS_ORIGINS 环境变量显式配置。
+    """
+    ports = [5173, 5174, 5175, 4173, 8000]
+    hosts: set[str] = set()
+    try:
+        hostname = socket.gethostname()
+        hosts.add(socket.gethostbyname(hostname))
+        for info in socket.getaddrinfo(hostname, None):
+            ip = info[4][0]
+            if not ip.startswith("127.") and ":" not in ip:
+                hosts.add(ip)
+    except Exception:
+        pass
+    return [f"http://{h}:{p}" for h in sorted(hosts) for p in ports]
 
 
 def create_app() -> FastAPI:
@@ -44,10 +66,15 @@ def create_app() -> FastAPI:
     )
 
     # ---- CORS：白名单取自环境变量 CORS_ORIGINS（逗号分隔），默认含常用本地地址 ----
-    # 生产部署时把前端域名（如 https://xxx.edgeone.cool）加入 CORS_ORIGINS 即可跨域。
+    # dev 模式额外自动放行本机局域网 IP 的各前端端口，手机连同一 WiFi 即可跨域试用。
+    # 生产部署把前端域名（如 https://xxx.edgeone.cool）加入 CORS_ORIGINS 即可。
+    allow_origins = settings.cors_origin_list
+    if settings.is_dev and "*" not in allow_origins:
+        extra = _lan_cors_origins()
+        allow_origins = list(dict.fromkeys([*allow_origins, *extra]))
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
+        allow_origins=allow_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

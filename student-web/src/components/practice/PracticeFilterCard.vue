@@ -14,7 +14,7 @@
  *     QX1 拍板「本期不实现 pool-estimate 接口」）；
  *   - 苏教版 + 较高题量（>10 道）也可能撞上少给，也给建议文案。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import {
   EDITIONS,
@@ -22,7 +22,7 @@ import {
   SECTIONS,
   type DrawParams,
 } from '@/api/practice'
-import { segmentState } from '@/stores/segment'
+import { BANDS, bandGradeRange, segmentState, type Segment } from '@/stores/segment'
 
 defineProps<{
   loading: boolean
@@ -33,8 +33,38 @@ const emit = defineEmits<{
   (e: 'start', params: DrawParams): void
 }>()
 
-/** 年级候选：小学 1~6 年级（题库主体在这个区间）。 */
-const GRADES: readonly number[] = [1, 2, 3, 4, 5, 6]
+/** 年级候选按学段联动：
+ *  - 顶栏选了某学段 → 只显示该学段年级（小学1-6 / 初中7-9 / 高中10-12）；
+ *  - 顶栏「不限」→ 显示全部 1~12，并按学段分组展示。
+ * 后端 BAND_GRADE_RANGE 口径一致（app/models/content.py）。
+ */
+function buildStageGroups(): { band: Segment | null; grades: number[] }[] {
+  const range = (lo: number, hi: number): number[] => {
+    const out: number[] = []
+    for (let i = lo; i <= hi; i++) out.push(i)
+    return out
+  }
+  if (segmentState.band) {
+    const [lo, hi] = bandGradeRange(segmentState.band)
+    return [{ band: segmentState.band, grades: range(lo, hi) }]
+  }
+  return BANDS.map((b) => {
+    const [lo, hi] = bandGradeRange(b)
+    return { band: b, grades: range(lo, hi) }
+  })
+}
+const stageGroups = computed(buildStageGroups)
+
+/** 学段切换时，若当前选中年级不在新学段区间，自动清空，避免抽错学段。 */
+watch(
+  () => segmentState.band,
+  (band) => {
+    if (band && grade.value !== null) {
+      const [lo, hi] = bandGradeRange(band)
+      if (grade.value < lo || grade.value > hi) grade.value = null
+    }
+  },
+)
 
 /** 题量候选（后端上限 30）。 */
 const COUNTS: readonly number[] = [5, 10, 15, 20]
@@ -74,6 +104,10 @@ const isSujiaoEdition = computed<boolean>(() => edition.value === '苏教版')
  */
 const sparseHint = computed<string | null>(() => {
   if (!isSujiaoEdition.value) {
+    return null
+  }
+  // 苏教版为小学教材版本，初中/高中年级不参与稀疏提示
+  if (grade.value !== null && grade.value > 6) {
     return null
   }
   if (grade.value !== null && grade.value >= 5) {
@@ -133,7 +167,7 @@ function handleReset(): void {
       <p class="mt-1 text-sm text-slate-500">全都不选也行，老师会随机挑几道给你</p>
     </header>
 
-    <!-- 年级 -->
+    <!-- 年级（按学段联动：1-12，顶栏选学段即筛到对应年级段） -->
     <div>
       <h3 class="mb-2 text-sm font-semibold text-slate-700">年级</h3>
       <div class="flex flex-wrap gap-2">
@@ -145,16 +179,21 @@ function handleReset(): void {
         >
           不限
         </button>
-        <button
-          v-for="g in GRADES"
-          :key="g"
-          type="button"
-          class="h-11 min-w-[64px] rounded-xl border px-4 text-base font-medium transition"
-          :class="chipClass(grade === g)"
-          @click="pickGrade(g)"
-        >
-          {{ g }}年级
-        </button>
+      </div>
+      <div v-for="grp in stageGroups" :key="grp.band || 'all'" class="mt-2">
+        <p v-if="!segmentState.band" class="mb-1 text-xs text-slate-400">{{ grp.band }}</p>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="g in grp.grades"
+            :key="g"
+            type="button"
+            class="h-11 min-w-[64px] rounded-xl border px-4 text-base font-medium transition"
+            :class="chipClass(grade === g)"
+            @click="pickGrade(g)"
+          >
+            {{ g }}年级
+          </button>
+        </div>
       </div>
     </div>
 
