@@ -158,8 +158,27 @@ function getRecognitionCtor(): RecCtor | null {
   return w.SpeechRecognition || w.webkitSpeechRecognition || null
 }
 
+/** 把浏览器语音识别的错误码翻译成小朋友/家长也能看懂的中文。 */
+function friendlyRecError(code: string): string {
+  switch (code) {
+    case 'not-allowed':
+    case 'service-not-allowed':
+      return '没允许用麦克风——点一下地址栏左边的🔒给个权限就行'
+    case 'audio-capture':
+      return '没找到麦克风，直接用打字也可以哦'
+    case 'network':
+      return '网络不太顺，语音连不上，先打字吧'
+    default:
+      return '语音没听清，再点一下麦克风试试'
+  }
+}
+
 /**
  * 创建一个语音识别控制器（中文、带实时字幕）。
+ * 行为要点（给不会打字的小朋友）：
+ *   - no-speech（没在窗口里检测到声音）不报错、不打断，静默自动重试几次，
+ *     给孩子多几次开口的机会；
+ *   - 真出错（没权限 / 没麦 / 断网）才用听得懂的中文提示。
  * 必须在组件 setup 内调用（内部注册 onUnmounted 自动清理）。
  */
 export function useSpeechRecognition(handlers: RecognitionHandlers): RecognizerController {
@@ -167,6 +186,10 @@ export function useSpeechRecognition(handlers: RecognitionHandlers): RecognizerC
   const interim = ref<string>('')
   let finalText = ''
   let recog: InstanceType<RecCtor> | null = null
+  let userStopped = false
+  let pendingNoSpeech = false
+  let noSpeechRetries = 0
+  const MAX_NO_SPEECH_RETRIES = 2
 
   function build(): InstanceType<RecCtor> | null {
     const Ctor = getRecognitionCtor()
@@ -180,8 +203,10 @@ export function useSpeechRecognition(handlers: RecognitionHandlers): RecognizerC
       let live = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i]
-        if (res.isFinal) finalText += res[0].transcript
-        else live += res[0].transcript
+        if (res.isFinal) {
+          finalText += res[0].transcript
+          pendingNoSpeech = false
+        } else live += res[0].transcript
       }
       interim.value = finalText + live
       handlers.onInterim?.(interim.value)
@@ -192,10 +217,41 @@ export function useSpeechRecognition(handlers: RecognitionHandlers): RecognizerC
       }
     }
     r.onerror = (e: any) => {
-      handlers.onError?.(String(e.error || '识别失败'))
+      const code: string = e?.error || 'error'
+      if (code === 'no-speech') {
+        // 没听到声音：交给 onend 决定是否静默重试，不报错、不打断
+        pendingNoSpeech = true
+        return
+      }
+      if (code === 'aborted') return // 我们自己 stop 的，忽略
+      const msg = friendlyRecError(code)
+      if (msg) handlers.onError?.(msg)
     }
     r.onend = () => {
       recognizing.value = false
+      // no-speech 且不是用户主动停 → 静默重试，多给孩子几次开口机会
+      if (pendingNoSpeech && !userStopped && noSpeechRetries < MAX_NO_SPEECH_RETRIES) {
+        noSpeechRetries += 1
+        pendingNoSpeech = false
+        interim.value = ''
+        setTimeout(() => {
+          if (userStopped) return
+          try {
+            recog = build()
+            recog?.start()
+            recognizing.value = true
+          } catch {
+            /* 偶尔 start 竞态，忽略 */
+          }
+        }, 120)
+        return
+      }
+      // 走到这里：要么正常说完结束，要么重试用尽（确实没声音）
+      if (pendingNoSpeech) {
+        pendingNoSpeech = false
+        handlers.onError?.('没听清，再点一下麦克风试试')
+      }
+      noSpeechRetries = 0
       interim.value = ''
       handlers.onEnd?.()
     }
@@ -204,6 +260,9 @@ export function useSpeechRecognition(handlers: RecognitionHandlers): RecognizerC
 
   function start(): void {
     if (!sttSupported.value || recognizing.value) return
+    userStopped = false
+    pendingNoSpeech = false
+    noSpeechRetries = 0
     finalText = ''
     interim.value = ''
     recog = build()
@@ -220,6 +279,7 @@ export function useSpeechRecognition(handlers: RecognitionHandlers): RecognizerC
   }
 
   function stop(): void {
+    userStopped = true
     if (recog) {
       try {
         recog.stop()
@@ -232,6 +292,7 @@ export function useSpeechRecognition(handlers: RecognitionHandlers): RecognizerC
   }
 
   onUnmounted(() => {
+    userStopped = true
     if (recog) {
       try {
         recog.abort()
