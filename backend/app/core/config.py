@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     cors_origins: str = "http://localhost:5173,http://localhost:5174,http://localhost:5175"
 
+    # ---------- 公网临时试用（本机穿透）----------
+    # 仅 dev 使用：穿透后前端源是随机公网域名（如 *.cpolar.cn），
+    # 设 CORS_ALLOW_ALL=1 放开所有源（配合 allow_credentials=False，安全）。
+    # 更稳妥：把穿透后的前端域名填进 CORS_EXTRA_ORIGINS（逗号分隔）精确放行。
+    cors_allow_all: bool = False
+    cors_extra_origins: str = ""
+
     # ---------- 数据库 ----------
     # 生产：postgresql+psycopg://coach:coach@localhost:5433/coach
     # 开发：sqlite:///./dev.db
@@ -95,6 +102,15 @@ class Settings(BaseSettings):
         if raw == "*":
             return ["*"]
         return [item.strip() for item in raw.split(",") if item.strip()]
+
+    @property
+    def cors_extra_origin_list(self) -> List[str]:
+        """穿透后追加的精确源（逗号分隔），避免 CORS_ALLOW_ALL 全放开。"""
+        return [
+            item.strip()
+            for item in (self.cors_extra_origins or "").split(",")
+            if item.strip()
+        ]
 
     @property
     def is_dev(self) -> bool:

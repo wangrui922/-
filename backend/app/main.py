@@ -49,6 +49,20 @@ def _lan_cors_origins() -> list[str]:
 
 def create_app() -> FastAPI:
     """工厂函数：构建并装配 FastAPI 应用。"""
+    # ---- 公网临时试用：穿透后前端域名随机，CORS_ALLOW_ALL 全放开 ----------
+    # 仅 dev 生效，且配合 allow_credentials=False（鉴权走 Bearer token，
+    # 不依赖 cookie，故关闭 credentials 不影响登录）。生产环境切勿开启。
+    if settings.is_dev and settings.cors_allow_all:
+        allow_origins: list[str] = ["*"]
+        allow_credentials = False
+    else:
+        allow_origins = settings.cors_origin_list
+        if settings.is_dev and "*" not in allow_origins:
+            allow_origins = list(dict.fromkeys([*allow_origins, *_lan_cors_origins()]))
+        if settings.cors_extra_origin_list:
+            allow_origins = list(dict.fromkeys([*allow_origins, *settings.cors_extra_origin_list]))
+        allow_credentials = True
+
     # ---- 生产环境安全检查 ----------------------------------------------
     if not settings.jwt_secret_safe:
         raise RuntimeError(
@@ -68,14 +82,11 @@ def create_app() -> FastAPI:
     # ---- CORS：白名单取自环境变量 CORS_ORIGINS（逗号分隔），默认含常用本地地址 ----
     # dev 模式额外自动放行本机局域网 IP 的各前端端口，手机连同一 WiFi 即可跨域试用。
     # 生产部署把前端域名（如 https://xxx.edgeone.cool）加入 CORS_ORIGINS 即可。
-    allow_origins = settings.cors_origin_list
-    if settings.is_dev and "*" not in allow_origins:
-        extra = _lan_cors_origins()
-        allow_origins = list(dict.fromkeys([*allow_origins, *extra]))
+    # 公网临时试用见 create_app 顶部 CORS_ALLOW_ALL 分支。
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allow_origins,
-        allow_credentials=True,
+        allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["*"],
