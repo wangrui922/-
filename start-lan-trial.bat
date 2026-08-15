@@ -21,6 +21,19 @@ IF NOT DEFINED LAN_IP (
   )
 )
 SET "LAN_IP=%LAN_IP: =%"
+
+REM 校验 IP 是否合法（不能是占位符/空）
+ECHO %LAN_IP% | findstr /R "^192\.168\.[0-9][0-9]*\.[0-9][0-9]*$" >nul
+IF %ERRORLEVEL% NEQ 0 (
+  ECHO.
+  ECHO [错误] 没探测到合法的局域网 IP，可能本机未连接 WiFi/有线网络。
+  ECHO        请确认电脑和手机连在同一网络后再试。
+  ECHO        下面 ipconfig 输出供排查：
+  ipconfig | findstr /R "IPv4"
+  pause
+  EXIT /B 1
+)
+
 ECHO 本机局域网 IP: %LAN_IP%
 
 IF /I "%1"=="build" GOTO :BUILD
@@ -50,11 +63,21 @@ GOTO :DONE
 
 :DONE
 ECHO.
-ECHO ===================================================
-ECHO  手机访问地址(发给试用者):
-ECHO  http://%LAN_IP%:5174
-ECHO  (构建模式则为 http://%LAN_IP%:4173)
-ECHO  后端管理: http://%LAN_IP%:8000/docs
-ECHO  停止: 关闭弹出的两个命令行窗口
-ECHO ===================================================
+ECHO ============================================================
+ECHO.
+ECHO   请复制下面这一行，发给试用者手机浏览器打开：
+ECHO.
+ECHO     http://%LAN_IP%:5174
+ECHO.
+ECHO   构建模式则为：http://%LAN_IP%:4173
+ECHO.
+ECHO   注意：
+ECHO     1. 必须复制上面的真实 IP，不能用 192.168.xx / 192.168.x.x。
+ECHO     2. 手机和电脑必须连同一个 WiFi 或有线局域网。
+ECHO     3. 如果手机打不开，检查 Windows 防火墙是否放行 5174 和 8000。
+ECHO.
+ECHO   后端文档：http://%LAN_IP%:8000/docs
+ECHO   停止：关闭弹出的后端/前端两个命令行窗口。
+ECHO.
+ECHO ============================================================
 ENDLOCAL

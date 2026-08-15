@@ -13,6 +13,15 @@ if not defined CPOLAR (
   pause
   exit /b 1
 )
-echo 正在穿透 http://localhost:5174 ...
-echo 复制下方打印的 https://xxxx.cpolar.cn 公网地址发给试用者。
+echo.
+echo ============================================================
+echo   正在穿透 http://localhost:5174 ...
+echo   cpolar 启动后会打印一行类似：
+echo.
+echo     https://1a2b3c4d.cpolar.cn -^> http://localhost:5174
+echo.
+echo   请复制 https://... 那整行，发给试用者手机浏览器打开。
+echo   注意：不能用 xxxx.cpolar.cn 这种占位符，必须是窗口里打印的真实地址。
+echo ============================================================
+echo.
 %CPOLAR% http 5174

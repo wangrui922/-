@@ -39,18 +39,25 @@ where cpolar >nul 2>&1 && set CPOLAR=cpolar
 
 if defined CPOLAR (
   start "穿透-cpolar" cmd /k "%CPOLAR% http 5174"
-  echo  [ok] 已尝试启动 cpolar，请在「穿透-cpolar」窗口复制形如
-  echo       https://xxxx.cpolar.cn  的公网地址，发给试用者手机打开。
+  echo.
+  echo   [OK] cpolar 已启动，在新弹出的「穿透-cpolar」黑色窗口里，
+  echo        找到类似下面这一行，完整复制发给试用者：
+  echo.
+  echo          https://1a2b3c4d.cpolar.cn   (这一整行是示例，你的窗口里会不同)
+  echo.
+  echo        注意：不要用 xxxx.cpolar.cn，也不要自己手编地址！
 ) else (
-  echo  [!] 未检测到 cpolar。请先按 PUBLIC_TRIAL.md 安装 cpolar，然后：
-  echo      1) 双击本目录 start-cpolar.bat
-  echo      2) 复制它打印的 https://xxxx.cpolar.cn 发给试用者
+  echo.
+  echo   [!] 未检测到 cpolar。请按 PUBLIC_TRIAL.md 安装 cpolar 后再运行本脚本，
+  echo       或先双击「start-cpolar.bat」单独测试穿透。
 )
 
 echo.
-echo  试用者手机打开该公网地址即可。登录：任意11位手机号 -> 获取验证码
-echo  -> 页面直接显示「开发环境验证码：XXXXXX」-> 填入登录。
-echo  （保持本批处理打开的两个后端/前端窗口运行，关掉即失效）
+echo ============================================================
+echo   试用者手机打开上述 cpolar 公网地址即可。
 echo.
+echo   登录：任意11位手机号 -^> 获取验证码 -^> 页面显示「开发环境验证码：XXXXXX」 -^> 填入登录。
+echo   保持三个窗口（后端/前端/穿透）运行，关掉即失效。
+echo ============================================================
 pause
 endlocal
