@@ -39,6 +39,15 @@ import {
   type WeakTag,
 } from '@/api/chat'
 import { toMessage } from '@/api/http'
+import {
+  autoRead,
+  setAutoRead,
+  speak,
+  sttSupported,
+  stopSpeaking,
+  ttsSupported,
+  useSpeechRecognition,
+} from '@/composables/useVoice'
 import ChatBubble from '@/components/ChatBubble.vue'
 import GuideChatPanel from '@/components/guide/GuideChatPanel.vue'
 import QuestionCard from '@/components/QuestionCard.vue'
@@ -150,6 +159,46 @@ const errorMsg = ref<string>('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const scrollArea = ref<HTMLElement | null>(null)
 
+// ===== 语音能力（TTS 朗读 + STT 语音输入，给不会看题/不会打字的小朋友）=====
+/** 麦克风：说完自动作为回答发出（已开场时）。 */
+const mic = useSpeechRecognition({
+  onInterim: (t: string) => {
+    inputText.value = t
+  },
+  onFinal: (t: string) => {
+    inputText.value = t
+    if (started.value) void handleSend()
+  },
+  onError: (m: string) => {
+    errorMsg.value = `语音输入：${m}（也可以直接打字）`
+  },
+})
+/** 模板里直接读 mic.recognizing 需 .value，这里取个别名方便用。 */
+const micRecognizing = mic.recognizing
+
+function toggleMic(): void {
+  if (mic.recognizing.value) {
+    mic.stop()
+    return
+  }
+  inputText.value = ''
+  mic.start()
+}
+
+/** 自动朗读：开的时候老师的话会自动念出来。 */
+function maybeSpeak(key: string, text: string): void {
+  if (autoRead.value) speak(text, key)
+}
+
+function toggleAutoRead(): void {
+  setAutoRead(!autoRead.value)
+}
+
+/** 单独把 OCR 识别到的题目念一遍（读题）。 */
+function readQuestionAloud(): void {
+  if (ocrText.value) speak(`题目是，${ocrText.value}`, 'ocr')
+}
+
 let seed = 0
 
 /** 已开场（拿到 sessionId）后才允许多轮对话与出练习题。 */
@@ -178,12 +227,14 @@ const hasNextExercise = computed<boolean>(
   () => activeExerciseIdx.value >= 0 && activeExerciseIdx.value + 1 < exercises.value.length,
 )
 
-function push(role: ChatItem['role'], content: string, image?: string): void {
-  messages.value.push({ id: ++seed, role, content, image })
+function push(role: ChatItem['role'], content: string, image?: string): number {
+  const id = ++seed
+  messages.value.push({ id, role, content, image })
   void nextTick(() => {
     const el = scrollArea.value
     if (el) el.scrollTop = el.scrollHeight
   })
+  return id
 }
 
 /** 新建一道题的作答进度。 */
@@ -315,7 +366,14 @@ async function handleSend(mode?: TutorMode): Promise<void> {
       sessionId.value = result.sessionId
       analysisText.value = `这道题考：${result.analysis.knowledge} · ${result.analysis.type} · 难度 ${result.analysis.difficulty}`
       push('ai', analysisText.value)
-      push('ai', result.firstQuestion)
+      const qId = push('ai', result.firstQuestion)
+      // 「读题 + 讲题」自动朗读：先念 OCR 到的题目，再念老师的开场提问
+      if (autoRead.value) {
+        const intro = [ocrText.value ? `题目是，${ocrText.value}` : '', result.firstQuestion]
+          .filter(Boolean)
+          .join('。')
+        speak(intro, `m-${qId}`)
+      }
       // 开场一定是苏格拉底引导
       currentMode.value = DEFAULT_TUTOR_MODE
       nextMode.value = DEFAULT_TUTOR_MODE
@@ -326,7 +384,8 @@ async function handleSend(mode?: TutorMode): Promise<void> {
       inputText.value = ''
 
       const result = await sendMessage(sessionId.value, text, { mode })
-      push('ai', result.reply)
+      const id = push('ai', result.reply)
+      maybeSpeak(`m-${id}`, result.reply)
       // mode 只认后端定稿的那一份，前端不自己推断
       currentMode.value = result.mode
       nextMode.value = result.nextMode
@@ -423,9 +482,11 @@ async function runGuide(idx: number, work: string, mode?: TutorMode): Promise<vo
       work: text,
       mode,
     })
+    const tIdx = thread.messages.length
     thread.messages.push({ role: 'teacher', text: result.reply })
     thread.askFinalConfirm = result.askFinalConfirm
     thread.verdict = result.verdict
+    maybeSpeak(`guide-${tIdx}`, result.reply)
     if (result.errorType) thread.errorType = result.errorType
     // 练习题面板里的模式同样反映到顶部常驻指示器
     currentMode.value = result.mode
@@ -478,12 +539,19 @@ async function runJudge(idx: number, rawAnswer: string): Promise<void> {
     thread.status = 'done'
     currentMode.value = 'JUDGE'
     nextMode.value = DEFAULT_TUTOR_MODE
+    const vIdx = thread.messages.length
     thread.messages.push({
       role: 'teacher',
       text: result.verdictText || (result.correct ? '这道题你做对了 👍' : '这一步还不对，我们再看看。'),
     })
+    maybeSpeak(
+      `guide-${vIdx}`,
+      result.verdictText || (result.correct ? '这道题你做对了' : '这一步还不对，我们再看看。'),
+    )
     if (!result.correct && result.mistakeId) {
+      const mIdx = thread.messages.length
       thread.messages.push({ role: 'teacher', text: '这道题我已经记进错题本了，过几天再来练一次。' })
+      maybeSpeak(`guide-${mIdx}`, '这道题我已经记进错题本了，过几天再来练一次。')
     }
   } catch (error) {
     // 判题失败要把状态放回去，否则状态条会一直卡在「评判中」
@@ -540,6 +608,7 @@ function handleGuideQuick(action: QuickAction, draft: string): void {
 
 /** 换一题：清空当前会话，重新开场。 */
 function handleReset(): void {
+  stopSpeaking()
   sessionId.value = ''
   messages.value = []
   exercises.value = []
@@ -564,6 +633,16 @@ function handleReset(): void {
           {{ modeMeta.icon }} {{ modeMeta.label }}
         </span>
         <span class="min-w-0 flex-1 truncate text-xs text-slate-400">{{ modeMeta.hint }}</span>
+        <!-- 自动朗读开关：低年级不会看题，默认开，老师的话自动念 -->
+        <button
+          type="button"
+          class="shrink-0 rounded-full px-2 py-1 text-xs font-medium transition active:bg-slate-100"
+          :class="autoRead ? 'bg-brand-50 text-brand-600' : 'text-slate-400'"
+          :title="autoRead ? '自动朗读：开（老师的话会自动念出来）' : '自动朗读：关'"
+          @click="toggleAutoRead"
+        >
+          {{ autoRead ? '🔊 朗读' : '🔇 静音' }}
+        </button>
         <span v-if="showNextModeHint" class="shrink-0 text-xs text-slate-400">
           下一轮 {{ nextModeMeta.icon }} {{ nextModeMeta.label }}
         </span>
@@ -584,6 +663,7 @@ function handleReset(): void {
       <ChatBubble
         v-for="item in messages"
         :key="item.id"
+        :id="item.id"
         :role="item.role"
         :content="item.content"
         :image="item.image"
@@ -654,10 +734,21 @@ function handleReset(): void {
       </div>
       <div
         v-if="ocrText"
-        class="rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600"
+        class="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600"
       >
-        <span class="font-medium text-slate-500">识别到题目：</span>{{ ocrText }}
-        <span class="text-slate-400">（识别有偏差就直接把题目文字打出来也行）</span>
+        <div class="min-w-0 flex-1">
+          <span class="font-medium text-slate-500">识别到题目：</span>{{ ocrText }}
+          <span class="text-slate-400">（识别有偏差就直接把题目文字打出来也行）</span>
+        </div>
+        <button
+          v-if="ttsSupported"
+          type="button"
+          class="shrink-0 rounded-lg bg-white px-2 py-1 text-sm text-brand-600 shadow-sm transition active:bg-brand-50"
+          title="把题目念出来"
+          @click="readQuestionAloud"
+        >
+          🔊
+        </button>
       </div>
 
       <!-- 快捷按钮：点一下 = 填话术 + 显式带 mode 发送 -->
@@ -692,6 +783,16 @@ function handleReset(): void {
           @change="handleFileChange"
         />
         <button
+          v-if="sttSupported"
+          type="button"
+          class="btn-ghost shrink-0 px-3"
+          :class="micRecognizing ? 'bg-brand-500 text-white' : ''"
+          :title="micRecognizing ? '正在听，点一下停止' : '点一下，用说话来回答'"
+          @click="toggleMic"
+        >
+          {{ micRecognizing ? '🎤 听…' : '🎤 说话' }}
+        </button>
+        <button
           type="button"
           class="btn-ghost shrink-0 px-3"
           :disabled="started || sending"
@@ -706,6 +807,9 @@ function handleReset(): void {
           {{ sending ? '发送中…' : started ? '回答' : '开始问 AI' }}
         </button>
       </div>
+      <p v-if="micRecognizing" class="text-xs text-brand-500">
+        老师在听你说～ 说完再点一下「🎤 听…」就发送
+      </p>
     </footer>
 
     <!-- 练习题对话面板：作答全程走这里，答案不提前给 -->

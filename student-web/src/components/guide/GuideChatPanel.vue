@@ -22,6 +22,17 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import type { GuideMessage, QuickAction } from '@/types/guide'
 import { formatMath } from '@/utils/formatMath'
+import {
+  autoRead,
+  isSpeaking,
+  playingKey,
+  setAutoRead,
+  speak,
+  sttSupported,
+  stopSpeaking,
+  ttsSupported,
+  useSpeechRecognition,
+} from '@/composables/useVoice'
 
 const props = withDefaults(
   defineProps<{
@@ -52,6 +63,45 @@ const emit = defineEmits<{
   /** 第二个参数是点击瞬间输入框里还没发出去的草稿（可能为空串） */
   (e: 'quick', action: QuickAction, draft: string): void
 }>()
+
+// ===== 语音：老师消息朗读 + 小朋友用说话来作答 =====
+/** 麦克风：说话实时填进输入框，说完整段自动发给老师。 */
+const mic = useSpeechRecognition({
+  onInterim: (t: string) => {
+    draft.value = t
+  },
+  onFinal: (t: string) => {
+    draft.value = t
+    handleSend()
+  },
+  onError: () => {
+    /* 静默降级为打字，不弹错误打扰孩子 */
+  },
+})
+/** 模板里直接读 mic.recognizing 需 .value，取别名方便用。 */
+const micRecognizing = mic.recognizing
+
+function toggleMic(): void {
+  if (mic.recognizing.value) {
+    mic.stop()
+  } else {
+    draft.value = ''
+    mic.start()
+  }
+}
+
+function toggleAutoRead(): void {
+  setAutoRead(!autoRead.value)
+}
+
+/** 老师消息上的朗读按钮：点一下念，再点一下停。 */
+function onTeacherSpeak(idx: number): void {
+  const msg = props.messages[idx]
+  if (!msg) return
+  const key = `guide-${idx}`
+  if (isSpeaking.value && playingKey.value === key) stopSpeaking()
+  else speak(msg.text, key)
+}
 
 /** 输入框里的草稿。 */
 const draft = ref<string>('')
@@ -147,13 +197,24 @@ function handleQuickAction(action: QuickAction): void {
       <header class="shrink-0 border-b border-slate-100 px-4 py-3">
         <div class="flex items-center justify-between gap-3">
           <h2 class="text-base font-bold text-slate-800">{{ title }}</h2>
-          <button
-            type="button"
-            class="h-9 rounded-lg px-3 text-sm text-slate-400 transition active:bg-slate-100"
-            @click="emit('close')"
-          >
-            收起
-          </button>
+          <div class="flex items-center gap-1">
+            <button
+              v-if="ttsSupported"
+              type="button"
+              class="h-9 rounded-lg px-2 text-base transition active:bg-slate-100"
+              :title="autoRead ? '自动朗读：开（老师的话会自动念出来）' : '自动朗读：关'"
+              @click="toggleAutoRead"
+            >
+              {{ autoRead ? '🔊' : '🔇' }}
+            </button>
+            <button
+              type="button"
+              class="h-9 rounded-lg px-3 text-sm text-slate-400 transition active:bg-slate-100"
+              @click="emit('close')"
+            >
+              收起
+            </button>
+          </div>
         </div>
         <p v-if="stemPreview" class="mt-1 truncate text-xs text-slate-400">{{ stemPreview }}</p>
         <!-- 具名插槽：AI 老师那边往这里塞「第 1/2 题 · 作答中」状态条 -->
@@ -185,7 +246,15 @@ function handleQuickAction(action: QuickAction): void {
                 : 'bg-slate-100 text-slate-800'
             "
           >
-            {{ formatMath(msg.text) }}
+            <span>{{ formatMath(msg.text) }}</span>
+            <button
+              v-if="msg.role === 'teacher' && ttsSupported"
+              type="button"
+              class="mt-2 block text-xs font-medium text-brand-600"
+              @click="onTeacherSpeak(idx)"
+            >
+              {{ isSpeaking && playingKey === `guide-${idx}` ? '⏹ 停止' : '🔊 读一遍' }}
+            </button>
           </div>
         </div>
 
@@ -244,14 +313,29 @@ function handleQuickAction(action: QuickAction): void {
           :disabled="loading"
         />
 
-        <button
-          type="button"
-          class="btn-primary h-14 w-full text-lg"
-          :disabled="loading"
-          @click="handleSend"
-        >
-          {{ sendLabel }}
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            v-if="sttSupported"
+            type="button"
+            class="btn-ghost h-14 shrink-0 px-4"
+            :class="micRecognizing ? 'bg-brand-500 text-white' : ''"
+            :title="micRecognizing ? '正在听，点一下停止' : '点一下，用说话来回答老师'"
+            @click="toggleMic"
+          >
+            {{ micRecognizing ? '🎤 听…' : '🎤 说话' }}
+          </button>
+          <button
+            type="button"
+            class="btn-primary h-14 flex-1 text-lg"
+            :disabled="loading"
+            @click="handleSend"
+          >
+            {{ sendLabel }}
+          </button>
+        </div>
+        <p v-if="micRecognizing" class="text-xs text-brand-500">
+          老师在听你说话～ 说完再点一下「🎤 听…」就发给我
+        </p>
       </footer>
     </section>
   </div>

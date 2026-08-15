@@ -3,6 +3,7 @@
 import { computed } from 'vue'
 
 import { renderMath } from '@/utils/renderMath'
+import { isSpeaking, playingKey, speak, stopSpeaking, ttsSupported } from '@/composables/useVoice'
 
 interface Props {
   /** 说话人 */
@@ -13,9 +14,11 @@ interface Props {
   image?: string
   /** 是否显示「思考中」省略号动画 */
   pending?: boolean
+  /** 气泡唯一 id，用于朗读高亮（不传也能朗读，只是不高亮对应按钮） */
+  id?: number
 }
 
-const props = withDefaults(defineProps<Props>(), { pending: false, image: '' })
+const props = withDefaults(defineProps<Props>(), { pending: false, image: '', id: -1 })
 
 const isUser = computed<boolean>(() => props.role === 'user')
 
@@ -63,6 +66,18 @@ function openImage(): void {
           <span class="block" v-html="displayContent"></span>
         </template>
       </div>
+
+      <!-- AI 消息：朗读按钮（低年级不会看题，点一下老师念出来） -->
+      <button
+        v-if="!isUser && ttsSupported"
+        type="button"
+        class="shrink-0 self-center text-lg transition active:scale-95"
+        :class="isSpeaking && playingKey === `m-${props.id}` ? 'text-brand-500' : 'text-slate-300 hover:text-brand-400'"
+        :title="isSpeaking && playingKey === `m-${props.id}` ? '停止朗读' : '朗读这句话'"
+        @click="isSpeaking && playingKey === `m-${props.id}` ? stopSpeaking() : speak(props.content, `m-${props.id}`)"
+      >
+        {{ isSpeaking && playingKey === `m-${props.id}` ? '⏹' : '🔊' }}
+      </button>
     </div>
   </div>
 </template>
