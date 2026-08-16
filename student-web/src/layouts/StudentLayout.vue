@@ -11,6 +11,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { logout } from '@/stores/auth'
 import { BANDS, segmentState, setBand, type Segment } from '@/stores/segment'
+import TutorAvatar from '@/components/TutorAvatar.vue'
 
 interface NavItem {
   name: string
@@ -24,7 +25,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   {
     name: 'ai-teacher',
     to: { name: 'ai-teacher' },
-    label: 'AI 老师',
+    label: '小玥老师',
     icon: 'M12 3v2m0 14v2m9-9h-2M5 12H3m14.5-5.5L16 8m-8 8l-2.5 2.5m11 0L16 16m-8-8L5.5 5.5M12 8a4 4 0 100 8 4 4 0 000-8z',
   },
   {
@@ -73,10 +74,8 @@ function handleBand(band: Segment | null): void {
   <div class="flex h-screen w-full overflow-hidden bg-slate-50">
     <!-- 左侧导航 -->
     <nav class="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-slate-100 bg-white py-3 sm:w-20">
-      <div
-        class="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-sm font-bold text-white"
-      >
-        AI
+      <div class="mb-3">
+        <TutorAvatar :size="36" />
       </div>
       <router-link
         v-for="item in NAV_ITEMS"

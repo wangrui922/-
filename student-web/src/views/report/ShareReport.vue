@@ -13,6 +13,7 @@ import { useRoute } from 'vue-router'
 import ShareErrorPatternCard from '@/components/report/ShareErrorPatternCard.vue'
 import ShareOverviewCard from '@/components/report/ShareOverviewCard.vue'
 import ShareWeakPointsCard from '@/components/report/ShareWeakPointsCard.vue'
+import AbilityRadar from '@/components/profile/AbilityRadar.vue'
 import { ApiError } from '@/api/http'
 import { getSharedReport } from '@/api/report'
 import type { SharedReportData } from '@/types/report'
@@ -99,6 +100,13 @@ const gradeText = computed<string>(() => {
         <template v-else>
           <div class="space-y-4">
             <ShareOverviewCard :engagement="report.engagement" :narrative="report.narrative" />
+
+            <AbilityRadar
+              v-if="report.radar && report.radar.axes && report.radar.axes.length"
+              :data="report.radar"
+              :loading="false"
+              error=""
+            />
 
             <ShareWeakPointsCard :weak-points="report.weak_points" />
 

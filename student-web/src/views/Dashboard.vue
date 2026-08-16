@@ -6,19 +6,33 @@
  * 数据从 profile store 读取（stores/profile.ts）。
  * 家长周报：点按钮按需生成，生成后弹出分享链接弹窗（免费、免注册）。
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import ShareLinkDialog from '@/components/report/ShareLinkDialog.vue'
 import ErrorPatternChart from '@/components/profile/ErrorPatternChart.vue'
 import MasteryPanel from '@/components/profile/MasteryPanel.vue'
 import RecommendationList from '@/components/profile/RecommendationList.vue'
+import KnowledgeStarMap from '@/components/profile/KnowledgeStarMap.vue'
+import AbilityRadar from '@/components/profile/AbilityRadar.vue'
+import TutorAvatar from '@/components/TutorAvatar.vue'
+import { useStreak } from '@/stores/streak'
 import { toMessage } from '@/api/http'
 import { generateReport } from '@/api/report'
 import { loadDashboard, profileState } from '@/stores/profile'
 import type { GenerateReportData } from '@/types/report'
 
+/** 小玥老师问候语：按当前时段给一句暖话，降低孩子打开 App 的距离感。 */
+const greeting = computed<string>(() => {
+  const h = new Date().getHours()
+  const hello = h < 11 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好'
+  return `${hello}！今天想先练几道题，还是让小玥老师陪你看看错题？`
+})
+
 const router = useRouter()
+
+/** 连续打卡天数（本地维护，打卡=今天做过题）。 */
+const { streakDays } = useStreak()
 
 const shareOpen = ref(false)
 const generating = ref(false)
@@ -77,6 +91,22 @@ async function handleGenerateReport(): Promise<void> {
 <template>
   <div class="h-full overflow-y-auto overflow-x-hidden bg-slate-50">
     <div class="space-y-4 px-4 py-4">
+      <!-- 小玥老师问候卡（升级版陪伴感） -->
+      <section class="card flex items-center gap-3 bg-gradient-to-br from-orange-50 to-blue-50">
+        <TutorAvatar :size="48" />
+        <div class="min-w-0 flex-1">
+          <p class="text-base font-bold text-slate-800">小玥老师来啦 👋</p>
+          <p class="mt-0.5 text-xs text-slate-500">{{ greeting }}</p>
+        </div>
+        <div
+          v-if="streakDays > 0"
+          class="flex shrink-0 flex-col items-center rounded-2xl bg-white/70 px-3 py-1.5 shadow-sm"
+        >
+          <span class="text-lg font-extrabold leading-none text-orange-500">🔥 {{ streakDays }}</span>
+          <span class="text-[10px] leading-tight text-slate-500">连续打卡</span>
+        </div>
+      </section>
+
       <!-- 题库练习入口（题库消费层 · F1） -->
       <section class="card">
         <div class="flex items-center justify-between gap-3">
@@ -110,6 +140,19 @@ async function handleGenerateReport(): Promise<void> {
           {{ generateError }}
         </p>
       </section>
+
+      <KnowledgeStarMap
+        :data="profileState.mastery"
+        :loading="profileState.masteryState.loading"
+        :error="profileState.masteryState.error"
+        @practice="handlePracticeKp"
+      />
+
+      <AbilityRadar
+        :data="profileState.radar"
+        :loading="profileState.radarState.loading"
+        :error="profileState.radarState.error"
+      />
 
       <MasteryPanel
         :data="profileState.mastery"

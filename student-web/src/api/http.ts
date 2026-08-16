@@ -14,7 +14,7 @@ import axios, {
 } from 'axios'
 
 import router from '@/router'
-import { getToken, logout } from '@/stores/auth'
+import { getToken, logout, getRefreshToken, refreshAccessToken } from '@/stores/auth'
 
 /** 后端统一响应外壳。 */
 export interface ApiEnvelope<T = unknown> {
@@ -44,13 +44,49 @@ export const http: AxiosInstance = axios.create({
   timeout: HTTP_TIMEOUT,
 })
 
-/** 统一处理未登录：清 token + 跳登录页（带 redirect 回跳）。 */
-function handleUnauthorized(): void {
+/** 刷新单例：并发 401 只真正刷新一次。 */
+let refreshPromise: Promise<boolean> | null = null
+/** 跳转登录锁：避免并发 401 多次 replace。 */
+let isRedirecting = false
+
+function doRefresh(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = refreshAccessToken().finally(() => {
+      refreshPromise = null
+    })
+  }
+  return refreshPromise
+}
+
+/** 清登录态并跳登录页（带 redirect 回跳，加重入锁）。 */
+function logoutAndRedirect(): void {
   logout()
+  if (isRedirecting) return
+  isRedirecting = true
   const current = router.currentRoute.value
   if (current.name !== 'login') {
     void router.replace({ name: 'login', query: { redirect: current.fullPath } })
   }
+  setTimeout(() => {
+    isRedirecting = false
+  }, 1500)
+}
+
+/**
+ * 401 统一恢复：先静默续期，成功则用新 token 重发原请求；无 refresh / 续期失败则跳登录。
+ * 返回重发后的响应；失败抛 ApiError(401)。
+ */
+async function recoverOrLogout(config?: AxiosRequestConfig): Promise<AxiosResponse> {
+  if (!getRefreshToken()) {
+    logoutAndRedirect()
+    return Promise.reject(new ApiError(401, '登录已过期，请重新登录'))
+  }
+  const ok = await doRefresh()
+  if (ok && config) {
+    return http(config)
+  }
+  logoutAndRedirect()
+  return Promise.reject(new ApiError(401, '登录已过期，请重新登录'))
 }
 
 // ---- 请求拦截：注入 Bearer token ------------------------------------------
@@ -78,7 +114,7 @@ http.interceptors.response.use(
     }
 
     if (body.code === 401) {
-      handleUnauthorized()
+      return recoverOrLogout(response.config)
     }
     return Promise.reject(new ApiError(body.code, body.msg || '请求失败'))
   },
@@ -88,8 +124,7 @@ http.interceptors.response.use(
     const code = typeof body?.code === 'number' ? body.code : status ?? 500
 
     if (status === 401 || code === 401) {
-      handleUnauthorized()
-      return Promise.reject(new ApiError(401, body?.msg || '登录已过期，请重新登录'))
+      return recoverOrLogout(error.config)
     }
 
     const msg =

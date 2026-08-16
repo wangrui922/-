@@ -38,7 +38,7 @@ const routes: RouteRecordRaw[] = [
         path: 'ai',
         name: 'ai-teacher',
         component: () => import('@/views/AiTeacher.vue'),
-        meta: { title: 'AI 老师' },
+        meta: { title: '小玥老师' },
       },
       {
         path: 'practice',

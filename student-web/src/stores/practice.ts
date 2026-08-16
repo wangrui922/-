@@ -16,7 +16,8 @@
  *      原样存进 state.pool，另外按本次实际题目算 unmappedInSession()，
  *      页面如实展示，不做任何隐藏。
  */
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
+import { useStreak } from '@/stores/streak'
 
 import { ApiError, toMessage } from '@/api/http'
 import {
@@ -353,6 +354,7 @@ function clearSession(): void {
   practiceState.result = null
   practiceState.guide = emptyGuide()
   eventIds.clear()
+  clearProgress()
 }
 
 /**
@@ -482,6 +484,8 @@ export async function submitCurrent(): Promise<void> {
       client_event_id: eventIdFor(q.question_id),
     })
     practiceState.feedback[q.question_id] = data
+    // 打卡：今天完成至少一题 = 今天打卡（连续天数本地维护）
+    useStreak().markCheckin()
   } catch (error) {
     practiceState.submitError = toMessage(error, '提交失败了，再点一次试试')
   } finally {
@@ -684,3 +688,82 @@ export async function restartSame(): Promise<boolean> {
   }
   return startPractice(params)
 }
+
+// ---- 进度本地持久化（防丢进度：切后台 / 刷新 / 跳登录不蒸发） ---------------
+//
+// 仅持久化「可恢复」的进度白名单字段；瞬时态（submitting / revealing /
+// finishing）与临时态（guide 聊天、drawing）不入库。模块加载时恢复 doing /
+// result 态；clearSession 时清除。后端会话若已过期，恢复后可继续看题，但提交
+// 会报错提示——相比「整段进度蒸发」已是显著改善。
+
+const PERSIST_KEY = 'aicoach.practice.progress'
+const PERSIST_FIELDS = [
+  'phase',
+  'index',
+  'questions',
+  'pool',
+  'selected',
+  'feedback',
+  'reveal',
+  'selfCheck',
+  'session_id',
+  'deep_link',
+  'lastParams',
+  'result',
+  'drawEmpty',
+  'drawError',
+] as const
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+
+function saveProgress(): void {
+  const snap: Record<string, unknown> = {}
+  for (const f of PERSIST_FIELDS) {
+    snap[f] = practiceState[f]
+  }
+  try {
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(snap))
+  } catch {
+    /* 隐私模式 / 配额满，忽略 */
+  }
+}
+
+export function clearProgress(): void {
+  try {
+    localStorage.removeItem(PERSIST_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadProgress(): void {
+  try {
+    const raw = localStorage.getItem(PERSIST_KEY)
+    if (!raw) return
+    const snap = JSON.parse(raw) as Record<string, unknown>
+    const phase = snap.phase
+    if (
+      (phase === 'doing' || phase === 'result') &&
+      Array.isArray(snap.questions) &&
+      snap.questions.length > 0
+    ) {
+      for (const f of PERSIST_FIELDS) {
+        if (f in snap) {
+          ;(practiceState as Record<string, unknown>)[f] = snap[f]
+        }
+      }
+    }
+  } catch {
+    /* 损坏数据，忽略 */
+  }
+}
+
+loadProgress()
+watch(
+  practiceState,
+  () => {
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = setTimeout(saveProgress, 400)
+  },
+  { deep: true },
+)

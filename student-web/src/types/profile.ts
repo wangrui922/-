@@ -48,6 +48,41 @@ export interface MasteryData {
   mode: 'fresh' | 'cache'
 }
 
+/** 雷达图的一个轴（L1 知识点）。 */
+export interface RadarAxis {
+  kp_id: string
+  kp_name: string
+  /** 掌握度百分比 0~100 */
+  score: number
+  /** 0 未入门 / 1 薄弱 / 2 基本掌握 / 3 熟练 */
+  level: MasteryLevel
+  /** 该知识点是否已有练习数据 */
+  practiced: boolean
+}
+
+/** 雷达图汇总。 */
+export interface RadarSummary {
+  /** 课程表全部 L1 知识点数 */
+  total_kp: number
+  /** 其中孩子已练习过的知识点数 */
+  practiced_kp: number
+  /** 已练知识点掌握度均值 0~100 */
+  overall_score: number
+  /** 各等级知识点数量 */
+  level_count: Record<string, number>
+}
+
+/** GET /api/profile/radar 的 data 载荷。 */
+export interface RadarData {
+  student_id: string
+  /** 全部 L1 知识点轴 */
+  axes: RadarAxis[]
+  summary: RadarSummary
+  computed_at: string | null
+  /** fresh 实时计算 / cache 命中物化缓存 */
+  mode: 'fresh' | 'cache'
+}
+
 /** 单类错因的聚合结果。 */
 export interface ErrorPatternItem {
   /** READ/METHOD/CALC/KNOWLEDGE/CHECK（与后端 error_categories 一致） */

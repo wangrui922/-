@@ -4,6 +4,7 @@ import { computed } from 'vue'
 
 import { renderMath } from '@/utils/renderMath'
 import { isSpeaking, playingKey, speak, stopSpeaking, ttsSupported } from '@/composables/useVoice'
+import TutorAvatar from '@/components/TutorAvatar.vue'
 
 interface Props {
   /** 说话人 */
@@ -36,11 +37,12 @@ function openImage(): void {
   <div class="flex w-full" :class="isUser ? 'justify-end' : 'justify-start'">
     <div class="flex max-w-[85%] items-end gap-2" :class="isUser ? 'flex-row-reverse' : 'flex-row'">
       <div
-        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold"
-        :class="isUser ? 'bg-brand-100 text-brand-600' : 'bg-brand-500 text-white'"
+        v-if="isUser"
+        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-600"
       >
-        {{ isUser ? '我' : 'AI' }}
+        我
       </div>
+      <TutorAvatar v-else :size="32" />
 
       <div
         class="whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm"

@@ -40,6 +40,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { JUDGE_LEVEL_UNKNOWN, type RevealResult, type SubmitResult } from '@/api/practice'
+import { CORRECT, WRONG, pickCopy } from '@/feedback/feedbackCopy'
 
 const props = defineProps<{
   /** 判分结论；null 表示这题还没提交 */
@@ -85,6 +86,31 @@ const isWrong = computed<boolean>(
   () => props.result !== null && props.result.is_correct === false && !isUnjudged.value,
 )
 
+/**
+ * 情感化反馈：做对给具体夸、做错不打击（接 feedbackCopy 文案库）。
+ * 机器判分没有"孩子用了什么方法"这种信息，所以做对只从 effort/progress
+ * 池里取（都没占位符，不会出现 {m} 这种半成品）；做错从全 WRONG 池取，
+ * 全部温柔且不泄题。用 watch 在每题 result 变化时换一条，避免连续重复。
+ */
+const lastPraise = ref('')
+const lastComfort = ref('')
+
+watch(
+  () => props.result,
+  (r) => {
+    if (r?.is_correct === true) {
+      lastPraise.value = pickCopy([...CORRECT.effort, ...CORRECT.progress], undefined, lastPraise.value).text
+    } else if (r && r.is_correct === false && !isUnjudged.value) {
+      lastComfort.value = pickCopy(
+        [...WRONG.nearMiss, ...WRONG.concept, ...WRONG.careless, ...WRONG.compute],
+        undefined,
+        lastComfort.value,
+      ).text
+    }
+  },
+  { immediate: true },
+)
+
 /** 顶部结论条的配色。 */
 const bannerClass = computed<string>(() => {
   if (isRight.value) return 'bg-green-50 text-green-700'
@@ -94,7 +120,7 @@ const bannerClass = computed<string>(() => {
 
 /** 顶部结论条的主文案（level=4 单独一套，绝不说「错」）。 */
 const bannerTitle = computed<string>(() => {
-  if (isRight.value) return '答对了，漂亮！'
+  if (isRight.value) return lastPraise.value || '答对了，漂亮！'
   if (isUnjudged.value) return '这题老师没法自动判，你自己核对一下'
   return '这道题没做对，别急'
 })
@@ -115,7 +141,7 @@ const bannerDetail = computed<string>(() => {
     return '你的答案格式老师这边识别不了（不代表你写错了）。先自己检查一遍，或者让老师带你把思路顺一顺。'
   }
   if (isWrong.value) {
-    return '先别急着看答案。想想你是哪一步拐错了弯？让老师带你顺一遍，你自己找出来印象最深。'
+    return lastComfort.value || '先别急着看答案。想想你是哪一步拐错了弯？让老师带你顺一遍，你自己找出来印象最深。'
   }
   return props.result?.reason ?? ''
 })

@@ -7,6 +7,7 @@ import { get } from '@/api/http'
 import type {
   ErrorPatternData,
   MasteryData,
+  RadarData,
   RecommendationData,
 } from '@/types/profile'
 
@@ -51,4 +52,15 @@ export function getRecommendations(params?: {
   if (params?.limit && params.limit > 0) query.limit = params.limit
   if (params?.force) query.force = 1
   return get<RecommendationData>('/profile/recommendations', query)
+}
+
+/**
+ * 学情能力雷达图（axis=全部 L1 知识点，value=掌握度百分比 0~100）。
+ *
+ * @param force 传 true 时绕过掌握度缓存强制实时重算
+ */
+export function getRadar(params?: { force?: boolean }): Promise<RadarData> {
+  const query: Record<string, unknown> = {}
+  if (params?.force) query.force = 1
+  return get<RadarData>('/profile/radar', query)
 }

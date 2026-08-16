@@ -139,6 +139,7 @@ class WeeklySnapshot:
     mastery: List[Dict[str, Any]] = field(default_factory=list)
     error_patterns: Dict[str, Any] = field(default_factory=dict)
     recommendations: List[Dict[str, Any]] = field(default_factory=list)
+    radar: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """序列化成可落 ``snapshot_json`` 的纯 dict。"""
@@ -148,6 +149,7 @@ class WeeklySnapshot:
             "mastery": list(self.mastery),
             "error_patterns": dict(self.error_patterns),
             "recommendations": list(self.recommendations),
+            "radar": dict(self.radar),
         }
 
     @staticmethod
@@ -157,6 +159,7 @@ class WeeklySnapshot:
         mastery = data.get("mastery")
         recommendations = data.get("recommendations")
         patterns = data.get("error_patterns")
+        radar = data.get("radar")
         return WeeklySnapshot(
             schema_version=_safe_int(data.get("schema_version"), REPORT_SNAPSHOT_SCHEMA_VERSION),
             engagement=EngagementStat.from_dict(data.get("engagement")),
@@ -167,6 +170,7 @@ class WeeklySnapshot:
                 if isinstance(recommendations, list)
                 else []
             ),
+            radar=radar if isinstance(radar, dict) else {},
         )
 
     def weak_points(self, top_n: int = REPORT_WEAK_POINT_TOP_N) -> List[Dict[str, Any]]:
@@ -400,6 +404,30 @@ def _error_patterns_snapshot(view: Any) -> Dict[str, Any]:
     }
 
 
+def _radar_snapshot(view: Any) -> Dict[str, Any]:
+    """把 ``RadarView`` 序列化成可落 ``snapshot_json`` 的 dict。
+
+    与 ``GET /api/profile/radar`` 返回结构一致（前端 ``AbilityRadar`` 的 props 即它），
+    这样分享页直接读快照，家长每次打开都不需要重算掌握度。
+    """
+    return {
+        "student_id": str(view.student_id),
+        "axes": [
+            {
+                "kp_id": str(a.kp_id),
+                "kp_name": str(a.kp_name),
+                "score": round(float(a.score), 1),
+                "level": int(a.level),
+                "practiced": bool(a.practiced),
+            }
+            for a in view.axes
+        ],
+        "summary": dict(view.summary),
+        "computed_at": _iso(view.computed_at),
+        "mode": view.mode,
+    }
+
+
 def build_weekly_snapshot(
     db: Session,
     student_id: uuid.UUID,
@@ -439,12 +467,16 @@ def build_weekly_snapshot(
         for item in recommend_view.items
     ]
 
+    radar_view = profile_service.get_radar(db, student_id=student_id)
+    radar = _radar_snapshot(radar_view)
+
     return WeeklySnapshot(
         schema_version=REPORT_SNAPSHOT_SCHEMA_VERSION,
         engagement=engagement,
         mastery=mastery,
         error_patterns=error_patterns,
         recommendations=recommendations,
+        radar=radar,
     )
 
 
@@ -768,6 +800,17 @@ def build_report_payload(db: Session, report: WeeklyReport) -> Dict[str, Any]:
         "source": str(narrative_raw.get("source") or "fallback"),
     }
 
+    # 雷达图：优先读快照（新报告生成时已存）；老快照无雷达数据则实时补算一次
+    # （纯算法、开销小，避免家长必须手动重新生成才能看到）。
+    radar_raw = snapshot.radar
+    if not isinstance(radar_raw, dict) or not radar_raw.get("axes"):
+        try:
+            radar_view = profile_service.get_radar(db, student_id=report.student_id)
+            radar_raw = _radar_snapshot(radar_view)
+        except Exception:  # noqa: BLE001 - 雷达缺失绝不能影响正文渲染
+            logger.warning("雷达补算失败 report=%s", report.id)
+            radar_raw = {}
+
     period_start = as_utc(report.period_start)
     period_end = as_utc(report.period_end)
     start_local = _to_local(period_start)
@@ -791,6 +834,7 @@ def build_report_payload(db: Session, report: WeeklyReport) -> Dict[str, Any]:
         "error_patterns": snapshot.error_patterns,
         "weak_points": weak_points,
         "comparison": comparison,
+        "radar": radar_raw,
         "narrative": narrative,
         "empty_state": {
             "is_empty": is_empty,

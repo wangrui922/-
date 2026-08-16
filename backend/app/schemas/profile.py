@@ -59,6 +59,38 @@ class MasteryData(ProfileBase):
     mode: str = Field("fresh", description="fresh 实时计算 / cache 命中物化缓存")
 
 
+# ==================================================================== 学情雷达图
+class RadarAxisItem(ProfileBase):
+    """雷达图的一个轴（L1 知识点）。"""
+
+    kp_id: str = Field(..., description="知识点 ID")
+    kp_name: str = Field(..., description="知识点名称")
+    score: float = Field(0.0, description="掌握度百分比 0~100")
+    level: int = Field(0, description="0未入门/1薄弱/2基本掌握/3熟练")
+    practiced: bool = Field(False, description="该知识点是否已有练习数据")
+
+
+class RadarSummary(ProfileBase):
+    """雷达图汇总。"""
+
+    total_kp: int = Field(0, description="课程表全部 L1 知识点数")
+    practiced_kp: int = Field(0, description="其中孩子已练习过的知识点数")
+    overall_score: float = Field(0.0, description="已练知识点掌握度均值 0~100")
+    level_count: Dict[str, int] = Field(
+        default_factory=dict, description='各等级知识点数量，如 {"0":1,"1":2,"2":0,"3":0}'
+    )
+
+
+class RadarData(ProfileBase):
+    """``GET /api/profile/radar`` 的 data 载荷。"""
+
+    student_id: str = Field(..., description="学生 ID")
+    axes: List[RadarAxisItem] = Field(default_factory=list, description="全部 L1 知识点轴")
+    summary: RadarSummary = Field(default_factory=RadarSummary, description="汇总")
+    computed_at: Optional[str] = Field(None, description="计算时间 ISO8601")
+    mode: str = Field("fresh", description="fresh 实时计算 / cache 命中物化缓存")
+
+
 # ==================================================================== 错因分布
 class ErrorPatternItem(ProfileBase):
     """单类错因的聚合结果。"""
@@ -113,6 +145,9 @@ __all__ = [
     "MasteryItem",
     "MasterySummary",
     "MasteryData",
+    "RadarAxisItem",
+    "RadarSummary",
+    "RadarData",
     "ErrorPatternItem",
     "ErrorPatternData",
     "RecommendationItem",

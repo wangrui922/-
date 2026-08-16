@@ -9,10 +9,11 @@
  */
 import { reactive } from 'vue'
 
-import { getErrorPatterns, getMastery, getRecommendations } from '@/api/profile'
+import { getErrorPatterns, getMastery, getRadar, getRecommendations } from '@/api/profile'
 import type {
   ErrorPatternData,
   MasteryData,
+  RadarData,
   RecommendationData,
 } from '@/types/profile'
 
@@ -28,9 +29,11 @@ export interface ProfileState {
   mastery: MasteryData | null
   errorPatterns: ErrorPatternData | null
   recommendations: RecommendationData | null
+  radar: RadarData | null
   masteryState: PanelState
   errorPatternsState: PanelState
   recommendationsState: PanelState
+  radarState: PanelState
 }
 
 function emptyPanel(): PanelState {
@@ -42,9 +45,11 @@ export const profileState = reactive<ProfileState>({
   mastery: null,
   errorPatterns: null,
   recommendations: null,
+  radar: null,
   masteryState: emptyPanel(),
   errorPatternsState: emptyPanel(),
   recommendationsState: emptyPanel(),
+  radarState: emptyPanel(),
 })
 
 /**
@@ -90,6 +95,12 @@ export async function loadRecommendations(limit?: number, force?: boolean): Prom
   if (data) profileState.recommendations = data
 }
 
+/** 拉取学情能力雷达图。 */
+export async function loadRadar(force?: boolean): Promise<void> {
+  const data = await safeLoad(profileState.radarState, () => getRadar({ force }))
+  if (data) profileState.radar = data
+}
+
 /**
  * 三路并行拉取画像（Dashboard 入口）。
  *
@@ -104,6 +115,7 @@ export async function loadDashboard(opts?: {
 }): Promise<void> {
   await Promise.all([
     loadMastery(opts?.force),
+    loadRadar(opts?.force),
     loadErrorPatterns(opts?.rangeDays),
     loadRecommendations(opts?.limit, opts?.force),
   ])

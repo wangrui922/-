@@ -159,6 +159,60 @@ def get_mastery(
     )
 
 
+# ==================================================================== 学情雷达图
+@router.get("/profile/radar")
+def get_radar(
+    force: int = Query(0, ge=0, le=1, description="1=跳过缓存强制重算"),
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """学情能力雷达图（axis=全部 L1 知识点，value=掌握度百分比 0~100）。
+
+    面向家长/学生的「一眼看清孩子强弱项」视图，纯算法无外网依赖。
+
+    Returns:
+        ``{"code":0,"msg":"ok","data":{
+            "student_id": "...",
+            "axes": [{"kp_id","kp_name","score","level","practiced"}],
+            "summary": {"total_kp","practiced_kp","overall_score","level_count"},
+            "computed_at": "...", "mode": "fresh|cache"}}``
+
+    Raises:
+        ApiError: 401 未登录；403 非学生本人。
+    """
+    student_id = _require_student(current)
+    empty = {
+        "axes": [],
+        "summary": {"total_kp": 0, "practiced_kp": 0, "overall_score": 0.0,
+                    "level_count": {"0": 0, "1": 0, "2": 0, "3": 0}},
+    }
+
+    try:
+        view = profile_service.get_radar(db, student_id=student_id, force=bool(force))
+    except Exception:  # noqa: BLE001 - 看板需要局部降级而非整页 500
+        db.rollback()
+        return _degraded(student_id, empty, "radar")
+
+    return ok(
+        {
+            "student_id": view.student_id,
+            "axes": [
+                {
+                    "kp_id": axis.kp_id,
+                    "kp_name": axis.kp_name,
+                    "score": axis.score,
+                    "level": axis.level,
+                    "practiced": axis.practiced,
+                }
+                for axis in view.axes
+            ],
+            "summary": view.summary,
+            "computed_at": _iso(view.computed_at),
+            "mode": view.mode,
+        }
+    )
+
+
 # ==================================================================== 错因分布
 @router.get("/profile/error-patterns")
 def get_error_patterns(

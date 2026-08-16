@@ -81,12 +81,14 @@ class Settings(BaseSettings):
     # ``{public_base_url}/r/{token}`` 返回给前端。生产环境务必改成真实域名。
     public_base_url: str = "http://localhost:5173"
 
+
     # ---------- 讲解质量闸门（#67 接入生产流）----------
     # DEMO 讲解（学生点「不会做，给我讲」）自动评一次分，低于阈值重讲一次。
-    # 默认关闭：开启会为每个 DEMO 讲解额外消耗一次模型调用（评测），
-    # 上线确认模型稳定、且确认 ArkError 降级符合预期后再设
-    # EXPLANATION_QUALITY_GATE_ENABLED=1 打开。
-    explanation_quality_gate_enabled: bool = False
+    # 默认开启：让每个孩子听到的讲解都先过一遍质量闸（引导性/准确性/清晰度/
+    # 针对性/鼓励性），家长更放心。闸门是 best-effort——方舟 Key 缺失或调用
+    # 异常时自动降级为直接用原讲解，绝不阻塞主流程（详见 explanation_quality）。
+    # 临时关闭用 EXPLANATION_QUALITY_GATE_ENABLED=0。
+    explanation_quality_gate_enabled: bool = True
     explanation_quality_gate_threshold: int = Field(default=3, ge=1, le=5)
 
     # ---------- 短信 ----------

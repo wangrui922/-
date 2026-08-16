@@ -89,6 +89,8 @@ export interface SharedReportData {
   error_patterns: import('@/types/profile').ErrorPatternData
   weak_points: ReportWeakPoint[]
   comparison: ReportComparison
+  /** 学情能力雷达图，与 RadarData 同构，AbilityRadar 零改造复用。 */
+  radar: import('@/types/profile').RadarData | null
   narrative: ReportNarrative
   empty_state: ReportFlag
   low_data: ReportLowDataFlag

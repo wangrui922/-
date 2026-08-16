@@ -70,3 +70,36 @@ export function logout(): void {
   localStorage.removeItem(REFRESH_KEY)
   localStorage.removeItem(STUDENT_ID_KEY)
 }
+
+/**
+ * 用 refresh token 静默换新令牌。
+ *
+ * 直接走 fetch（不经过 axios 响应拦截），避免刷新接口自身返回 401 时
+ * 触发拦截器里的续期逻辑造成死循环。
+ *
+ * @returns 续期成功并写入登录态返回 true；无 refresh / 续期失败返回 false。
+ */
+export async function refreshAccessToken(): Promise<boolean> {
+  const refresh = getRefreshToken()
+  if (!refresh) return false
+  const base = ((import.meta as { env?: Record<string, unknown> }).env?.VITE_API_BASE as string) || '/api'
+  try {
+    const res = await fetch(`${base}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh }),
+    })
+    if (!res.ok) return false
+    const body = (await res.json()) as { code?: number; data?: Record<string, unknown> }
+    if (body?.code !== 0 || !body.data) return false
+    const token = (body.data.access || body.data.accessToken) as string | undefined
+    if (!token) return false
+    login(token, {
+      refresh: (body.data.refresh || body.data.refreshToken) as string | undefined,
+      studentId: (body.data.user as { studentId?: string } | undefined)?.studentId ?? getStudentId(),
+    })
+    return true
+  } catch {
+    return false
+  }
+}

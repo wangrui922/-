@@ -15,6 +15,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { post, toMessage } from '@/api/http'
 import { login } from '@/stores/auth'
+import tutorFull from '@/assets/tutor-yueyue-full.png'
 
 interface UserBrief {
   userId: string
@@ -108,11 +109,11 @@ async function handleLogin(): Promise<void> {
   <div class="flex min-h-screen w-full flex-col justify-center px-6 py-10">
     <header class="mb-8 text-center">
       <div
-        class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-500 text-2xl font-bold text-white"
+        class="mx-auto mb-4 flex h-32 w-32 items-end justify-center overflow-hidden rounded-3xl border-2 border-orange-100 bg-[linear-gradient(135deg,#fff1e6_0%,#eaf2ff_100%)] shadow-sm"
       >
-        AI
+        <img :src="tutorFull" alt="小玥老师" class="block h-full w-full object-contain" />
       </div>
-      <h1 class="text-xl font-bold text-slate-800">AI 数学教练</h1>
+      <h1 class="text-xl font-bold text-slate-800">小玥老师 · AI 数学教练</h1>
       <p class="mt-1 text-sm text-slate-500">不直接给答案，陪你一步步想明白</p>
     </header>
 

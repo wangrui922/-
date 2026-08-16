@@ -121,6 +121,29 @@ class ReportLowDataFlag(ReportBase):
     message: Optional[str] = Field(None, description="提示文案，未命中时为 null")
 
 
+class ReportRadarAxis(ReportBase):
+    """雷达图的一个轴（孩子实际练过的 L1 知识点）。"""
+
+    kp_id: str = Field("", description="知识点 ID")
+    kp_name: str = Field("", description="知识点名称")
+    score: float = Field(0.0, description="掌握度百分比 0~100")
+    level: int = Field(0, description="0 未入门 / 1 薄弱 / 2 基本掌握 / 3 熟练")
+    practiced: bool = Field(True, description="该知识点是否已有练习数据（恒 True）")
+
+
+class ReportRadarData(ReportBase):
+    """学情能力雷达图，与 ``GET /api/profile/radar`` 的 data 同构。"""
+
+    student_id: str = Field("", description="学生 ID")
+    axes: List[ReportRadarAxis] = Field(default_factory=list, description="雷达轴（练过的 L1 知识点）")
+    summary: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="total_kp / practiced_kp / overall_score / level_count",
+    )
+    computed_at: Optional[str] = Field(None, description="计算时间 ISO8601")
+    mode: str = Field("fresh", description="fresh 实时计算 / cache 命中物化缓存")
+
+
 class SharedReportData(ReportBase):
     """``GET /api/report/share/{token}`` 的 data 载荷（公开、无登录）。"""
 
@@ -133,6 +156,7 @@ class SharedReportData(ReportBase):
     )
     weak_points: List[ReportWeakPoint] = Field(default_factory=list, description="Top3 薄弱知识点")
     comparison: ReportComparison = Field(default_factory=ReportComparison, description="环比")
+    radar: ReportRadarData = Field(default_factory=ReportRadarData, description="学情能力雷达图")
     narrative: ReportNarrative = Field(default_factory=ReportNarrative, description="三段叙述")
     empty_state: ReportFlag = Field(default_factory=ReportFlag, description="整页空态")
     low_data: ReportLowDataFlag = Field(default_factory=ReportLowDataFlag, description="低数据提示")
@@ -173,6 +197,8 @@ __all__ = [
     "ReportNarrative",
     "ReportFlag",
     "ReportLowDataFlag",
+    "ReportRadarAxis",
+    "ReportRadarData",
     "SharedReportData",
     "ReportHistoryItem",
     "ReportHistoryData",

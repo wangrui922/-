@@ -116,6 +116,28 @@ class RecommendationView:
     mode: str = MODE_FRESH
 
 
+@dataclass
+class RadarAxis:
+    """学情雷达图的一个轴（L1 知识点）。"""
+
+    kp_id: str
+    kp_name: str
+    score: float = 0.0          # 掌握度百分比 0~100
+    level: int = 0              # 0 未入门 / 1 薄弱 / 2 基本掌握 / 3 熟练
+    practiced: bool = False     # 该 L1 是否已有练习数据
+
+
+@dataclass
+class RadarView:
+    """``GET /api/profile/radar`` 的服务层结果。"""
+
+    student_id: str
+    axes: List[RadarAxis] = field(default_factory=list)
+    summary: Dict[str, Any] = field(default_factory=dict)
+    computed_at: Optional[datetime] = None
+    mode: str = MODE_FRESH
+
+
 # ============================================ 未复核题目的知识点隔离（T05 · 风险2）
 #: 只有 ``kp_verified IS TRUE`` 的题目才把 ``kp_id`` 计入掌握度统计。
 #:
@@ -709,6 +731,90 @@ def get_mastery(
     )
 
 
+def get_radar(
+    db: Session,
+    *,
+    student_id: uuid.UUID,
+    force: bool = False,
+) -> RadarView:
+    """``GET /api/profile/radar`` 的服务实现（**纯算法，不依赖外网模型**）。
+
+    把「掌握度」reshape 成家长友好的能力雷达图：
+
+    * 轴 = 知识树**全部 L1 知识点**（固定轴，便于跨时间对比孩子成长）；
+    * 值 = 该 L1 的掌握度百分比（0~100），无练习数据时为 0 且 ``practiced=False``；
+    * summary 含整体掌握度（已练知识点均值）与覆盖率（已练 L1 / 全部 L1）。
+
+    复用 ``load_entries`` 的掌握度计算结果（已 L1 rollup），再补一层「全 L1 轴」
+    的拼装；没有任何 L1 知识点时返回空 axes（前端画空态）。
+
+    Args:
+        db: 数据库会话。
+        student_id: 学生 ID。
+        force: 是否强制重算掌握度。
+
+    Returns:
+        ``RadarView``；无任何 L1 知识点时 ``axes`` 为空。
+    """
+    entries, stamp, mode = load_entries(db, student_id, force=force)
+
+    index = load_kp_tree(db)
+    l1_ids: List[uuid.UUID] = list(index.l1_ids)
+    if not l1_ids:
+        return RadarView(
+            student_id=str(student_id),
+            axes=[],
+            summary={"total_kp": 0, "practiced_kp": 0, "overall_score": 0.0,
+                     "level_count": {"0": 0, "1": 0, "2": 0, "3": 0}},
+            computed_at=stamp,
+            mode=mode,
+        )
+
+    # L1 名称（一次查询）
+    name_rows = db.execute(
+        select(KnowledgePoint.id, KnowledgePoint.name).where(KnowledgePoint.id.in_(l1_ids))
+    ).all()
+    names: Dict[str, str] = {_kp_key(row[0]): str(row[1] or "未命名知识点") for row in name_rows}
+
+    entry_by_kp = {entry.kp_id: entry for entry in entries}
+
+    axes: List[RadarAxis] = []
+    practiced_scores: List[float] = []
+    level_count: Dict[str, int] = {"0": 0, "1": 0, "2": 0, "3": 0}
+    for l1 in sorted(l1_ids, key=lambda k: names.get(_kp_key(k), "")):
+        key = _kp_key(l1)
+        entry = entry_by_kp.get(key)
+        if entry is None:
+            # 只展示孩子实际练过的知识点：课程表共几十个 L1，全画进雷达会过于密集、
+            # 家长也看不清；练过的才是孩子的真实学情足迹，且数量通常可读。
+            continue
+        score = round(float(entry.result.score) * 100, 1)
+        level = int(entry.result.level)
+        practiced_scores.append(score)
+        level_count[str(level)] = level_count.get(str(level), 0) + 1
+        axes.append(
+            RadarAxis(kp_id=key, kp_name=names.get(key, "未命名知识点"),
+                      score=score, level=level, practiced=True)
+        )
+
+    total_kp = len(l1_ids)
+    practiced_kp = len(practiced_scores)
+    overall = round(sum(practiced_scores) / practiced_kp, 1) if practiced_kp else 0.0
+
+    return RadarView(
+        student_id=str(student_id),
+        axes=axes,
+        summary={
+            "total_kp": total_kp,
+            "practiced_kp": practiced_kp,
+            "overall_score": overall,
+            "level_count": level_count,
+        },
+        computed_at=stamp,
+        mode=mode,
+    )
+
+
 def get_error_patterns(
     db: Session,
     *,
@@ -885,6 +991,7 @@ __all__ = [
     "invalidate_cache_for_question",
     "load_entries",
     "get_mastery",
+    "get_radar",
     "get_error_patterns",
     "get_recommendations",
     "to_uuid",
