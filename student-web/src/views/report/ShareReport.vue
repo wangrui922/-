@@ -13,6 +13,7 @@ import { useRoute } from 'vue-router'
 import ShareErrorPatternCard from '@/components/report/ShareErrorPatternCard.vue'
 import ShareOverviewCard from '@/components/report/ShareOverviewCard.vue'
 import ShareWeakPointsCard from '@/components/report/ShareWeakPointsCard.vue'
+import SharePoster from '@/components/report/SharePoster.vue'
 import AbilityRadar from '@/components/profile/AbilityRadar.vue'
 import { ApiError } from '@/api/http'
 import { getSharedReport } from '@/api/report'
@@ -25,6 +26,7 @@ type LoadState = 'loading' | 'ready' | 'invalid' | 'error'
 const state = ref<LoadState>('loading')
 const report = ref<SharedReportData | null>(null)
 const errorMessage = ref('这个链接已失效，请让孩子重新生成一份')
+const showPoster = ref(false)
 
 const token = computed<string>(() => String(route.params.token || ''))
 
@@ -86,6 +88,12 @@ const gradeText = computed<string>(() => {
           <p v-if="report.narrative.headline" class="mt-1 text-sm font-medium text-brand-600">
             {{ report.narrative.headline }}
           </p>
+          <button
+            class="mt-3 w-full rounded-xl bg-brand-600 py-2.5 text-center text-sm font-bold text-white active:opacity-90"
+            @click="showPoster = true"
+          >
+            生成分享图（可发朋友圈）
+          </button>
         </header>
 
         <!-- 空态：整页鼓励，不显示任何 0% -->
@@ -150,5 +158,26 @@ const gradeText = computed<string>(() => {
         </footer>
       </template>
     </div>
+
+    <!-- 分享图弹窗 -->
+    <transition name="fade">
+      <div
+        v-if="showPoster && report"
+        class="fixed inset-0 z-50 flex flex-col bg-black/60 px-4 py-6"
+        @click.self="showPoster = false"
+      >
+        <div class="mx-auto flex max-h-full w-full max-w-app flex-col overflow-hidden rounded-2xl bg-white">
+          <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+            <span class="text-base font-bold text-slate-800">学习小结分享图</span>
+            <button class="text-sm text-slate-400 active:opacity-70" @click="showPoster = false">
+              关闭
+            </button>
+          </div>
+          <div class="flex-1 overflow-y-auto px-4 py-4">
+            <SharePoster :report="report" />
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
