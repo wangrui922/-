@@ -24,3 +24,22 @@ npmfetch.txt
 npmview.txt
 npmview2.txt
 status.txt
+
+# 旧构建副本（仅 /dist/ 为正式产物）
+dist-old/
+dist-qa/
+dist-new/
+dist-tmp/
+dist-voice/
+
+# 其它调试 / 探针残留
+*.log
+_*.log
+nodedl.cjs
+nodedl.js
+install*.log
+build.log
+_fe_check.txt
+_final_check.txt
+_probe_result.txt
+_v1.txt

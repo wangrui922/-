@@ -1,2 +1,21 @@
 # PDF 渲染临时产物(本地读图用,不入库)
 .tmp_exam_pages/
+
+# 数据库（本地开发库 + 备份，绝不入库；真实备份在库外的 _dbbackups/）
+*.db
+*.db-shm
+*.db-wal
+*.db.bak
+*.db.bak-*
+
+# 调试 / 测试残留
+_*.log
+_*.txt
+repro_*.py
+_regression_driver.py
+scripts/_audit_*.py
+.pytest-tmp/
+.pytest_cache/
+.qa_cache/
+.qa_backup/
+_dbbackups/
