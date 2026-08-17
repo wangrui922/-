@@ -20,7 +20,6 @@ import RecommendationList from '@/components/profile/RecommendationList.vue'
 import KnowledgeStarMap from '@/components/profile/KnowledgeStarMap.vue'
 import AbilityRadar from '@/components/profile/AbilityRadar.vue'
 import tutorAvatar from '@/assets/tutor-yueyue-v2.png'
-import tutorStudy from '@/assets/tutor-study.png'
 import { useStreak } from '@/stores/streak'
 import { toMessage } from '@/api/http'
 import { generateReport } from '@/api/report'
@@ -189,11 +188,6 @@ async function handleGenerateReport(): Promise<void> {
             <polygon points="16,21 19,27 16,27" fill="#FF7043"/>
             <path d="M8 28c0.5 2 2 3 3 3.5 1-0.5 2.5-1.5 3-3.5" fill="#FFC24B"/>
           </svg>
-        </div>
-
-        <!-- 陪学插画装饰（右上角） -->
-        <div class="pointer-events-none absolute -right-2 -top-1 h-24 w-24 animate-float" style="animation-delay: 0.4s">
-          <img :src="tutorStudy" alt="小玥老师" class="h-full w-full rounded-2xl object-cover opacity-90" />
         </div>
 
         <div class="relative flex items-center gap-3">
