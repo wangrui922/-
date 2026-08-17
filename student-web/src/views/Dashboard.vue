@@ -19,6 +19,7 @@ import MasteryPanel from '@/components/profile/MasteryPanel.vue'
 import RecommendationList from '@/components/profile/RecommendationList.vue'
 import KnowledgeStarMap from '@/components/profile/KnowledgeStarMap.vue'
 import AbilityRadar from '@/components/profile/AbilityRadar.vue'
+import TileIcon from '@/components/dashboard/TileIcon.vue'
 import tutorAvatar from '@/assets/tutor-yueyue-v2.png'
 import { useStreak } from '@/stores/streak'
 import { toMessage } from '@/api/http'
@@ -72,11 +73,10 @@ const badges = computed<Badge[]>(() => [
 
 /* ---------- 趣味入口 ---------- */
 interface Tile {
-  key: string
+  key: 'practice' | 'ai' | 'mistakes' | 'dashboard'
   label: string
   desc: string
   grad: string
-  icon: string
   to: { name: string }
   badge?: string
 }
@@ -86,7 +86,6 @@ const tiles: readonly Tile[] = [
     label: '去练习',
     desc: '挑题闯关',
     grad: 'from-brand-500 to-brand-600',
-    icon: 'M12 6.5v11m0-11a5.5 5.5 0 00-4-1.7H5a1 1 0 00-1 1v10a1 1 0 001 1h3a5.5 5.5 0 014 1.7m0-13a5.5 5.5 0 014-1.7h3a1 1 0 011 1v10a1 1 0 01-1 1h-3a5.5 5.5 0 00-4 1.7',
     to: { name: 'practice' },
     badge: 'HOT',
   },
@@ -95,7 +94,6 @@ const tiles: readonly Tile[] = [
     label: '问小玥老师',
     desc: '不懂就问',
     grad: 'from-coral-400 to-coral-500',
-    icon: 'M12 3v2m0 14v2m9-9h-2M5 12H3m14.5-5.5L16 8m-8 8l-2.5 2.5m11 0L16 16m-8-8L5.5 5.5M12 8a4 4 0 100 8 4 4 0 000-8z',
     to: { name: 'ai-teacher' },
   },
   {
@@ -103,7 +101,6 @@ const tiles: readonly Tile[] = [
     label: '错题宝藏',
     desc: '挖宝复习',
     grad: 'from-amber-400 to-amber-500',
-    icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
     to: { name: 'mistakes' },
   },
   {
@@ -111,7 +108,6 @@ const tiles: readonly Tile[] = [
     label: '学习画像',
     desc: '看看进步',
     grad: 'from-mint-400 to-mint-500',
-    icon: 'M3 3v18h18M7 14l3-4 3 3 4-6',
     to: { name: 'dashboard' },
   },
 ]
@@ -271,10 +267,8 @@ async function handleGenerateReport(): Promise<void> {
           @click="onTile(t)"
         >
           <div class="flex items-center justify-between">
-            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/25">
-              <svg class="h-5 w-5 text-white" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-                <path :d="t.icon" />
-              </svg>
+            <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/30 shadow-[inset_0_-3px_6px_rgba(0,0,0,0.08)] backdrop-blur-sm">
+              <TileIcon :kind="t.key" />
             </span>
             <span
               v-if="t.badge"
