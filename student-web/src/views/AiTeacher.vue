@@ -52,6 +52,7 @@ import ChatBubble from '@/components/ChatBubble.vue'
 import GuideChatPanel from '@/components/guide/GuideChatPanel.vue'
 import QuestionCard from '@/components/QuestionCard.vue'
 import ImageQuestionCropper from '@/components/practice/ImageQuestionCropper.vue'
+import tutorAvatar from '@/assets/tutor-yueyue-v2.png'
 import type { GuideMessage, QuickAction } from '@/types/guide'
 
 interface ChatItem {
@@ -155,6 +156,16 @@ const sending = ref<boolean>(false)
 const uploading = ref<boolean>(false)
 const generating = ref<boolean>(false)
 const errorMsg = ref<string>('')
+
+/** 做对一道题时弹出的「攻克庆祝」横幅（纯视觉，2.6s 自动消失）。 */
+const celebrate = ref<boolean>(false)
+/** 快捷按钮的卡通图标（按 label 映射，不改 QuickAction 类型）。 */
+const QUICK_ICON: Record<string, string> = {
+  '不会做，给我讲': '📖',
+  '给点提示': '💡',
+  '看演示': '🎬',
+  '我做完了，帮我判': '✓',
+}
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const scrollArea = ref<HTMLElement | null>(null)
@@ -626,13 +637,17 @@ function handleReset(): void {
 
 <template>
   <div class="relative flex h-full w-full flex-col overflow-x-hidden bg-transparent">
-    <!-- 模式指示器（常驻）：孩子随时知道老师现在在干嘛 -->
-    <header class="shrink-0 border-b border-white/60 bg-white/70 px-4 py-2 backdrop-blur-md">
-      <div class="flex items-center gap-2">
-        <span class="shrink-0 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-600">
-          {{ modeMeta.icon }} {{ modeMeta.label }}
-        </span>
-        <span class="min-w-0 flex-1 truncate text-xs text-slate-400">{{ modeMeta.hint }}</span>
+    <!-- 陪伴条：小玥老师头像 + 实时状态，像真老师在身边 -->
+    <header class="shrink-0 border-b border-white/60 bg-white/70 px-4 py-2.5 backdrop-blur-md">
+      <div class="flex items-center gap-3">
+        <div class="relative h-11 w-11 shrink-0 animate-float">
+          <img :src="tutorAvatar" alt="小玥老师" class="h-full w-full rounded-full border-2 border-white object-cover shadow-float" />
+          <span class="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-green-400 text-[11px] shadow ring-2 ring-white">💬</span>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-bold text-slate-800">小玥老师 · {{ modeMeta.icon }} {{ modeMeta.label }}</p>
+          <p class="truncate text-xs text-slate-400">{{ modeMeta.hint }}</p>
+        </div>
         <!-- 自动朗读开关：低年级不会看题，默认开，老师的话自动念 -->
         <button
           type="button"
@@ -643,7 +658,7 @@ function handleReset(): void {
         >
           {{ autoRead ? '🔊 朗读' : '🔇 静音' }}
         </button>
-        <span v-if="showNextModeHint" class="shrink-0 text-xs text-slate-400">
+        <span v-if="showNextModeHint" class="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-400">
           下一轮 {{ nextModeMeta.icon }} {{ nextModeMeta.label }}
         </span>
       </div>
@@ -651,24 +666,42 @@ function handleReset(): void {
 
     <!-- 对话区 -->
     <main ref="scrollArea" class="flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4">
-      <div v-if="!messages.length" class="card text-sm leading-relaxed text-slate-500">
-        <p class="mb-2 font-medium text-slate-700">先把不会的题发给我 👇</p>
-        <p>· 点「拍照」上传题目照片</p>
-        <p>· 或直接把题目文字打出来</p>
-        <p class="mt-2 text-xs text-slate-400">
-          我会先一步步问你；实在不会，点「不会做，给我讲」，我就完整讲一遍。
+      <!-- 陪伴欢迎（空状态） -->
+      <div v-if="!messages.length" class="card flex flex-col items-center gap-2 px-4 py-5 text-center">
+        <img :src="tutorAvatar" alt="小玥老师" class="h-20 w-20 animate-float rounded-full border-2 border-white object-cover shadow-float" />
+        <p class="text-base font-bold text-slate-800">嗨～我是小玥老师 👋</p>
+        <p class="text-sm leading-relaxed text-slate-500">
+          不会的题发给我，我陪你一步步想明白。<br />
+          点「拍照」上传题目，或直接打字都行。
         </p>
+        <p class="text-xs text-slate-400">实在卡住了，点「不会做，给我讲」，我完整讲一遍。</p>
       </div>
 
-      <ChatBubble
-        v-for="item in messages"
-        :key="item.id"
-        :id="item.id"
-        :role="item.role"
-        :content="item.content"
-        :image="item.image"
-      />
-      <ChatBubble v-if="sending" role="ai" :content="busyHint" pending />
+      <!-- 攻克庆祝横幅（做对时浮现，2.6s 自动消失） -->
+      <Transition name="cheer">
+        <div
+          v-if="celebrate"
+          class="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-400 to-coral-400 px-4 py-3 text-white shadow-float"
+        >
+          <span class="text-xl">🎉</span>
+          <div class="flex-1">
+            <p class="text-sm font-bold">这道题攻克啦！</p>
+            <p class="text-xs opacity-90">宝藏书库 +1 颗宝石 ✨ 明天再来练一次更牢</p>
+          </div>
+        </div>
+      </Transition>
+
+      <TransitionGroup name="bubble" tag="div" class="space-y-3">
+        <ChatBubble
+          v-for="item in messages"
+          :key="item.id"
+          :id="item.id"
+          :role="item.role"
+          :content="item.content"
+          :image="item.image"
+        />
+        <ChatBubble v-if="sending" key="__sending__" role="ai" :content="busyHint" pending />
+      </TransitionGroup>
 
       <!-- 生成练习 -->
       <section v-if="canGenerate || exercises.length" class="space-y-3 pt-2">
@@ -751,17 +784,17 @@ function handleReset(): void {
         </button>
       </div>
 
-      <!-- 快捷按钮：点一下 = 填话术 + 显式带 mode 发送 -->
+      <!-- 快捷按钮：点一下 = 填话术 + 显式带 mode 发送（卡通图标 + 微缩放） -->
       <div v-if="started" class="flex gap-2 overflow-x-auto pb-1">
         <button
           v-for="action in CHAT_QUICK_ACTIONS"
           :key="action.label"
           type="button"
-          class="h-9 shrink-0 rounded-full border border-brand-200 bg-brand-50 px-3 text-xs font-medium text-brand-600 transition active:bg-brand-100 disabled:opacity-50"
+          class="h-9 shrink-0 rounded-full border border-brand-200 bg-white/80 px-3 text-xs font-medium text-brand-600 shadow-sm transition hover:scale-105 active:bg-brand-100 disabled:opacity-50"
           :disabled="sending"
           @click="handleChatQuickAction(action)"
         >
-          {{ action.label }}
+          {{ QUICK_ICON[action.label] || '💬' }} {{ action.label }}
         </button>
       </div>
 
@@ -866,3 +899,22 @@ function handleReset(): void {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 对话气泡弹入：新消息从下方轻微放大浮现，像老师/你刚说出口 */
+.bubble-enter-from {
+  opacity: 0;
+  transform: translateY(10px) scale(0.96);
+}
+.bubble-enter-active {
+  transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* 攻克庆祝横幅：从上滑入放大 */
+.cheer-enter-from {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.95);
+}
+.cheer-enter-active {
+  transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+</style>

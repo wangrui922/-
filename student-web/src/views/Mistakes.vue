@@ -26,6 +26,7 @@ import { useRouter } from 'vue-router'
 import { listMistakes, markMistakeSolved, type MistakeItem, type MistakeState } from '@/api/chat'
 import { SUPPORTS_MARK_SOLVED } from '@/config/features'
 import { toMessage } from '@/api/http'
+import tutorAvatar from '@/assets/tutor-yueyue-v2.png'
 
 /** 筛选 tab 的取值：'all' 表示不传 state。 */
 type FilterKey = MistakeState | 'all'
@@ -36,10 +37,10 @@ interface FilterTab {
 }
 
 const TABS: readonly FilterTab[] = [
-  { key: 'all', label: '全部' },
-  { key: 'unsolved', label: '未掌握' },
-  { key: 'practicing', label: '练习中' },
-  { key: 'mastered', label: '已掌握' },
+  { key: 'all', label: '全部宝藏' },
+  { key: 'unsolved', label: '未点亮' },
+  { key: 'practicing', label: '修炼中' },
+  { key: 'mastered', label: '已点亮' },
 ]
 
 const router = useRouter()
@@ -49,6 +50,45 @@ const total = ref<number>(0)
 const activeKey = ref<FilterKey>('all')
 const loading = ref<boolean>(false)
 const errorMsg = ref<string>('')
+
+/** 刚点亮的宝石 ID（触发闪光动画，纯视觉）。 */
+const litId = ref<string>('')
+
+/** 已点亮（solved）宝石数 / 总数 / 百分比 —— 收集册进度。 */
+const collectedCount = computed<number>(() => items.value.filter((i) => i.solved).length)
+const totalCount = computed<number>(() => items.value.length)
+const collectPct = computed<number>(() =>
+  totalCount.value ? Math.round((collectedCount.value / totalCount.value) * 100) : 0,
+)
+
+/** 宝石配色：solved=翡翠发光，否则灰暗未开采。 */
+function gemColors(item: MistakeItem): {
+  top: string
+  left: string
+  right: string
+  center: string
+  stroke: string
+  glow: string
+} {
+  if (item.solved) {
+    return {
+      top: '#BAF7D8',
+      left: '#34D399',
+      right: '#10B981',
+      center: '#6EE7B7',
+      stroke: '#059669',
+      glow: 'drop-shadow(0 0 6px rgba(52,211,153,.6))',
+    }
+  }
+  return {
+    top: '#E2E8F0',
+    left: '#CBD5E1',
+    right: '#94A3B8',
+    center: '#CBD5E1',
+    stroke: '#64748B',
+    glow: 'none',
+  }
+}
 
 /** 只有「加载完 + 没报错 + 真的没数据」才是空状态。 */
 const isEmpty = computed<boolean>(
@@ -166,6 +206,9 @@ async function handleSolve(item: MistakeItem): Promise<void> {
     const updated = await markMistakeSolved(item.id)
     const idx = items.value.findIndex((it) => it.id === item.id)
     if (idx >= 0) items.value[idx] = { ...items.value[idx], ...updated }
+    // 刚点亮——让这颗宝石闪一下（纯视觉反馈）
+    litId.value = item.id
+    window.setTimeout(() => (litId.value = ''), 1500)
   } catch (error) {
     errorMsg.value = toMessage(error, '标记失败，请重试')
   } finally {
@@ -199,9 +242,23 @@ onMounted(() => {
       </button>
     </nav>
 
+    <!-- 宝藏收集进度 -->
+    <section class="shrink-0 border-b border-white/60 bg-white/70 px-4 py-3 backdrop-blur-md">
+      <div class="flex items-center justify-between">
+        <p class="text-sm font-bold text-slate-800">💎 我的宝藏书库</p>
+        <p class="text-xs font-medium text-amber-600">{{ collectedCount }} / {{ totalCount }} 已点亮</p>
+      </div>
+      <div class="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100">
+        <div
+          class="h-full rounded-full bg-gradient-to-r from-amber-400 to-coral-400 transition-all duration-500"
+          :style="{ width: `${collectPct}%` }"
+        />
+      </div>
+    </section>
+
     <!-- 列表区 -->
     <main class="flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4">
-      <p v-if="loading" class="card text-sm text-slate-500">正在翻错题本…</p>
+      <p v-if="loading" class="card text-sm text-slate-500">正在翻宝藏书库…</p>
 
       <template v-else>
         <p v-if="errorMsg" class="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-500">
@@ -212,74 +269,98 @@ onMounted(() => {
         </button>
 
         <!-- 空状态 -->
-        <div v-if="isEmpty" class="card text-sm leading-relaxed text-slate-500">
-          <p class="mb-2 font-medium text-slate-700">这里还是空的 🎉</p>
-          <p>还没有错题，做错题 AI 老师会帮你收进来。</p>
-          <p class="mt-2 text-xs text-slate-400">
-            换个筛选看看，或者去 AI 老师那儿拍一道不会的题。
+        <div v-if="isEmpty" class="card flex flex-col items-center gap-2 px-4 py-6 text-center">
+          <img :src="tutorAvatar" alt="小玥老师" class="h-20 w-20 animate-float rounded-full border-2 border-white object-cover shadow-float" />
+          <p class="text-base font-bold text-slate-800">宝藏书库还是空的 🎉</p>
+          <p class="text-sm leading-relaxed text-slate-500">
+            还没有错题宝石，做错题时小玥老师会帮你收进来。
           </p>
+          <p class="text-xs text-slate-400">去 AI 老师那儿拍一道不会的题，开始收集吧～</p>
         </div>
 
-        <!-- 错题卡片 -->
-        <article v-for="item in items" :key="item.id" class="card space-y-3">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-              {{ questionLabel(item.questionId) }}
-            </span>
-            <span
-              v-if="item.errorType"
-              class="rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-600"
+        <!-- 错题 = 宝石卡 -->
+        <article
+          v-for="item in items"
+          :key="item.id"
+          class="card flex gap-3"
+          :class="litId === item.id ? 'ring-2 ring-amber-300' : ''"
+        >
+          <!-- 宝石本体：点亮=翡翠发光，未开采=灰暗 -->
+          <div class="relative shrink-0">
+            <svg
+              viewBox="0 0 32 32"
+              class="h-12 w-12"
+              :class="litId === item.id ? 'animate-twinkle' : ''"
+              :style="{ filter: gemColors(item).glow }"
             >
-              {{ item.errorType }}
-            </span>
-            <span
-              class="rounded-full px-2.5 py-1 text-xs font-medium"
-              :class="item.solved ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'"
-            >
-              {{ item.solved ? '已掌握' : '未掌握' }}
-            </span>
+              <path d="M9 11 L16 6 L23 11 L16 14 Z" :fill="gemColors(item).top" :stroke="gemColors(item).stroke" stroke-width="1.2" stroke-linejoin="round" />
+              <path d="M9 11 L12 19 L16 25 L16 14 Z" :fill="gemColors(item).left" :stroke="gemColors(item).stroke" stroke-width="1.2" stroke-linejoin="round" />
+              <path d="M23 11 L20 19 L16 25 L16 14 Z" :fill="gemColors(item).right" :stroke="gemColors(item).stroke" stroke-width="1.2" stroke-linejoin="round" />
+              <path d="M16 14 L12 19 L16 25 L20 19 Z" :fill="gemColors(item).center" :stroke="gemColors(item).stroke" stroke-width="1.2" stroke-linejoin="round" />
+              <path d="M14 8 L16 6 L16 13 Z" fill="white" opacity="0.5" />
+            </svg>
           </div>
 
-          <p class="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800">
-            {{ item.errorReason || 'AI 老师还没写下错因，去练一练它会补上。' }}
-          </p>
-
-          <p class="text-xs text-slate-400">
-            收录于 {{ formatDate(item.createdAt) }}
-            <span v-if="item.solved && item.solvedAt"> · 攻克于 {{ formatDate(item.solvedAt) }}</span>
-          </p>
-
-          <!-- 知识点条 + 操作按钮 -->
-          <div class="space-y-2 border-t border-dashed border-slate-200 pt-3">
-            <!-- 知识点条：kpId 为空时整行不渲染，也不显示「练同类题」按钮 -->
-            <div
-              v-if="item.kpId"
-              class="flex items-center justify-between gap-2"
-            >
-              <span class="min-w-0 truncate text-xs text-slate-500">
-                🏷 {{ item.kpName }}<template v-if="item.grade !== null && item.grade !== undefined"> · {{ item.grade }}年级</template>
+          <div class="min-w-0 flex-1 space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                {{ questionLabel(item.questionId) }}
               </span>
-              <button
-                type="button"
-                class="btn-ghost shrink-0 text-sm"
-                @click="handlePracticeKp(item)"
+              <span
+                v-if="item.errorType"
+                class="rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-600"
               >
-                练同类题 →
-              </button>
+                {{ item.errorType }}
+              </span>
+              <span
+                class="rounded-full px-2.5 py-1 text-xs font-medium"
+                :class="item.solved ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'"
+              >
+                {{ item.solved ? '✨ 已点亮' : '未点亮' }}
+              </span>
             </div>
 
-            <button
-              v-if="SUPPORTS_MARK_SOLVED && !item.solved"
-              type="button"
-              class="btn-primary w-full"
-              :disabled="solvingId === item.id"
-              @click="handleSolve(item)"
-            >
-              {{ solvingId === item.id ? '标记中…' : '标记已掌握' }}
-            </button>
-            <button v-else type="button" class="btn-ghost w-full" @click="handlePractice">
-              去练习
-            </button>
+            <p class="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800">
+              {{ item.errorReason || 'AI 老师还没写下错因，去练一练它会补上。' }}
+            </p>
+
+            <p class="text-xs text-slate-400">
+              收录于 {{ formatDate(item.createdAt) }}
+              <span v-if="item.solved && item.solvedAt"> · 攻克于 {{ formatDate(item.solvedAt) }}</span>
+            </p>
+
+            <!-- 知识点条 + 操作按钮 -->
+            <div class="space-y-2 border-t border-dashed border-slate-200 pt-3">
+              <!-- 知识点条：kpId 为空时整行不渲染，也不显示「练同类题」按钮 -->
+              <div
+                v-if="item.kpId"
+                class="flex items-center justify-between gap-2"
+              >
+                <span class="min-w-0 truncate text-xs text-slate-500">
+                  🏷 {{ item.kpName }}<template v-if="item.grade !== null && item.grade !== undefined"> · {{ item.grade }}年级</template>
+                </span>
+                <button
+                  type="button"
+                  class="btn-ghost shrink-0 text-sm"
+                  @click="handlePracticeKp(item)"
+                >
+                  练同类题 →
+                </button>
+              </div>
+
+              <button
+                v-if="SUPPORTS_MARK_SOLVED && !item.solved"
+                type="button"
+                class="btn-primary w-full"
+                :disabled="solvingId === item.id"
+                @click="handleSolve(item)"
+              >
+                {{ solvingId === item.id ? '标记中…' : '挖出这颗宝石' }}
+              </button>
+              <button v-else type="button" class="btn-ghost w-full" @click="handlePractice">
+                去练习
+              </button>
+            </div>
           </div>
         </article>
       </template>
