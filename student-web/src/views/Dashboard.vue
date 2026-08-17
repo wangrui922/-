@@ -20,6 +20,7 @@ import RecommendationList from '@/components/profile/RecommendationList.vue'
 import KnowledgeStarMap from '@/components/profile/KnowledgeStarMap.vue'
 import AbilityRadar from '@/components/profile/AbilityRadar.vue'
 import tutorAvatar from '@/assets/tutor-yueyue-v2.png'
+import tutorStudy from '@/assets/tutor-study.png'
 import { useStreak } from '@/stores/streak'
 import { toMessage } from '@/api/http'
 import { generateReport } from '@/api/report'
@@ -167,6 +168,34 @@ async function handleGenerateReport(): Promise<void> {
       >
         <div class="pointer-events-none absolute -right-6 -top-8 h-28 w-28 rounded-full bg-white/15" />
         <div class="pointer-events-none absolute -bottom-10 -left-4 h-32 w-32 rounded-full bg-white/10" />
+
+        <!-- 卡通装饰：HUD 内漂浮 -->
+        <div class="pointer-events-none absolute right-3 top-2 animate-bounce-soft" style="animation-delay: 0.2s">
+          <svg width="28" height="28" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14 1l3.4 6.9 7.6 1.1-5.5 5.4 1.3 7.6L14 18.5l-6.8 3.5 1.3-7.6-5.5-5.4 7.6-1.1z" fill="#FFD27A" stroke="#E89A1F" stroke-width="1.2" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 animate-float" style="animation-delay: 1.1s; opacity: 0.7">
+          <svg width="56" height="28" viewBox="0 0 56 28" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="28" cy="14" rx="26" ry="11" fill="white" opacity="0.85"/>
+            <text x="28" y="19" text-anchor="middle" font-size="11" font-weight="800" fill="#7C5CFC" font-family="system-ui">3+2=5</text>
+          </svg>
+        </div>
+        <div class="pointer-events-none absolute right-12 bottom-3 animate-bounce-soft" style="animation-delay: 0.5s; transform: rotate(20deg)">
+          <svg width="22" height="32" viewBox="0 0 22 32" xmlns="http://www.w3.org/2000/svg">
+            <path d="M11 1c2.5 4 5 8 5 13v9H6v-9c0-5 2.5-9 5-13z" fill="white" stroke="#7C5CFC" stroke-width="1.2"/>
+            <circle cx="11" cy="11" r="2" fill="#7C5CFC"/>
+            <polygon points="6,21 3,27 6,27" fill="#FF7043"/>
+            <polygon points="16,21 19,27 16,27" fill="#FF7043"/>
+            <path d="M8 28c0.5 2 2 3 3 3.5 1-0.5 2.5-1.5 3-3.5" fill="#FFC24B"/>
+          </svg>
+        </div>
+
+        <!-- 陪学插画装饰（右上角） -->
+        <div class="pointer-events-none absolute -right-2 -top-1 h-24 w-24 animate-float" style="animation-delay: 0.4s">
+          <img :src="tutorStudy" alt="小玥老师" class="h-full w-full rounded-2xl object-cover opacity-90" />
+        </div>
+
         <div class="relative flex items-center gap-3">
           <div class="relative h-16 w-16 animate-float overflow-hidden rounded-2xl border-2 border-white/60 bg-white/20">
             <img :src="tutorAvatar" alt="小玥老师" class="h-full w-full object-contain" />
