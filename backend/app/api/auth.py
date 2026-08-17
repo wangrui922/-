@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import CurrentUser, get_current_user
 from app.core.response import ApiError, CODE_BAD_REQUEST, ok
 from app.db import get_db
-from app.schemas.auth import LoginIn, RefreshIn, SendCodeIn
+from app.schemas.auth import LoginIn, RefreshIn, RegisterIn, SendCodeIn
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -46,6 +46,19 @@ async def login(payload: LoginIn, db: Session = Depends(get_db)) -> dict:
         tokenType, expiresIn, isNewUser, user}}``。
     """
     data = auth_service.login_by_code(db, phone=payload.phone, code=payload.code)
+    return ok(data)
+
+
+@router.post("/register")
+async def register(payload: RegisterIn, db: Session = Depends(get_db)) -> dict:
+    """手机号 + 验证码注册（指定角色 student / parent）。
+
+    家长注册走此接口并带 ``role=parent``；学生也可显式注册。
+    已存在该手机号的账号不会重复创建，直接返回其令牌。
+    """
+    data = auth_service.register_user_by_code(
+        db, phone=payload.phone, code=payload.code, role=payload.role
+    )
     return ok(data)
 
 

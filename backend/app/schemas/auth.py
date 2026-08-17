@@ -27,6 +27,20 @@ class SendCodeIn(BaseSchema):
     phone: str = Field(..., min_length=1, max_length=20, description="手机号")
 
 
+class RegisterIn(BaseSchema):
+    """``POST /api/auth/register`` 入参（指定角色注册）。
+
+    Attributes:
+        phone: 手机号（中国大陆 11 位）。
+        code: 验证码（通过 ``/api/auth/code`` 获取，6 位数字）。
+        role: 注册角色，仅允许 ``student`` / ``parent``（admin 不开放自助注册）。
+    """
+
+    phone: str = Field(..., min_length=1, max_length=20, description="手机号")
+    code: str = Field(..., min_length=1, max_length=10, description="验证码")
+    role: str = Field(default="student", description="student/parent")
+
+
 class RefreshIn(BaseSchema):
     """``POST /api/auth/refresh`` 入参。
 

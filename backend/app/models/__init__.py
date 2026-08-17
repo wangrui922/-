@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from app.models.base import Base
 from app.models.user import Student, User
+from app.models.family import ParentChild
 from app.models.content import Answer, KnowledgePoint, Question
 from app.models.learning import Attempt, LearningTask, Mistake, ReviewSchedule, StudentProfile
 from app.models.ai import AiMessage, AiSession
@@ -26,6 +27,7 @@ __all__ = [
     # 账号域
     "User",
     "Student",
+    "ParentChild",
     # 内容域
     "KnowledgePoint",
     "Question",

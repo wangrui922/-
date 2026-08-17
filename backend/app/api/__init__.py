@@ -28,6 +28,7 @@ from app.api import (
     auth,
     chat,
     exercise,
+    family,
     file,
     health,
     mistake,
@@ -44,6 +45,7 @@ api_router = APIRouter(prefix="/api", tags=["api"])
 # ---- 已注册路由器 ----------------------------------------------------------
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
+api_router.include_router(family.router)
 api_router.include_router(student.router)
 
 # ---- T03 · 3.4 教学与错题 API ----------------------------------------------

@@ -333,6 +333,72 @@ def send_login_code(phone: str) -> Dict[str, Any]:
     }
 
 
+#: 公开注册允许的角色（admin 不开放自助注册）
+ALLOWED_REGISTER_ROLES = ("student", "parent")
+
+
+def register_user(session: Session, phone: str, role: str) -> Tuple[User, Optional[Student]]:
+    """按指定角色建账号（不自动登录）。
+
+    student 角色会一并创建 ``students`` + ``student_profile``；
+    parent / admin 角色仅有 ``users`` 行，无 student 档案。
+    """
+    user = User(
+        phone=phone,
+        nickname=f"用户{phone[-4:]}",
+        role=role,
+        status=USER_STATUS_ACTIVE,
+    )
+    session.add(user)
+    session.flush()  # 拿到 user.id
+
+    student: Optional[Student] = None
+    if role == ROLE_STUDENT:
+        student = Student(user_id=user.id, grade=DEFAULT_GRADE, stage=DEFAULT_STAGE)
+        session.add(student)
+        session.flush()
+        ensure_student_profile(session, student)
+    return user, student
+
+
+def register_user_by_code(session: Session, phone: str, code: str, role: str) -> Dict[str, Any]:
+    """手机号 + 验证码注册（指定角色）。
+
+    已存在该手机号的账号则直接返回其令牌（不重复建号）；不存在则按角色新建。
+    仅允许 ``student`` / ``parent`` 角色自助注册。
+
+    Returns:
+        与 ``login_by_code`` 同构的令牌载荷（含 ``isNewUser`` / ``user``）。
+    """
+    normalized_phone = (phone or "").strip()
+    if not sms.is_valid_phone(normalized_phone):
+        raise ApiError(CODE_BAD_REQUEST, "手机号格式不正确")
+    if role not in ALLOWED_REGISTER_ROLES:
+        raise ApiError(CODE_BAD_REQUEST, "角色非法，仅支持 student / parent 注册")
+    _check_login_rate(normalized_phone)
+    verify_login_code(normalized_phone, code)
+
+    user = get_user_by_phone(session, normalized_phone)
+    if user is not None:
+        if user.status == USER_STATUS_FROZEN:
+            raise ApiError(CODE_FORBIDDEN, "账号已被冻结，请联系管理员")
+        student = get_student_by_user_id(session, user.id) if user.role == ROLE_STUDENT else None
+        user.last_login_at = utcnow()
+        session.flush()
+        payload = build_token_payload(user, student)
+        payload["isNewUser"] = False
+        payload["user"] = build_user_brief(user, student)
+        return payload
+
+    user, student = register_user(session, normalized_phone, role)
+    user.last_login_at = utcnow()
+    session.flush()
+    payload = build_token_payload(user, student)
+    payload["isNewUser"] = True
+    payload["user"] = build_user_brief(user, student)
+    return payload
+
+
 __all__ = [
     "DEFAULT_GRADE",
     "DEFAULT_STAGE",
