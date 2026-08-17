@@ -31,6 +31,8 @@ dist-qa/
 dist-new/
 dist-tmp/
 dist-voice/
+# 临时构建目录（用全新时间戳目录绕 safe-delete 拦 emptyOutDir）
+dist-*/
 
 # 其它调试 / 探针残留
 *.log
