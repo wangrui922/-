@@ -49,27 +49,35 @@ print()
 # === 第 1 步：A 类建备份表 ===
 backup_a_name = 'questions_incomplete_backup_20260817'
 print(f'[1/6] 建 A 类备份表 {backup_a_name} ...')
-# 先 DROP（若已存在）
-cur.execute(f'DROP TABLE IF EXISTS {backup_a_name}')
-placeholders = ','.join('?' * len(a_ids))
-cur.execute(f"""
-CREATE TABLE {backup_a_name} AS
-SELECT * FROM questions WHERE id IN ({placeholders})
-""", a_ids)
-n_a_backup = cur.execute(f'SELECT COUNT(*) FROM {backup_a_name}').fetchone()[0]
-print(f'  备份行数: {n_a_backup}')
+# 已存在则跳过 DROP（保护原始备份不被覆盖）
+exists_a = cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (backup_a_name,)).fetchone()
+if exists_a:
+    n_a_backup = cur.execute(f'SELECT COUNT(*) FROM {backup_a_name}').fetchone()[0]
+    print(f'  备份表已存在（含 {n_a_backup} 行），跳过重建以保护原始备份')
+else:
+    placeholders = ','.join('?' * len(a_ids))
+    cur.execute(f"""
+    CREATE TABLE {backup_a_name} AS
+    SELECT * FROM questions WHERE id IN ({placeholders})
+    """, a_ids)
+    n_a_backup = cur.execute(f'SELECT COUNT(*) FROM {backup_a_name}').fetchone()[0]
+    print(f'  备份行数: {n_a_backup}')
 
 # === 第 2 步：B 类建备份表 ===
 backup_b_name = 'questions_polluted_backup_20260817'
 print(f'[2/6] 建 B 类备份表 {backup_b_name} ...')
-cur.execute(f'DROP TABLE IF EXISTS {backup_b_name}')
-placeholders_b = ','.join('?' * len(b_ids))
-cur.execute(f"""
-CREATE TABLE {backup_b_name} AS
-SELECT * FROM questions WHERE id IN ({placeholders_b})
-""", b_ids)
-n_b_backup = cur.execute(f'SELECT COUNT(*) FROM {backup_b_name}').fetchone()[0]
-print(f'  备份行数: {n_b_backup}')
+exists_b = cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (backup_b_name,)).fetchone()
+if exists_b:
+    n_b_backup = cur.execute(f'SELECT COUNT(*) FROM {backup_b_name}').fetchone()[0]
+    print(f'  备份表已存在（含 {n_b_backup} 行），跳过重建')
+else:
+    placeholders_b = ','.join('?' * len(b_ids))
+    cur.execute(f"""
+    CREATE TABLE {backup_b_name} AS
+    SELECT * FROM questions WHERE id IN ({placeholders_b})
+    """, b_ids)
+    n_b_backup = cur.execute(f'SELECT COUNT(*) FROM {backup_b_name}').fetchone()[0]
+    print(f'  备份行数: {n_b_backup}')
 
 # === 第 3 步：写 CSV ===
 out_dir = 'scripts/data_cleanup'
@@ -80,19 +88,27 @@ csv_b = f'{out_dir}/20260817_B_cleaned_{ts}.csv'
 with open(csv_a, 'w', newline='', encoding='utf-8') as f:
     w = csv.writer(f)
     w.writerow(['id', 'type', 'grade', 'reason', 'content', 'options', 'source_doc'])
-    for r in a_hits:
-        if r['id'] in set(a_ids[:a_ids.index(r['id'])]):
+    # 按 a_ids 顺序写（已排序），保证每个 UUID 写一次
+    a_recs = {r['id']: r for r in a_hits}
+    for uid in a_ids:
+        if uid not in a_recs:
             continue
+        r = a_recs[uid]
         reason = '; '.join(rr for _, rr in r['reasons'] if _.startswith('A'))
-        w.writerow([r['id'], r['type'], r['grade'], reason, r['content'], r['options'] or '', r['source_doc'] or ''])
+        c = r['content']
+        if len(c) > 200:
+            c = c[:200] + '...'
+        w.writerow([r['id'], r['type'], r['grade'], reason, c, r['options'] or '', r['source_doc'] or ''])
 print(f'[3/6] A 类 CSV 清单: {csv_a}')
 
 with open(csv_b, 'w', newline='', encoding='utf-8') as f:
     w = csv.writer(f)
     w.writerow(['id', 'type', 'grade', 'reason', 'content_before', 'source_doc'])
-    for r in b_hits:
-        if r['id'] in set(b_ids[:b_ids.index(r['id'])]):
+    b_recs = {r['id']: r for r in b_hits}
+    for uid in b_ids:
+        if uid not in b_recs:
             continue
+        r = b_recs[uid]
         reason = '; '.join(rr for _, rr in r['reasons'])
         w.writerow([r['id'], r['type'], r['grade'], reason, r['content'], r['source_doc'] or ''])
 print(f'       B 类 CSV 清单: {csv_b}')
