@@ -13,6 +13,13 @@
  *     （本期使用前端启发式按"苏教版稀疏"预设规则替代后端 pool-estimate，
  *     QX1 拍板「本期不实现 pool-estimate 接口」）；
  *   - 苏教版 + 较高题量（>10 道）也可能撞上少给，也给建议文案。
+ *
+ * T11 (2026-08-18) 视觉打磨：
+ *   - 三组 chip（年级 / 教材版本 / 练哪一块）全部内嵌语义线性 SVG 图标，
+ *     提升识别度，给孩子"每个分类有自己的标志"的实感；
+ *   - 图标全部走 stroke=currentColor，颜色自动跟随 chip 文字色；
+ *     选中态=白，未选中=slate-500，无需另写 active 分支。
+ *   - 选"苏教版"角标等所有既有逻辑一律保留，仅样式升级。
  */
 import { computed, ref, watch } from 'vue'
 
@@ -77,8 +84,101 @@ const count = ref<number>(10)
 /** 选中态样式（大按钮，够手指点）。 */
 function chipClass(active: boolean): string {
   return active
-    ? 'border-brand-500 bg-brand-500 text-white'
+    ? 'border-brand-500 bg-brand-500 text-white shadow-soft'
     : 'border-slate-200 bg-white text-slate-600 active:bg-slate-100'
+}
+
+/**
+ * 语义线性 SVG 图标库（T11）。
+ *
+ * 全部走 24×24 viewBox + stroke="currentColor" + fill="none"，
+ * 颜色自动跟随父级 text-*，选中态无需另写 active 变体。
+ *
+ * 设计原则（线宽 1.8，round cap/join，圆头端点，整体跟底部 nav 同款风）：
+ *   - 「不限」= 无限符号 ∞（三组共用）
+ *   - 年级 1-6 小学：幼苗→小树→树→学校→书堆→毕业帽（视觉上"年級越高越复杂"）
+ *   - 年级 7-12 初高中：罗盘→地图→望远镜→烧瓶→π 字符→博士帽+星
+ *   - 教材版本：青岛版=海浪+小帆；苏教版=小桥流水（江南意象）
+ *   - 练哪一块：温故=回旋；预习=望远镜；提优=火箭；摸底=放大镜+尺；
+ *     专项=十字瞄准；自测=勾选清单
+ */
+const ICONS = {
+  /** 无限符号 ∞（三组不限共用） */
+  unlimited:
+    'M9 8a3 3 0 1 0 1 4.5 M15 16a3 3 0 1 0 -1 -4.5',
+  /** 年级 1：幼苗（一年起步） */
+  g1: 'M12 21v-9 M12 12c-1.7 0-3-1.3-3-3s1.3-3 3-3 3 1.3 3 3-1.3 3-3 3z',
+  /** 年级 2：双苗 */
+  g2: 'M12 21v-9 M8 14c-1.4 0-2.5-1.1-2.5-2.5S6.6 9 8 9s2.5 1.1 2.5 2.5S9.4 14 8 14z M16 14c-1.4 0-2.5-1.1-2.5-2.5S14.6 9 16 9s2.5 1.1 2.5 2.5S17.4 14 16 14z',
+  /** 年级 3：树（圆冠） */
+  g3: 'M12 21v-10 M12 11a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z',
+  /** 年级 4：学校（三角顶+方身+门） */
+  g4: 'M3 11l9-7 9 7 M5 11v9 M19 11v9 M9 20v-5h6v5 M12 8v2',
+  /** 年级 5：三层书堆 */
+  g5: 'M3 6h7v14H3z M10 5h7v14h-7z M17 6h4v14h-4z',
+  /** 年级 6：毕业帽 */
+  g6: 'M2 10l10-5 10 5-10 5L2 10z M6 11.5V17c0 1.7 2.7 3 6 3s6-1.3 6-3v-5.5 M20 11v5',
+  /** 年级 7：罗盘（圆+针） */
+  g7: 'M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z M12 12l4-4 M16 8l-3 5-3 3 M14 10l-2 2',
+  /** 年级 8：地图（折页） */
+  g8: 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v16 M15 6v16',
+  /** 年级 9：望远镜（双筒） */
+  g9: 'M3 21l5-9 4 2-5 9z M8 12l3-5 7 4-3 5z M18 11l2-1 2 4-2 1z',
+  /** 年级 10：烧瓶（瓶身+瓶颈+液面） */
+  g10: 'M9 3h6 M10 3v6L5.5 19a2 2 0 0 0 1.7 3h9.6a2 2 0 0 0 1.7-3L14 9V3 M7 16h10',
+  /** 年级 11：π 字符（数学符号） */
+  g11: 'M3 9c0 4 0 6 2 6s2-2 2-6 M9 9c0 4 0 6 2 6s2-2 2-6 M16 6v12 M20 6v12',
+  /** 年级 12：博士帽 + 五角星（荣耀） */
+  g12:
+    'M2 10l10-5 10 5-10 5L2 10z M6 11.5V17c0 1.7 2.7 3 6 3s6-1.3 6-3v-5.5 M19 4l1 2 2 1-2 1-1 2-1-2-2-1 2-1z',
+  /** 青岛版：海浪 + 小帆（沿海城市） */
+  qingdao:
+    'M3 18c1.5 0 1.5-1 3-1s1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 M3 13c1.5 0 1.5-1 3-1s1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 M12 5l3 3h-6z M13 8v3',
+  /** 苏教版：小桥流水（江南意象） */
+  sujiao:
+    'M3 18h18 M3 18c0-2 1-3 2-3 M21 18c0-2-1-3-2-3 M5 15l4-5 3 3 4-5 3 4',
+  /** 教材版本 fallback：书本（人教版/北师大版等其他） */
+  book:
+    'M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z M4 17a2 2 0 0 1 2-2h14 M9 7h6',
+  /** 温故：回旋箭头（时光倒流） */
+  review: 'M3 12a9 9 0 1 0 3-6.7L3 8 M3 3v5h5',
+  /** 预习：望远镜 */
+  preview: 'M3 21l5-9 4 2-5 9z M8 12l3-5 7 4-3 5z M18 11l2-1 2 4-2 1z',
+  /** 提优：火箭 */
+  boost:
+    'M5 13c-1 3-2 5-2 7 2 0 4-1 7-2 M19 13c1 3 2 5 2 7-2 0-4-1-7-2 M12 3c3 0 5 4 5 8v3l-5 2-5-2v-3c0-4 2-8 5-8z M9 15l3-2 3 2 M12 6v3',
+  /** 摸底：放大镜 + 标尺 */
+  assess:
+    'M11 3a8 8 0 1 1 0 16 8 8 0 0 1 0-16z M16 16l5 5 M3 8h2 M3 11h3 M8 3v2 M11 3v2',
+  /** 专项：十字瞄准（精准聚焦） */
+  focus:
+    'M12 3v4 M12 17v4 M3 12h4 M17 12h4 M12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10z M12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6z',
+  /** 自测：勾选清单 */
+  test: 'M9 11l3 3L22 4 M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
+} as const
+
+/** 取年级 icon key。 */
+function gradeIcon(g: number): string {
+  const key = `g${g}` as keyof typeof ICONS
+  return ICONS[key] ?? ICONS.unlimited
+}
+
+/** 取教材版本 icon path。 */
+function editionIcon(name: string): string {
+  if (name === '青岛版') return ICONS.qingdao
+  if (name === '苏教版') return ICONS.sujiao
+  return ICONS.book
+}
+
+/** 取分区 icon path。 */
+function sectionIcon(name: string): string {
+  if (name === '温故') return ICONS.review
+  if (name === '预习') return ICONS.preview
+  if (name === '提优') return ICONS.boost
+  if (name === '摸底') return ICONS.assess
+  if (name === '专项') return ICONS.focus
+  if (name === '自测') return ICONS.test
+  return ICONS.unlimited
 }
 
 /**
@@ -173,11 +273,14 @@ function handleReset(): void {
       <div class="flex flex-wrap gap-2">
         <button
           type="button"
-          class="h-11 min-w-[64px] rounded-xl border px-4 text-base font-medium transition"
+          class="inline-flex h-12 items-center gap-1.5 rounded-xl border pl-3 pr-4 text-base font-medium transition"
           :class="chipClass(grade === null)"
           @click="pickGrade(null)"
         >
-          不限
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+            <path :d="ICONS.unlimited" />
+          </svg>
+          <span>不限</span>
         </button>
       </div>
       <div v-for="grp in stageGroups" :key="grp.band || 'all'" class="mt-2">
@@ -187,11 +290,14 @@ function handleReset(): void {
             v-for="g in grp.grades"
             :key="g"
             type="button"
-            class="h-11 min-w-[64px] rounded-xl border px-4 text-base font-medium transition"
+            class="inline-flex h-12 items-center gap-1.5 rounded-xl border pl-3 pr-4 text-base font-medium transition"
             :class="chipClass(grade === g)"
             @click="pickGrade(g)"
           >
-            {{ g }}年级
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+              <path :d="gradeIcon(g)" />
+            </svg>
+            <span>{{ g }}年级</span>
           </button>
         </div>
       </div>
@@ -203,21 +309,27 @@ function handleReset(): void {
       <div class="flex flex-wrap gap-2">
         <button
           type="button"
-          class="h-11 min-w-[72px] rounded-xl border px-4 text-base font-medium transition"
+          class="inline-flex h-12 items-center gap-1.5 rounded-xl border pl-3 pr-4 text-base font-medium transition"
           :class="chipClass(edition === '')"
           @click="pickEdition('')"
         >
-          不限
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+            <path :d="ICONS.unlimited" />
+          </svg>
+          <span>不限</span>
         </button>
         <button
           v-for="ed in EDITIONS"
           :key="ed"
           type="button"
-          class="relative h-11 min-w-[72px] rounded-xl border px-4 text-base font-medium transition"
+          class="relative inline-flex h-12 items-center gap-1.5 rounded-xl border pl-3 pr-4 text-base font-medium transition"
           :class="chipClass(edition === ed)"
           @click="pickEdition(ed)"
         >
-          {{ ed }}
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+            <path :d="editionIcon(ed)" />
+          </svg>
+          <span>{{ ed }}</span>
           <!-- Q6 拍板：苏教版标"题目较少" —— 不阻塞点击，纯披露 -->
           <span
             v-if="ed === '苏教版'"
@@ -235,21 +347,27 @@ function handleReset(): void {
       <div class="flex flex-wrap gap-2">
         <button
           type="button"
-          class="h-11 min-w-[64px] rounded-xl border px-4 text-base font-medium transition"
+          class="inline-flex h-12 items-center gap-1.5 rounded-xl border pl-3 pr-4 text-base font-medium transition"
           :class="chipClass(section === '')"
           @click="pickSection('')"
         >
-          不限
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+            <path :d="ICONS.unlimited" />
+          </svg>
+          <span>不限</span>
         </button>
         <button
           v-for="sec in SECTIONS"
           :key="sec"
           type="button"
-          class="h-11 min-w-[64px] rounded-xl border px-4 text-base font-medium transition"
+          class="inline-flex h-12 items-center gap-1.5 rounded-xl border pl-3 pr-4 text-base font-medium transition"
           :class="chipClass(section === sec)"
           @click="pickSection(sec)"
         >
-          {{ sec }}
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+            <path :d="sectionIcon(sec)" />
+          </svg>
+          <span>{{ sec }}</span>
         </button>
       </div>
     </div>
@@ -262,7 +380,7 @@ function handleReset(): void {
           v-for="c in COUNTS"
           :key="c"
           type="button"
-          class="h-11 min-w-[64px] rounded-xl border px-4 text-base font-medium transition"
+          class="h-12 min-w-[64px] rounded-xl border px-4 text-base font-medium transition"
           :class="chipClass(count === c)"
           @click="pickCount(c)"
         >
