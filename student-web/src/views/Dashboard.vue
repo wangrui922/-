@@ -2,7 +2,11 @@
 /**
  * 学习画像看板（首页）+ 家长周报入口。
  *
- * 视觉升级为「成长伙伴主页」：mascot 问候 hero + 趣味入口 tile + 数据面板。
+ * 视觉升级为「游戏化成长主页」：
+ *   - 顶部游戏 HUD：小玥老师 + 等级 + 经验条 + 连击
+ *   - 游戏数据卡：知识宝石 / 连击 / 能力维度
+ *   - 成就徽章墙（由真实数据派生，不造假）
+ *   - 趣味入口 tile + 家长周报 + 学习数据面板
  * 三路并行加载（掌握度 / 错因 / 推荐），每路独立降级；
  * 数据从 profile store 读取（stores/profile.ts）。
  */
@@ -27,6 +31,46 @@ const timeLabel = computed<string>(() => {
   return h < 11 ? '早' : h < 14 ? '中午' : h < 18 ? '下午' : '晚上'
 })
 
+/* ---------- 游戏化派生指标（全部来自真实数据） ---------- */
+const { streakDays } = useStreak()
+
+const masteredCount = computed<number>(() => {
+  const list = profileState.mastery?.mastery ?? []
+  return list.filter((m) => m.level >= 2).length // 基本掌握 / 熟练 = 已挖到的宝石
+})
+const totalKp = computed<number>(() => profileState.mastery?.summary?.total_kp ?? 0)
+const radarDims = computed<number>(() => profileState.radar?.axes?.length ?? 0)
+
+// 经验 = 连击*10 + 已掌握知识点*15 + 总知识点*5（趣味公式，驱动等级）
+const xp = computed<number>(() => streakDays.value * 10 + masteredCount.value * 15 + totalKp.value * 5)
+const level = computed<number>(() => Math.floor(xp.value / 100) + 1)
+const xpInLevel = computed<number>(() => xp.value % 100)
+const levelProgress = computed<number>(() => Math.min(100, Math.round((xpInLevel.value / 100) * 100)))
+const xpToNext = computed<number>(() => 100 - xpInLevel.value)
+
+function levelTitle(lv: number): string {
+  if (lv >= 8) return '数学大师'
+  if (lv >= 6) return '学霸养成'
+  if (lv >= 4) return '小专家'
+  if (lv >= 2) return '进步之星'
+  return '新手上路'
+}
+
+interface Badge {
+  icon: string
+  label: string
+  got: boolean
+}
+const badges = computed<Badge[]>(() => [
+  { icon: '🔥', label: '坚持打卡', got: streakDays.value >= 3 },
+  { icon: '⭐', label: '知识新星', got: masteredCount.value >= 1 },
+  { icon: '💎', label: '通关达人', got: masteredCount.value >= 5 },
+  { icon: '📚', label: '博学多闻', got: totalKp.value >= 8 },
+  { icon: '🏆', label: '全能学霸', got: radarDims.value >= 4 },
+  { icon: '🌟', label: '七日活动', got: streakDays.value >= 7 },
+])
+
+/* ---------- 趣味入口 ---------- */
 interface Tile {
   key: string
   label: string
@@ -36,7 +80,6 @@ interface Tile {
   to: { name: string }
   badge?: string
 }
-
 const tiles: readonly Tile[] = [
   {
     key: 'practice',
@@ -74,7 +117,6 @@ const tiles: readonly Tile[] = [
 ]
 
 const router = useRouter()
-const { streakDays } = useStreak()
 
 const shareOpen = ref(false)
 const generating = ref(false)
@@ -119,19 +161,22 @@ async function handleGenerateReport(): Promise<void> {
 <template>
   <div class="h-full overflow-y-auto overflow-x-hidden px-4 pb-6 pt-4">
     <div class="space-y-4">
-      <!-- hero：小玥老师问候 -->
+      <!-- 游戏 HUD：小玥老师 + 等级 + 经验条 + 连击 -->
       <section
-        class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-brand-500 via-brand-600 to-coral-400 p-5 text-white shadow-float"
+        class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-brand-500 via-brand-500 to-coral-400 p-5 text-white shadow-float"
       >
         <div class="pointer-events-none absolute -right-6 -top-8 h-28 w-28 rounded-full bg-white/15" />
         <div class="pointer-events-none absolute -bottom-10 -left-4 h-32 w-32 rounded-full bg-white/10" />
         <div class="relative flex items-center gap-3">
-          <div class="h-16 w-16 animate-float overflow-hidden rounded-2xl border-2 border-white/60 bg-white/20">
+          <div class="relative h-16 w-16 animate-float overflow-hidden rounded-2xl border-2 border-white/60 bg-white/20">
             <img :src="tutorFull" alt="小玥老师" class="h-full w-full object-contain" />
+            <span class="absolute -bottom-1 -right-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-extrabold text-white shadow">
+              L{{ level }}
+            </span>
           </div>
           <div class="min-w-0 flex-1">
-            <p class="text-sm font-semibold text-white/80">{{ timeLabel }}好呀～我是小玥老师</p>
-            <p class="mt-0.5 text-base font-extrabold leading-snug">今天想先练几题，还是看看错题宝藏？</p>
+            <p class="text-sm font-semibold text-white/85">{{ timeLabel }}好呀～我是小玥老师</p>
+            <p class="mt-0.5 text-base font-extrabold leading-snug">{{ levelTitle(level) }} · Lv.{{ level }}</p>
           </div>
           <div
             v-if="streakDays > 0"
@@ -139,6 +184,55 @@ async function handleGenerateReport(): Promise<void> {
           >
             <span class="text-lg font-extrabold leading-none animate-bounce-soft">🔥 {{ streakDays }}</span>
             <span class="text-[10px] text-white/80">连续打卡</span>
+          </div>
+        </div>
+
+        <!-- 经验条 -->
+        <div class="relative mt-4">
+          <div class="flex items-center justify-between text-[11px] font-medium text-white/85">
+            <span>经验 {{ xpInLevel }}/100</span>
+            <span>还差 {{ xpToNext }} 经验升级</span>
+          </div>
+          <div class="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-white/25">
+            <div
+              class="h-full rounded-full bg-gradient-to-r from-amber-300 to-amber-400 transition-all duration-700"
+              :style="{ width: levelProgress + '%' }"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- 游戏数据卡 -->
+      <section class="grid grid-cols-3 gap-3">
+        <div class="card flex flex-col items-center justify-center py-3 text-center">
+          <span class="text-2xl font-extrabold text-brand-600">{{ masteredCount }}</span>
+          <span class="mt-0.5 text-[11px] font-semibold text-ink-soft">💎 知识宝石</span>
+        </div>
+        <div class="card flex flex-col items-center justify-center py-3 text-center">
+          <span class="text-2xl font-extrabold text-coral-500">{{ streakDays }}</span>
+          <span class="mt-0.5 text-[11px] font-semibold text-ink-soft">🔥 连续打卡</span>
+        </div>
+        <div class="card flex flex-col items-center justify-center py-3 text-center">
+          <span class="text-2xl font-extrabold text-mint-500">{{ radarDims }}</span>
+          <span class="mt-0.5 text-[11px] font-semibold text-ink-soft">📊 能力维度</span>
+        </div>
+      </section>
+
+      <!-- 成就徽章墙 -->
+      <section class="card">
+        <div class="mb-2 flex items-center justify-between">
+          <p class="text-sm font-extrabold text-ink">🏅 我的成就</p>
+          <span class="text-[11px] font-semibold text-ink-faint">{{ badges.filter((b) => b.got).length }}/{{ badges.length }} 已解锁</span>
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          <div
+            v-for="b in badges"
+            :key="b.label"
+            class="flex flex-col items-center gap-1 rounded-2xl border px-1 py-2 text-center transition"
+            :class="b.got ? 'border-amber-200 bg-amber-50' : 'border-slate-100 bg-slate-50 opacity-50'"
+          >
+            <span class="text-xl leading-none grayscale" :class="{ 'grayscale-0': b.got }">{{ b.icon }}</span>
+            <span class="text-[10px] font-semibold leading-tight" :class="b.got ? 'text-ink' : 'text-ink-faint'">{{ b.label }}</span>
           </div>
         </div>
       </section>
