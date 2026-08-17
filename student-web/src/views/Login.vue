@@ -15,7 +15,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { post, toMessage } from '@/api/http'
 import { login } from '@/stores/auth'
-import tutorFull from '@/assets/tutor-yueyue-full.png'
+import tutorAvatar from '@/assets/tutor-yueyue-v2.png'
 
 interface UserBrief {
   userId: string
@@ -117,7 +117,7 @@ async function handleLogin(): Promise<void> {
         <div
           class="mx-auto mb-5 flex h-40 w-40 animate-float items-end justify-center overflow-hidden rounded-[2rem] border-4 border-white bg-gradient-to-br from-amber-200 via-white to-brand-100 shadow-float"
         >
-          <img :src="tutorFull" alt="小玥老师" class="block h-[112%] w-full object-contain" />
+          <img :src="tutorAvatar" alt="小玥老师" class="block h-[112%] w-full object-contain" />
         </div>
         <h1 class="text-2xl font-extrabold title-gradient">小玥老师 · AI 数学教练</h1>
         <p class="mt-2 text-sm font-medium text-ink-soft">不直接给答案，陪你一步步想明白 ✨</p>
