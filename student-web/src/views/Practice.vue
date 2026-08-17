@@ -22,6 +22,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import tutorAvatar from '@/assets/tutor-yueyue-v2.png'
 import GuideChatPanel from '@/components/guide/GuideChatPanel.vue'
 import AnswerFeedbackBar from '@/components/practice/AnswerFeedbackBar.vue'
 import BankQuestionCard from '@/components/practice/BankQuestionCard.vue'
@@ -213,14 +214,31 @@ const submitDisabledByOptions = computed<boolean>(
   () => currentOptionsStatus.value === 'partial' || currentOptionsStatus.value === 'missing',
 )
 
-/** 题号导航的圆点样式。 */
+/** 题号导航的「关卡宝石」样式：当前关=紫红闪烁，已通关=琥珀亮，未开=暗。 */
 function dotClass(idx: number): string {
   const q = practiceState.questions[idx]
   const done = q ? Boolean(practiceState.feedback[q.question_id]) : false
-  if (idx === practiceState.index) return 'bg-brand-500 text-white'
-  if (done) return 'bg-brand-50 text-brand-600'
+  if (idx === practiceState.index)
+    return 'bg-gradient-to-br from-brand-500 to-coral-400 text-white shadow-float ring-2 ring-white animate-pulse-ring'
+  if (done) return 'bg-gradient-to-br from-amber-400 to-amber-500 text-white shadow'
   return 'bg-slate-100 text-slate-400'
 }
+
+/**
+ * 结算庆祝等级（结果态外壳用）：按正确率给不同 emoji/文案。
+ * accuracy 是 0~1，与 PracticeResult 内部口径一致。
+ */
+const resultTier = computed<{ emoji: string; title: string; sub: string }>(() => {
+  const r = practiceState.result
+  if (!r || typeof r.accuracy !== 'number') {
+    return { emoji: '🎉', title: '这一关打完啦', sub: '' }
+  }
+  const pct = Math.round(r.accuracy * 100)
+  if (pct >= 90) return { emoji: '🏆', title: '通关！神操作', sub: '几乎全对，稳得一批' }
+  if (pct >= 70) return { emoji: '🌟', title: '过关！', sub: '大部分都拿下了' }
+  if (pct >= 40) return { emoji: '💪', title: '闯过这关', sub: '错题老师都帮你收好啦' }
+  return { emoji: '🌱', title: '这一关打完啦', sub: '难度不小，慢慢来' }
+})
 
 // ---- 事件 -----------------------------------------------------------------
 
@@ -452,6 +470,21 @@ onBeforeUnmount(() => {
           正在给你挑题…
         </p>
 
+        <!-- 闯关地图入口：小玥老师带你选关卡 -->
+        <section class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-500 via-brand-500 to-coral-400 p-5 text-white shadow-float animate-fade-up">
+          <div class="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-white/15" />
+          <div class="pointer-events-none absolute -bottom-10 -left-6 h-32 w-32 rounded-full bg-white/10" />
+          <div class="relative flex items-center gap-3">
+            <img :src="tutorAvatar" alt="小玥老师" class="h-14 w-14 shrink-0 animate-float drop-shadow-md" />
+            <div class="min-w-0">
+              <h2 class="text-lg font-extrabold">🗺️ 选择你的挑战关卡</h2>
+              <p class="mt-0.5 text-sm text-white/85">挑好条件，出发去闯关吧！</p>
+            </div>
+          </div>
+          <svg class="pointer-events-none absolute right-5 top-4 h-6 w-6 animate-twinkle" viewBox="0 0 24 24"><path d="M12 2l2.4 6.6L21 9l-5.4 4 1.8 7L12 16.8 6.6 20l1.8-7L3 9l6.6-.4z" fill="#FFE08A"/></svg>
+          <svg class="pointer-events-none absolute right-12 top-12 h-4 w-4 animate-twinkle" style="animation-delay:.6s" viewBox="0 0 24 24"><path d="M12 2l2.4 6.6L21 9l-5.4 4 1.8 7L12 16.8 6.6 20l1.8-7L3 9l6.6-.4z" fill="#FFFFFF"/></svg>
+        </section>
+
         <PracticeFilterCard
           :loading="practiceState.drawing"
           :error="deepLinkEmpty ? '' : practiceState.drawError"
@@ -478,33 +511,37 @@ onBeforeUnmount(() => {
           </button>
         </section>
 
-        <!-- 进度条 -->
+        <!-- 进度条（闯关轨道） -->
         <section class="card space-y-3">
           <div class="flex items-center justify-between gap-3">
-            <p class="text-base font-bold text-slate-800">
-              已完成 {{ answered }} / {{ practiceState.questions.length }} 题
-            </p>
+            <div class="flex min-w-0 items-center gap-2">
+              <span class="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">🏆 闯关中</span>
+              <p class="truncate text-base font-bold text-slate-800">
+                已完成 {{ answered }} / {{ practiceState.questions.length }} 关
+              </p>
+            </div>
             <button
               type="button"
-              class="text-sm text-slate-400 transition active:text-slate-600"
+              class="shrink-0 text-sm text-slate-400 transition active:text-slate-600"
               @click="handleQuit"
             >
-              退出练习
+              退出
             </button>
           </div>
-          <div class="h-2.5 overflow-hidden rounded-full bg-slate-100">
+          <!-- 星光轨道 -->
+          <div class="relative h-3 overflow-hidden rounded-full bg-slate-100">
             <div
-              class="h-full rounded-full bg-brand-500 transition-all duration-500"
+              class="h-full rounded-full bg-gradient-to-r from-brand-400 to-coral-400 transition-all duration-500"
               :style="{ width: `${progressPct}%` }"
             />
           </div>
-          <!-- 题号导航 -->
+          <!-- 关卡宝石节点 -->
           <div class="flex flex-wrap gap-2">
             <button
               v-for="(q, idx) in practiceState.questions"
               :key="q.question_id"
               type="button"
-              class="h-9 w-9 rounded-full text-sm font-bold transition"
+              class="relative h-9 w-9 rounded-full text-sm font-bold transition"
               :class="dotClass(idx)"
               @click="goTo(idx)"
             >
@@ -561,7 +598,7 @@ onBeforeUnmount(() => {
               上一题
             </button>
             <button type="button" class="btn-ghost flex-1" :disabled="!hasNext" @click="goNext">
-              先跳过
+              ⏭ 先跳过
             </button>
           </div>
         </template>
@@ -623,16 +660,31 @@ onBeforeUnmount(() => {
           {{ practiceState.drawError }}
         </p>
 
-        <PracticeResult
-          :result="practiceState.result"
-          :loading="practiceState.finishing"
-          :error="practiceState.finishError"
-          @again="handleAgain"
-          @back="handleBack"
-          @retry="handleFinish"
-          @mistakes="handleGoMistakes"
-          @re-practice="handleRePractice"
-        />
+        <div v-else class="space-y-4">
+          <!-- 通关庆祝横幅 -->
+          <section class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-500 via-brand-500 to-coral-400 p-5 text-center text-white shadow-float animate-pop">
+            <div class="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-white/15" />
+            <div class="pointer-events-none absolute -bottom-10 -left-6 h-32 w-32 rounded-full bg-white/10" />
+            <div class="relative">
+              <div class="text-4xl">{{ resultTier.emoji }}</div>
+              <h2 class="mt-1 text-xl font-extrabold">{{ resultTier.title }}</h2>
+              <p v-if="resultTier.sub" class="mt-0.5 text-sm text-white/85">{{ resultTier.sub }}</p>
+            </div>
+            <svg class="pointer-events-none absolute left-4 top-4 h-6 w-6 animate-twinkle" viewBox="0 0 24 24"><path d="M12 2l2.4 6.6L21 9l-5.4 4 1.8 7L12 16.8 6.6 20l1.8-7L3 9l6.6-.4z" fill="#FFE08A"/></svg>
+            <svg class="pointer-events-none absolute right-6 bottom-3 h-5 w-5 animate-twinkle" style="animation-delay:.6s" viewBox="0 0 24 24"><path d="M12 2l2.4 6.6L21 9l-5.4 4 1.8 7L12 16.8 6.6 20l1.8-7L3 9l6.6-.4z" fill="#FFFFFF"/></svg>
+          </section>
+
+          <PracticeResult
+            :result="practiceState.result"
+            :loading="practiceState.finishing"
+            :error="practiceState.finishError"
+            @again="handleAgain"
+            @back="handleBack"
+            @retry="handleFinish"
+            @mistakes="handleGoMistakes"
+            @re-practice="handleRePractice"
+          />
+        </div>
       </template>
     </div>
 

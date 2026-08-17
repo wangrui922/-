@@ -74,6 +74,10 @@ export default {
           '70%': { transform: 'scale(1.25)', opacity: '0' },
           '100%': { transform: 'scale(1.25)', opacity: '0' },
         },
+        twinkle: {
+          '0%,100%': { opacity: '1', transform: 'scale(1)' },
+          '50%': { opacity: '0.35', transform: 'scale(0.75)' },
+        },
       },
       animation: {
         float: 'float 4.5s ease-in-out infinite',
@@ -83,6 +87,7 @@ export default {
         wiggle: 'wiggle .7s ease-in-out',
         shimmer: 'shimmer 1.6s linear infinite',
         'pulse-ring': 'pulse-ring 2s cubic-bezier(.22,1,.36,1) infinite',
+        twinkle: 'twinkle 1.6s ease-in-out infinite',
       },
     },
   },
