@@ -1,23 +1,22 @@
 <script setup lang="ts">
 /**
- * 学生端总布局（T04 · F5）：左侧导航 + 顶栏 + 路由出口。
+ * 学生端总布局（移动端 App 化）：顶部细栏（mascot + 标题 + 连击 + 退出）
+ * + 底部毛玻璃 Tab 栏（4 大入口，激活高亮）。
  *
- * - 左导航：AI 老师 / 练习 / 错题本 / 学习画像（学习画像为默认首页）
- * - 顶栏：当前页标题 + 退出
- * 旧页面（AiTeacher / Mistakes）已去掉自身顶栏，统一由本布局承载导航与退出。
+ * 去掉原左导航，整体更像「真 App」，更适合中小学生单手使用。
  */
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { logout } from '@/stores/auth'
 import { BANDS, segmentState, setBand, type Segment } from '@/stores/segment'
+import { useStreak } from '@/stores/streak'
 import TutorAvatar from '@/components/TutorAvatar.vue'
 
 interface NavItem {
   name: string
   to: { name: string }
   label: string
-  /** 内联 SVG path（24x24 viewBox），避免引入图标库 */
   icon: string
 }
 
@@ -37,7 +36,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   {
     name: 'mistakes',
     to: { name: 'mistakes' },
-    label: '错题本',
+    label: '错题宝藏',
     icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
   },
   {
@@ -52,8 +51,8 @@ const router = useRouter()
 const route = useRoute()
 
 const pageTitle = computed<string>(() => (route.meta.title as string) || 'AI 数学教练')
+const { streakDays } = useStreak()
 
-/** 当前路由是否命中某导航项（用于高亮）。 */
 function isActiveNav(name: string): boolean {
   return route.name === name
 }
@@ -63,83 +62,100 @@ function handleLogout(): void {
   void router.replace({ name: 'login' })
 }
 
-/** 顶栏学段切换：点击即设定并持久化（#68 学段 UI）。传 null 表示「不限」。 */
+/** 学段切换：再次点击当前学段 → 切回「不限」。 */
 function handleBand(band: Segment | null): void {
-  // 再次点击当前学段 → 切回「不限」
   setBand(segmentState.band === band ? null : band)
 }
 </script>
 
 <template>
-  <div class="flex h-screen w-full overflow-hidden bg-slate-50">
-    <!-- 左侧导航 -->
-    <nav class="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-slate-100 bg-white py-3 sm:w-20">
-      <div class="mb-3">
-        <TutorAvatar :size="36" />
+  <div class="flex h-screen w-full flex-col overflow-hidden">
+    <!-- 顶部细栏 -->
+    <header
+      class="z-20 flex shrink-0 items-center gap-2 border-b border-white/60 bg-white/70 px-4 py-2.5 backdrop-blur-md"
+    >
+      <TutorAvatar :size="34" />
+      <h1 class="min-w-0 flex-1 truncate text-base font-extrabold text-ink">{{ pageTitle }}</h1>
+
+      <div
+        v-if="streakDays > 0"
+        class="flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-400 to-coral-400 px-2.5 py-1 text-xs font-extrabold text-white shadow-soft"
+      >
+        <span class="animate-bounce-soft">🔥</span>{{ streakDays }}
       </div>
+
+      <button
+        type="button"
+        class="flex h-8 w-8 items-center justify-center rounded-full text-ink-faint transition active:scale-90"
+        aria-label="退出登录"
+        @click="handleLogout"
+      >
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+        </svg>
+      </button>
+    </header>
+
+    <!-- 学段切换（小学/初中/高中/不限） -->
+    <div class="z-10 flex shrink-0 items-center justify-center gap-1 bg-white/40 px-3 py-1.5 backdrop-blur-sm">
+      <button
+        v-for="band in BANDS"
+        :key="band"
+        type="button"
+        class="rounded-full px-3 py-1 text-xs font-semibold transition"
+        :class="segmentState.band === band ? 'bg-brand-500 text-white shadow-soft' : 'bg-white/70 text-ink-soft active:text-ink'"
+        @click="handleBand(band)"
+      >
+        {{ band }}
+      </button>
+      <button
+        type="button"
+        class="rounded-full px-3 py-1 text-xs font-semibold transition"
+        :class="segmentState.band === null ? 'bg-brand-500 text-white shadow-soft' : 'bg-white/70 text-ink-faint active:text-ink'"
+        @click="handleBand(null)"
+      >
+        不限
+      </button>
+    </div>
+
+    <!-- 内容区 -->
+    <main class="min-h-0 flex-1 overflow-hidden">
+      <router-view />
+    </main>
+
+    <!-- 底部毛玻璃 Tab 栏 -->
+    <nav
+      class="z-20 flex shrink-0 items-stretch justify-around border-t border-white/60 bg-white/80 px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 backdrop-blur-lg"
+    >
       <router-link
         v-for="item in NAV_ITEMS"
         :key="item.name"
         :to="item.to"
-        class="flex w-full flex-col items-center gap-1 py-2 text-xs font-medium transition"
-        :class="isActiveNav(item.name) ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600'"
+        class="relative flex flex-1 flex-col items-center gap-0.5 py-1 text-[11px] font-semibold transition"
+        :class="isActiveNav(item.name) ? 'text-brand-600' : 'text-ink-faint'"
       >
-        <svg
-          class="h-6 w-6"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          viewBox="0 0 24 24"
+        <span
+          v-if="isActiveNav(item.name)"
+          class="absolute -top-1 h-1.5 w-8 rounded-full bg-gradient-to-r from-brand-500 to-coral-400"
+        />
+        <span
+          class="flex h-9 w-9 items-center justify-center rounded-2xl transition"
+          :class="isActiveNav(item.name) ? 'bg-brand-50 shadow-soft' : ''"
         >
-          <path :d="item.icon" />
-        </svg>
+          <svg
+            class="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            viewBox="0 0 24 24"
+          >
+            <path :d="item.icon" />
+          </svg>
+        </span>
         <span>{{ item.label }}</span>
       </router-link>
     </nav>
-
-    <!-- 右侧：顶栏 + 内容 -->
-    <div class="flex min-w-0 flex-1 flex-col">
-      <header
-        class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-slate-100 bg-white px-4"
-      >
-        <h1 class="truncate text-sm font-bold text-slate-800">{{ pageTitle }}</h1>
-
-        <!-- 学段切换器（#68）：小学/初中/高中/不限，全局持久化 -->
-        <div class="flex items-center gap-1 rounded-full bg-slate-100 p-0.5">
-          <button
-            v-for="band in BANDS"
-            :key="band"
-            type="button"
-            class="rounded-full px-2.5 py-1 text-xs font-medium transition"
-            :class="segmentState.band === band ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 active:text-slate-700'"
-            @click="handleBand(band)"
-          >
-            {{ band }}
-          </button>
-          <button
-            type="button"
-            class="rounded-full px-2.5 py-1 text-xs font-medium transition"
-            :class="segmentState.band === null ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-400 active:text-slate-600'"
-            @click="handleBand(null)"
-          >
-            不限
-          </button>
-        </div>
-
-        <button
-          type="button"
-          class="shrink-0 text-sm text-slate-400 transition active:text-slate-600"
-          @click="handleLogout"
-        >
-          退出
-        </button>
-      </header>
-
-      <main class="min-h-0 flex-1 overflow-hidden">
-        <router-view />
-      </main>
-    </div>
   </div>
 </template>

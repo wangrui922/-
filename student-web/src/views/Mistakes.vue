@@ -179,9 +179,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full w-full flex-col overflow-x-hidden bg-slate-50">
+  <div class="flex h-full w-full flex-col overflow-x-hidden bg-transparent">
     <!-- 筛选 tab -->
-    <nav class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-slate-100 bg-white px-4 py-2">
+    <nav class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-white/60 bg-white/70 px-4 py-2 backdrop-blur-md">
       <button
         v-for="tab in TABS"
         :key="tab.key"

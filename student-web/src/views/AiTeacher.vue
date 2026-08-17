@@ -625,9 +625,9 @@ function handleReset(): void {
 </script>
 
 <template>
-  <div class="relative flex h-full w-full flex-col overflow-x-hidden bg-slate-50">
+  <div class="relative flex h-full w-full flex-col overflow-x-hidden bg-transparent">
     <!-- 模式指示器（常驻）：孩子随时知道老师现在在干嘛 -->
-    <header class="shrink-0 border-b border-slate-100 bg-white px-4 py-2">
+    <header class="shrink-0 border-b border-white/60 bg-white/70 px-4 py-2 backdrop-blur-md">
       <div class="flex items-center gap-2">
         <span class="shrink-0 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-600">
           {{ modeMeta.icon }} {{ modeMeta.label }}

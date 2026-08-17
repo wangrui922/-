@@ -425,7 +425,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto overflow-x-hidden bg-slate-50">
+  <div class="h-full overflow-y-auto overflow-x-hidden bg-transparent">
     <div class="mx-auto w-full max-w-app space-y-4 px-4 py-4">
       <!-- ① 筛选态 -->
       <template v-if="practiceState.phase === 'filter'">
