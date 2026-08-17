@@ -115,9 +115,14 @@ async function handleLogin(): Promise<void> {
     <div class="relative flex flex-1 flex-col justify-center px-7 py-10">
       <header class="mb-9 text-center">
         <div
-          class="mx-auto mb-5 flex h-40 w-40 animate-float items-end justify-center overflow-hidden rounded-[2rem] border-4 border-white bg-gradient-to-br from-amber-200 via-white to-brand-100 shadow-float"
+          class="relative mx-auto mb-5 h-40 w-40 overflow-hidden rounded-[2rem] border-4 border-white shadow-float"
         >
-          <img :src="tutorAvatar" alt="小玥老师" class="block h-[112%] w-full object-contain" />
+          <div class="absolute inset-0 rounded-[2rem] bg-gradient-to-br from-amber-200 via-white to-brand-100" />
+          <img
+            :src="tutorAvatar"
+            alt="小玥老师"
+            class="relative block h-full w-full object-contain"
+          />
         </div>
         <h1 class="text-2xl font-extrabold title-gradient">小玥老师 · AI 数学教练</h1>
         <p class="mt-2 text-sm font-medium text-ink-soft">不直接给答案，陪你一步步想明白 ✨</p>

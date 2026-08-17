@@ -169,7 +169,7 @@ async function handleGenerateReport(): Promise<void> {
         <div class="pointer-events-none absolute -bottom-10 -left-4 h-32 w-32 rounded-full bg-white/10" />
         <div class="relative flex items-center gap-3">
           <div class="relative h-16 w-16 animate-float overflow-hidden rounded-2xl border-2 border-white/60 bg-white/20">
-            <img :src="tutorFull" alt="小玥老师" class="h-full w-full object-contain" />
+            <img :src="tutorAvatar" alt="小玥老师" class="h-full w-full object-contain" />
             <span class="absolute -bottom-1 -right-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-extrabold text-white shadow">
               L{{ level }}
             </span>
