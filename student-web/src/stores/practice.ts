@@ -695,8 +695,18 @@ export async function restartSame(): Promise<boolean> {
 // finishing）与临时态（guide 聊天、drawing）不入库。模块加载时恢复 doing /
 // result 态；clearSession 时清除。后端会话若已过期，恢复后可继续看题，但提交
 // 会报错提示——相比「整段进度蒸发」已是显著改善。
+//
+// 2026-08-18 P0-3 修补：「清洗题库后老 session items 快照里仍含 archived 题」导致
+// 浏览器 localStorage 恢复时再次显示已删除的不完整题（后端 SQL 强制 status='active'
+// 已挡住新抽题，但老 snapshot 仍可能含 archived 题）。现在的兜底：
+//   ① 持久化时多写一个 ``saved_at``（ms 时间戳）
+//   ② 恢复时只信任「saved_at 在 2 小时内的」snapshot，否则视为过期数据 → 清缓存 + 不恢复
+// 旧版 snapshot（无 saved_at）一律视为过期，让用户进入 filter 态重抽——这是
+// 向后兼容的最安全做法：宁可丢一次「半路刷新」体验，也绝不让 archived 题复现。
 
 const PERSIST_KEY = 'aicoach.practice.progress'
+/** 持久化最大有效期：超过这个时间的老 snapshot 一律视为过期、强制重抽。 */
+const PERSIST_MAX_AGE_MS = 2 * 60 * 60 * 1000
 const PERSIST_FIELDS = [
   'phase',
   'index',
@@ -721,6 +731,8 @@ function saveProgress(): void {
   for (const f of PERSIST_FIELDS) {
     snap[f] = practiceState[f]
   }
+  // 2026-08-18：加 saved_at 帮 loadProgress 区分新老 snapshot、识别「已过期老 session」
+  snap.saved_at = Date.now()
   try {
     localStorage.setItem(PERSIST_KEY, JSON.stringify(snap))
   } catch {
@@ -742,6 +754,20 @@ function loadProgress(): void {
     if (!raw) return
     const snap = JSON.parse(raw) as Record<string, unknown>
     const phase = snap.phase
+    // 2026-08-18 P0-3 修补：老 snapshot（无 saved_at 字段 / 距今超过 PERSIST_MAX_AGE_MS）
+    // 一律视为过期——清掉缓存、不恢复，让用户进入 filter 态重抽。这能挡住
+    // 「清洗题库后老 session 仍显示已删除题」类问题（后端 SQL 已挡新抽题，但
+    // localStorage 仍存有老 snapshot）。详见 PERSIST_KEY 注释。
+    const savedAt = typeof snap.saved_at === 'number' ? snap.saved_at : 0
+    const ageMs = Date.now() - savedAt
+    if (savedAt === 0 || ageMs > PERSIST_MAX_AGE_MS) {
+      try {
+        localStorage.removeItem(PERSIST_KEY)
+      } catch {
+        /* ignore */
+      }
+      return
+    }
     if (
       (phase === 'doing' || phase === 'result') &&
       Array.isArray(snap.questions) &&
