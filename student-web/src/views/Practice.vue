@@ -586,7 +586,7 @@ onBeforeUnmount(() => {
             :disabled="practiceState.submitting || !selected || submitDisabledByOptions"
             @click="handleSubmit"
           >
-            {{ practiceState.submitting ? '提交中…' : submitDisabledByOptions ? '这道题选项不完整，做完不算分' : '提交这道题' }}
+            {{ practiceState.submitting ? '提交中…' : submitDisabledByOptions ? '这道题选项不完整，做完不算分' : '⚔️ 提交这道题' }}
           </button>
           <div class="flex gap-3">
             <button

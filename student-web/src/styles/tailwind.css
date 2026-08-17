@@ -37,9 +37,9 @@
     @apply rounded-3xl border border-slate-100 bg-white p-4 shadow-card;
   }
 
-  /* 趣味入口 tile：渐变底 + 轻浮起 */
+  /* 趣味入口 tile：渐变底 + 轻浮起 + 悬停微放大（桌面预览更有生命感） */
   .tile {
-    @apply relative flex flex-col justify-between overflow-hidden rounded-3xl p-4 text-left shadow-soft transition active:scale-[0.97];
+    @apply relative flex flex-col justify-between overflow-hidden rounded-3xl p-4 text-left shadow-soft transition hover:scale-[1.02] active:scale-[0.97];
   }
 
   /* 小药丸标签 */
