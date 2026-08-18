@@ -1,8 +1,9 @@
 {
-  "name": "tts-function",
+  "name": "aicoach-api",
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
+    "@edgeone/pages-blob": "^1.0.0",
     "ws": "^8.18.0"
   }
 }
