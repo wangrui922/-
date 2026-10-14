@@ -28,7 +28,7 @@ export function getToken(): string {
   return authState.token || localStorage.getItem(TOKEN_KEY) || ''
 }
 
-/** 取刷新令牌（用于 401 时静默续期，见 http.ts recoverOrLogout）。 */
+/** 取刷新令牌（V4.1 暂未做静默续期，先存着）。 */
 export function getRefreshToken(): string {
   return localStorage.getItem(REFRESH_KEY) || ''
 }

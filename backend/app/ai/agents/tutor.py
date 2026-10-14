@@ -19,10 +19,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from app.ai.answer_guard import generate_guarded_reply
+from app.ai.answer_guard import generate_guarded_reply, generate_guarded_reply_async
 from app.ai.prompts.tutor import PROMPT as TUTOR_PROMPT
 from app.ai.state_machine import (
     SESSION_STATE_GUIDING,
+    diagnostic_tactic_prompt,
     is_strict_guard,
     mode_prompt,
     state_prompt,
@@ -66,12 +67,65 @@ def _sanitize(session_messages: Optional[List[Dict[str, Any]]]) -> List[Dict[str
     return cleaned[-MAX_HISTORY:]
 
 
+def _build_request(
+    *,
+    session_messages: List[Dict[str, Any]],
+    current_error: Optional[str],
+    state: Optional[str],
+    mode: Optional[str],
+    error_type: Optional[str] = None,
+) -> tuple[List[Dict[str, str]], str, bool]:
+    """组装发给 guard 的 ``(messages, system, strict)``（同步 / 异步共用）。
+
+    Args:
+        session_messages: 会话历史。
+        current_error: 错因摘要，可为空。
+        state: 当前教学阶段。
+        mode: 本轮响应模式。
+        error_type: 错因机器码（方向八新增，逐个见
+            ``app.core.error_categories`` 五码）；可为空，为空时不追加
+            「诊断式追问」后缀，行为与改造前完全一致。
+
+    Returns:
+        ``(messages, system, strict)`` 三元组。
+    """
+    messages = _sanitize(session_messages)
+
+    hint = (current_error or "").strip()
+    if hint:
+        messages.append({"role": "system", "content": _ERROR_HINT_TEMPLATE.format(error=hint)})
+
+    if not messages:
+        # 没有任何上下文时给个开场指令，避免空 input 直接被 ark_client 拒掉
+        messages.append({"role": "user", "content": "我们开始吧，请你先问我第一个问题。"})
+
+    # 系统提示拼接顺序固定：核心提示词 → 阶段后缀 → 模式后缀 → 诊断式追问后缀
+    # （诊断最后 = 粒度最细、优先级最高，只按错因 × 模式收紧本轮的「问法」；
+    #   error_type 未提供时完全不追加 = 行为与改造前一致）
+    suffixes = [
+        part
+        for part in (
+            state_prompt(state) if state else "",
+            mode_prompt(mode),
+            diagnostic_tactic_prompt(mode, error_type=error_type) if error_type else "",
+        )
+        if part
+    ]
+    system = "\n\n".join([TUTOR_PROMPT, *suffixes]) if suffixes else TUTOR_PROMPT
+
+    # 严格度：DEMO / JUDGE 恒 False；其余保持「开场/引导严格，练习/总结宽松」。
+    # state 为空时按 guiding 兜底 —— 与改造前的 `strict=True` 完全等价。
+    strict = is_strict_guard(state or SESSION_STATE_GUIDING, mode=mode)
+    return messages, system, strict
+
+
 def next_question(
     *,
     session_messages: List[Dict[str, Any]],
     current_error: Optional[str] = None,
     state: Optional[str] = None,
     mode: Optional[str] = None,
+    error_type: Optional[str] = None,
 ) -> str:
     """生成下一句引导语（经答案泄漏检查器兜底）。
 
@@ -86,6 +140,8 @@ def next_question(
         mode: 本轮响应模式（见 ``app.ai.intent.MODE_*``），由 orchestrator 用
             ``intent.detect_mode()`` **定稿**后传入。**关键字参数且默认 None**，
             ``None`` = 未指定 = 行为与改造前完全一致。本函数只透传，不改写。
+        error_type: 错因机器码（方向八新增，见 ``app.core.error_categories``），
+            非空时注入「诊断式追问」后缀；为空行为与改造前完全一致。
 
     Returns:
         一句引导语（已 strip）；命中泄漏且重生成耗尽时给 ``FALLBACK_REPLY`` 兜底。
@@ -94,24 +150,13 @@ def next_question(
     Raises:
         ArkError: 方舟调用失败或消息结构非法。
     """
-    messages = _sanitize(session_messages)
-
-    hint = (current_error or "").strip()
-    if hint:
-        messages.append({"role": "system", "content": _ERROR_HINT_TEMPLATE.format(error=hint)})
-
-    if not messages:
-        # 没有任何上下文时给个开场指令，避免空 input 直接被 ark_client 拒掉
-        messages.append({"role": "user", "content": "我们开始吧，请你先问我第一个问题。"})
-
-    # 系统提示拼接顺序固定：核心提示词 → 阶段后缀 → 模式后缀（模式最后，优先级最高）
-    suffixes = [part for part in (state_prompt(state) if state else "", mode_prompt(mode)) if part]
-    system = "\n\n".join([TUTOR_PROMPT, *suffixes]) if suffixes else TUTOR_PROMPT
-
-    # 严格度：DEMO / JUDGE 恒 False；其余保持「开场/引导严格，练习/总结宽松」。
-    # state 为空时按 guiding 兜底 —— 与改造前的 `strict=True` 完全等价。
-    strict = is_strict_guard(state or SESSION_STATE_GUIDING, mode=mode)
-
+    messages, system, strict = _build_request(
+        session_messages=session_messages,
+        current_error=current_error,
+        state=state,
+        mode=mode,
+        error_type=error_type,
+    )
     return generate_guarded_reply(
         messages=messages,
         system=system,
@@ -121,4 +166,45 @@ def next_question(
     )
 
 
-__all__ = ["next_question", "MAX_HISTORY", "ALLOWED_ROLES", "FALLBACK_REPLY"]
+async def next_question_async(
+    *,
+    session_messages: List[Dict[str, Any]],
+    current_error: Optional[str] = None,
+    state: Optional[str] = None,
+    mode: Optional[str] = None,
+    error_type: Optional[str] = None,
+) -> str:
+    """``next_question`` 的异步版：await async guard，不阻塞事件循环。
+
+    Args:
+        与 ``next_question`` 完全相同。
+
+    Returns:
+        与 ``next_question`` 相同。
+
+    Raises:
+        ArkError: 方舟调用失败或消息结构非法。
+    """
+    messages, system, strict = _build_request(
+        session_messages=session_messages,
+        current_error=current_error,
+        state=state,
+        mode=mode,
+        error_type=error_type,
+    )
+    return await generate_guarded_reply_async(
+        messages=messages,
+        system=system,
+        strict=strict,
+        mode=mode,
+        fallback=FALLBACK_REPLY,
+    )
+
+
+__all__ = [
+    "next_question",
+    "next_question_async",
+    "MAX_HISTORY",
+    "ALLOWED_ROLES",
+    "FALLBACK_REPLY",
+]

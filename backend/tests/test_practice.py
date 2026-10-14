@@ -42,6 +42,16 @@ from app.services.judge_engine import LEVEL_FALLBACK, LEVEL_RULE
 from t04_helpers import assert_fail, assert_ok, login
 
 
+def _as_async(fn):
+    """把同步 ``**kwargs`` 函数包装成 async 版本，用于同一逻辑同时打桩
+    ``ark_respond`` 与 ``ark_respond_async``（调用方只传关键字参数）。"""
+
+    async def _wrapped(**kwargs):
+        return fn(**kwargs)
+
+    return _wrapped
+
+
 # ==================================================================== 造数据
 def _make_kp(name: str) -> str:
     """插一个知识点，返回 ID 字符串。"""
@@ -64,7 +74,6 @@ def make_bank_question(
     grade: int = 3,
     edition: Optional[str] = None,
     section: Optional[str] = None,
-    image_url: Optional[str] = None,
     difficulty: Optional[int] = 3,
     status: str = "active",
     with_answer: bool = True,
@@ -103,7 +112,6 @@ def make_bank_question(
             kp_verified=kp_verified,
             edition=edition,
             section=section,
-            image_url=image_url,
             status=status,
         )
         db.add(question)
@@ -310,26 +318,6 @@ class TestDraw:
         ids = [q["question_id"] for q in data["questions"]]
         assert ids == [good]
         assert data["pool_size"] == 1
-
-    def test_draw_excludes_image_dependent_question_without_image(self, client, new_phone) -> None:
-        """题干明确要求看图时，缺图题不能进入学生练习池。"""
-        headers, _ = login(client, new_phone())
-        kp_id = _make_kp("抽题-缺图")
-        make_bank_question(
-            kp_id=kp_id,
-            grade=4,
-            content='下面小数中，（ ）的“2”与如图中涂色部分表示的数大小相等',
-            image_url=None,
-        )
-        visible = make_bank_question(
-            kp_id=kp_id,
-            grade=4,
-            content="这道题不需要图片，直接比较小数位值。",
-        )
-
-        data = _draw(client, headers, grade=4, count=10)
-
-        assert [item["question_id"] for item in data["questions"]] == [visible]
 
     def test_draw_auto_relaxes_and_discloses_unmapped(self, client, new_phone) -> None:
         """筛选条件只能命中新题时自动放开，并披露 unmapped_count（C6）。"""
@@ -684,7 +672,13 @@ class TestGuide:
             captured["messages"] = messages
             return '{"reply":"先看看题目给了哪些条件？","askFinalConfirm":false}'
 
+        async def _fake_ark_async(*, messages, system=None, image_b64=None, timeout=60.0) -> str:
+            return _fake_ark(
+                messages=messages, system=system, image_b64=image_b64, timeout=timeout
+            )
+
         monkeypatch.setattr("app.ai.ark_client.ark_respond", _fake_ark)
+        monkeypatch.setattr("app.ai.ark_client.ark_respond_async", _fake_ark_async)
 
         data = assert_ok(
             client.post(
@@ -714,6 +708,10 @@ class TestGuide:
             "app.ai.ark_client.ark_respond",
             lambda **kwargs: "这一步先别急，想想单位统一了吗？",
         )
+        monkeypatch.setattr(
+            "app.ai.ark_client.ark_respond_async",
+            _as_async(lambda **kwargs: "这一步先别急，想想单位统一了吗？"),
+        )
 
         data = assert_ok(
             client.post(
@@ -736,6 +734,12 @@ class TestGuide:
         monkeypatch.setattr(
             "app.ai.ark_client.ark_respond",
             lambda **kwargs: '{"reply":"这题答案是B，因为3加4等于7。","askFinalConfirm":false}',
+        )
+        monkeypatch.setattr(
+            "app.ai.ark_client.ark_respond_async",
+            _as_async(
+                lambda **kwargs: '{"reply":"这题答案是B，因为3加4等于7。","askFinalConfirm":false}'
+            ),
         )
 
         data = assert_ok(

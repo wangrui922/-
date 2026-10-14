@@ -15,8 +15,8 @@
     * 出参一律 **snake_case**，由 ``app.core.response.ok()`` 包裹（C10）；
     * ``session``/``answer``/``reveal``/``finish`` 是纯本地计算，用 sync ``def`` 路由，
       FastAPI 会自动丢线程池执行，不阻塞事件循环；
-    * 只有 ``guide`` 内含**同步阻塞**的方舟调用，必须写成 async 路由并用
-      ``run_in_threadpool`` 包裹（与 ``api/chat.py``、``api/exercise.py`` 一致）；
+    * 只有 ``guide`` 内含方舟网络调用，走 ``guide_question_async``（**纯 async**，
+      路由直接 ``await``，与 ``api/chat.py``、``api/exercise.py`` 一致）；
     * 别人的练习会话一律按 **404** 处理（不返 403），不泄露资源存在性。
 """
 
@@ -27,7 +27,6 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Body, Depends
-from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -76,6 +75,7 @@ def create_practice_session(
         kp_id=body.kp_id,
         difficulty=body.difficulty,
         count=body.count,
+        adaptive=bool(body.adaptive),
     )
     return ok(data)
 
@@ -163,8 +163,8 @@ async def guide(
 ) -> dict:
     """「让老师带我想一想」：AI 过程引导，首轮不公布答案。
 
-    ``practice_service.guide_question`` 内部是**同步阻塞**的方舟调用，
-    这里必须用 ``run_in_threadpool`` 包裹，避免占满事件循环。
+    ``practice_service.guide_question_async`` 是**纯 async**（内部 await
+    ``ark_respond_async``），路由直接 ``await``，不会占满事件循环。
 
     Returns:
         ``{"code":0,"msg":"ok","data":{question_id,reply,ask_final_confirm,prompt_version}}``。
@@ -173,8 +173,7 @@ async def guide(
         ApiError: 400 题目不在本次练习中；404 会话或题目不存在；500 方舟调用失败。
     """
     student_id = require_student_id(current.sid)
-    data = await run_in_threadpool(
-        practice_service.guide_question,
+    data = await practice_service.guide_question_async(
         db,
         student_id=student_id,
         session_id=body.session_id,

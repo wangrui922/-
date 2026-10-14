@@ -5,8 +5,8 @@
 
 硬约定：
     * 两个接口均 ``Depends(get_current_user)``，且要求 ``user.sid`` 非空（未绑定学生返 400）；
-    * ``orchestrator`` 是同步函数且内含方舟网络调用，一律用 ``run_in_threadpool``
-      包裹，避免阻塞事件循环；
+    * ``orchestrator`` 的 ``*_async`` 编排是**纯 async**（内部 await async Agent），
+      路由直接 ``await``，不再包 ``run_in_threadpool``；
     * 响应恒为 ``{"code":0,"msg":"ok","data":{}}``，data 直接透传编排器结果
       （``session_id`` / ``analysis`` / ``first_question``，见 docs/v4-db-api.md §B.2）。
 """
@@ -16,7 +16,6 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends
-from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.ai import orchestrator
@@ -100,8 +99,7 @@ async def create_chat(
     if not image_b64 and not text:
         raise ApiError(CODE_BAD_REQUEST, "请上传题目照片或输入题目文字")
 
-    result = await run_in_threadpool(
-        orchestrator.start_session,
+    result = await orchestrator.start_session_async(
         student_id=student_id,
         image_b64=image_b64,
         text=text,
@@ -130,8 +128,7 @@ async def send_message(
     """
     require_student_id(current.sid)
 
-    result = await run_in_threadpool(
-        orchestrator.continue_session,
+    result = await orchestrator.continue_session_async(
         session_id=to_uuid(session_id, "session_id"),
         user_text=body.text or "",
         mode=body.mode,

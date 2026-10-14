@@ -66,4 +66,54 @@ async def child_summary(
     return ok(family_service.get_child_summary(db, student_id))
 
 
+@router.get("/children/{student_id}/mistakes")
+async def child_mistakes(
+    student_id: str,
+    page: int = 1,
+    size: int = 20,
+    current: CurrentUser = Depends(require_role("parent")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """家长视角：孩子错题列表（含题干）。"""
+    family_service.assert_parent_of(db, uuid.UUID(current.sub), student_id)
+    return ok(family_service.list_child_mistakes(db, student_id, page=page, size=size))
+
+
+@router.get("/children/{student_id}/attempts")
+async def child_attempts(
+    student_id: str,
+    page: int = 1,
+    size: int = 20,
+    current: CurrentUser = Depends(require_role("parent")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """家长视角：孩子练习记录。"""
+    family_service.assert_parent_of(db, uuid.UUID(current.sub), student_id)
+    return ok(family_service.list_child_attempts(db, student_id, page=page, size=size))
+
+
+@router.get("/children/{student_id}/mastery")
+async def child_mastery(
+    student_id: str,
+    page: int = 1,
+    size: int = 50,
+    current: CurrentUser = Depends(require_role("parent")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """家长视角：孩子知识点掌握度。"""
+    family_service.assert_parent_of(db, uuid.UUID(current.sub), student_id)
+    return ok(family_service.list_child_mastery(db, student_id, page=page, size=size))
+
+
+@router.get("/children/{student_id}/entitlement")
+async def child_entitlement(
+    student_id: str,
+    current: CurrentUser = Depends(require_role("parent")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """家长视角：孩子订阅/权益状态。"""
+    family_service.assert_parent_of(db, uuid.UUID(current.sub), student_id)
+    return ok(family_service.get_child_entitlement(db, student_id))
+
+
 __all__ = ["router"]

@@ -22,7 +22,14 @@ from sqlalchemy.orm import Session
 from app.core.deps import CurrentUser, get_current_user
 from app.core.response import ApiError, CODE_BAD_REQUEST, ok
 from app.db import get_db
-from app.schemas.auth import ActivationEnterIn, LoginIn, RefreshIn, RegisterIn, SendCodeIn
+from app.schemas.auth import (
+    ActivationEnterIn,
+    AdminLoginIn,
+    LoginIn,
+    RefreshIn,
+    RegisterIn,
+    SendCodeIn,
+)
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -58,6 +65,15 @@ async def activation_login(payload: ActivationEnterIn, db: Session = Depends(get
     新手机或电脑重新登录。明文激活码不会写入数据库。
     """
     return ok(auth_service.enter_by_activation_code(db, payload.code, payload.pin, payload.nickname))
+
+
+@router.post("/admin/login")
+async def admin_login(payload: AdminLoginIn, db: Session = Depends(get_db)) -> dict:
+    """管理员登录（手机号 + 个人密码）。
+
+    与激活码账号共用 ``access_pin_hash`` 密码字段；仅放行 ``role=admin``。
+    """
+    return ok(auth_service.login_admin(db, phone=payload.phone, pin=payload.pin))
 
 
 @router.post("/register")

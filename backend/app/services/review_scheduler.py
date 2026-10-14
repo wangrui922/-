@@ -25,6 +25,9 @@ from typing import Iterable, List, Optional, Sequence
 INITIAL_EASE_FACTOR: float = 2.5
 #: 难度系数下限（低于此值题目基本等于不会，需要重新学）
 MIN_EASE_FACTOR: float = 1.3
+#: 难度系数上限（SM-2 惯例封顶；防止 ease 无界膨胀导致间隔爆炸，
+#: 也为 mastery 联动等外部调整提供可收敛的取值区间）
+MAX_EASE_FACTOR: float = 3.0
 #: 首次复习间隔（天）
 FIRST_INTERVAL_DAYS: int = 1
 #: 第二次复习间隔（天）
@@ -90,7 +93,9 @@ def update_ease_factor(current_ef: float, quality: int) -> float:
     return max(MIN_EASE_FACTOR, round(new_ef, 4))
 
 
-def review(state: ReviewState, quality: int, now: Optional[datetime] = None) -> ReviewPlan:
+def review(
+    state: ReviewState, quality: int, now: Optional[datetime] = None
+) -> ReviewPlan:
     """根据一次练习的 quality（0-5）推进复习排程，返回新的 ``ReviewPlan``。
 
     Args:
@@ -147,11 +152,16 @@ def is_due(state: ReviewState, now: Optional[datetime] = None) -> bool:
     return _as_utc(state.due_at) <= now
 
 
-def select_due(states: Iterable[ReviewState], now: Optional[datetime] = None) -> List[ReviewState]:
+def select_due(
+    states: Iterable[ReviewState], now: Optional[datetime] = None
+) -> List[ReviewState]:
     """从一批复习状态里挑出「今天该复习的」，按到期时间升序返回。"""
     now = _as_utc(now) or datetime.now(timezone.utc)
     due = [s for s in states if is_due(s, now)]
-    return sorted(due, key=lambda s: _as_utc(s.due_at) or datetime.min.replace(tzinfo=timezone.utc))
+    return sorted(
+        due,
+        key=lambda s: _as_utc(s.due_at) or datetime.min.replace(tzinfo=timezone.utc),
+    )
 
 
 def quality_from_correct(correct: bool, verdict: str = "pending") -> int:
@@ -178,6 +188,7 @@ def initial_state(key: str, now: Optional[datetime] = None) -> ReviewState:
 __all__ = [
     "INITIAL_EASE_FACTOR",
     "MIN_EASE_FACTOR",
+    "MAX_EASE_FACTOR",
     "FIRST_INTERVAL_DAYS",
     "SECOND_INTERVAL_DAYS",
     "ReviewState",

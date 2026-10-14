@@ -14,7 +14,7 @@ import dataclasses
 import uuid
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.response import (
@@ -171,3 +171,118 @@ __all__ = [
     "assert_parent_of",
     "get_child_summary",
 ]
+
+
+# ==================================================================== 家长只读视图
+# 以下接口全部要求 ``parent`` 角色，并在入口 ``assert_parent_of`` 校验绑定关系。
+
+#: 掌握度数值档 → 家长端展示标签（0未入门/1薄弱/2基本掌握/3熟练）
+_MASTERY_LABEL = {0: "未入门", 1: "薄弱", 2: "基本掌握", 3: "熟练"}
+
+
+def list_child_mistakes(session: Session, student_id: uuid.UUID, page: int = 1, size: int = 20) -> Dict[str, Any]:
+    """家长视角：孩子错题列表（含题干，按最近创建倒序）。"""
+    from app.models.content import Question
+    from app.models.learning import Mistake
+
+    sid = _parse_uuid(student_id, "studentId")
+    base = select(Mistake, Question).join(
+        Question, Question.id == Mistake.question_id
+    ).where(Mistake.student_id == sid)
+    total = session.execute(select(func.count()).select_from(base.subquery())).scalar() or 0
+    rows = session.execute(
+        base.order_by(Mistake.created_at.desc()).offset((page - 1) * size).limit(size)
+    ).all()
+    items = [
+        {
+            "id": str(m.id),
+            "question_id": str(m.question_id),
+            "stem": q.content,
+            "difficulty": q.difficulty,
+            "kp_id": str(m.kp_id) if m.kp_id else None,
+            "error_type": m.error_type,
+            "error_reason": m.error_reason,
+            "note": m.note,
+            "solved": m.solved,
+            "solved_at": m.solved_at.isoformat() if m.solved_at else None,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+        }
+        for m, q in rows
+    ]
+    return {"total": total, "page": page, "size": size, "items": items}
+
+
+def list_child_attempts(session: Session, student_id: uuid.UUID, page: int = 1, size: int = 20) -> Dict[str, Any]:
+    """家长视角：孩子练习记录（作答历史）。"""
+    from app.models.content import Question
+    from app.models.learning import Attempt
+
+    sid = _parse_uuid(student_id, "studentId")
+    base = select(Attempt, Question).join(
+        Question, Question.id == Attempt.question_id, isouter=True
+    ).where(Attempt.student_id == sid)
+    total = session.execute(select(func.count()).select_from(base.subquery())).scalar() or 0
+    rows = session.execute(
+        base.order_by(Attempt.created_at.desc()).offset((page - 1) * size).limit(size)
+    ).all()
+    items = [
+        {
+            "id": str(a.id),
+            "question_id": str(a.question_id) if a.question_id else None,
+            "stem": (q.content[:120] + "…") if q and q.content and len(q.content) > 120 else (q.content if q and q.content else None),
+            "selected_answer": a.selected_answer,
+            "is_correct": a.is_correct,
+            "duration_sec": a.duration_sec,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a, q in rows
+    ]
+    return {"total": total, "page": page, "size": size, "items": items}
+
+
+def list_child_mastery(session: Session, student_id: uuid.UUID, page: int = 1, size: int = 50) -> Dict[str, Any]:
+    """家长视角：孩子知识点掌握度列表。"""
+    from app.models.content import KnowledgePoint
+    from app.models.student_mastery import StudentMastery
+
+    sid = _parse_uuid(student_id, "studentId")
+    base = select(StudentMastery, KnowledgePoint).join(
+        KnowledgePoint, KnowledgePoint.id == StudentMastery.knowledge_point_id, isouter=True
+    ).where(StudentMastery.student_id == sid)
+    total = session.execute(select(func.count()).select_from(base.subquery())).scalar() or 0
+    rows = session.execute(
+        base.order_by(StudentMastery.computed_at.desc()).offset((page - 1) * size).limit(size)
+    ).all()
+
+    items = []
+    for sm, kp in rows:
+        ts = getattr(sm, "computed_at", None) or getattr(sm, "updated_at", None)
+        items.append(
+            {
+                "kp_id": str(sm.knowledge_point_id),
+                "kp_name": kp.name if kp else None,
+                "score": sm.mastery_score,
+                "level": _MASTERY_LABEL.get(sm.mastery_level, "未知"),
+                "level_int": sm.mastery_level,
+                "attempts": sm.attempts,
+                "updated_at": ts.isoformat() if ts else None,
+            }
+        )
+    return {"total": total, "page": page, "size": size, "items": items}
+
+
+def get_child_entitlement(session: Session, student_id: uuid.UUID) -> Dict[str, Any]:
+    """家长视角：孩子订阅/权益状态（免费额度当前版本）。"""
+    from app.ai.guards import count_today_usage
+    from app.core.config import settings
+
+    sid = _parse_uuid(student_id, "studentId")
+    session_count, attempt_count = count_today_usage(sid, session)
+    return {
+        "plan": "free",
+        "plan_name": "免费版",
+        "daily_ai_limit": int(settings.free_daily_ai or 0),
+        "ai_sessions_today": session_count,
+        "ai_attempts_today": attempt_count,
+        "expires_at": None,
+    }

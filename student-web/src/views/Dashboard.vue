@@ -35,11 +35,26 @@ const timeLabel = computed<string>(() => {
 /* ---------- 游戏化派生指标（全部来自真实数据） ---------- */
 const { streakDays } = useStreak()
 
+/**
+ * 掌握度展示数据源：DNA-005 聚合（埋点实时驱动）优先，失败降级 T04 物化缓存。
+ * 由同一数据源派生 HUD / 星图 / 面板三态，避免"面板显示错误、HUD 却用旧数据"的分叉。
+ */
+const masteryDisplay = computed(() => profileState.dnaMastery ?? profileState.mastery)
+const masteryLoading = computed<boolean>(
+  () =>
+    !masteryDisplay.value &&
+    (profileState.dnaState.loading || profileState.masteryState.loading),
+)
+const masteryError = computed<string>(() => {
+  if (masteryDisplay.value) return ''
+  return profileState.dnaState.error || profileState.masteryState.error
+})
+
 const masteredCount = computed<number>(() => {
-  const list = profileState.mastery?.mastery ?? []
+  const list = masteryDisplay.value?.mastery ?? []
   return list.filter((m) => m.level >= 2).length // 基本掌握 / 熟练 = 已挖到的宝石
 })
-const totalKp = computed<number>(() => profileState.mastery?.summary?.total_kp ?? 0)
+const totalKp = computed<number>(() => masteryDisplay.value?.summary?.total_kp ?? 0)
 const radarDims = computed<number>(() => profileState.radar?.axes?.length ?? 0)
 
 // 经验 = 连击*10 + 已掌握知识点*15 + 总知识点*5（趣味公式，驱动等级）
@@ -73,7 +88,7 @@ const badges = computed<Badge[]>(() => [
 
 /* ---------- 趣味入口 ---------- */
 interface Tile {
-  key: 'practice' | 'ai' | 'mistakes' | 'dashboard'
+  key: 'practice' | 'ai' | 'mistakes' | 'subscription' | 'review' | 'game'
   label: string
   desc: string
   grad: string
@@ -82,10 +97,26 @@ interface Tile {
 }
 const tiles: readonly Tile[] = [
   {
+    key: 'game',
+    label: '游戏大厅',
+    desc: '挑战闯关',
+    grad: 'from-violet-500 to-fuchsia-500',
+    to: { name: 'game-hub' },
+    badge: 'NEW',
+  },
+  {
+    key: 'review',
+    label: '今日复习',
+    desc: '科学巩固',
+    grad: 'from-brand-500 to-brand-600',
+    to: { name: 'review' },
+    badge: 'NEW',
+  },
+  {
     key: 'practice',
     label: '去练习',
     desc: '挑题闯关',
-    grad: 'from-brand-500 to-brand-600',
+    grad: 'from-coral-400 to-coral-500',
     to: { name: 'practice' },
     badge: 'HOT',
   },
@@ -93,22 +124,23 @@ const tiles: readonly Tile[] = [
     key: 'ai',
     label: '问小玥老师',
     desc: '不懂就问',
-    grad: 'from-coral-400 to-coral-500',
+    grad: 'from-sky-400 to-sky-500',
     to: { name: 'ai-teacher' },
   },
   {
     key: 'mistakes',
     label: '错题宝藏',
-    desc: '挖宝复习',
-    grad: 'from-amber-400 to-amber-500',
+    desc: '查漏补缺',
+    grad: 'from-mint-400 to-sky-400',
     to: { name: 'mistakes' },
   },
   {
-    key: 'dashboard',
-    label: '学习画像',
-    desc: '看看进步',
-    grad: 'from-mint-400 to-mint-500',
-    to: { name: 'dashboard' },
+    key: 'subscription',
+    label: '会员中心',
+    desc: '升级权益',
+    grad: 'from-amber-400 to-orange-500',
+    to: { name: 'subscription' },
+    badge: 'VIP',
   },
 ]
 
@@ -308,9 +340,9 @@ async function handleGenerateReport(): Promise<void> {
       <p class="px-1 pt-1 text-sm font-extrabold text-ink">📈 我的学习数据</p>
 
       <KnowledgeStarMap
-        :data="profileState.mastery"
-        :loading="profileState.masteryState.loading"
-        :error="profileState.masteryState.error"
+        :data="masteryDisplay"
+        :loading="masteryLoading"
+        :error="masteryError"
         @practice="handlePracticeKp"
       />
 
@@ -321,9 +353,9 @@ async function handleGenerateReport(): Promise<void> {
       />
 
       <MasteryPanel
-        :data="profileState.mastery"
-        :loading="profileState.masteryState.loading"
-        :error="profileState.masteryState.error"
+        :data="masteryDisplay"
+        :loading="masteryLoading"
+        :error="masteryError"
       />
 
       <ErrorPatternChart

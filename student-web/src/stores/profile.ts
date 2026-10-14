@@ -10,6 +10,8 @@
 import { reactive } from 'vue'
 
 import { getErrorPatterns, getMastery, getRadar, getRecommendations } from '@/api/profile'
+import { getLearningDna, toMasteryData } from '@/api/dna'
+import { getStudentId } from '@/stores/auth'
 import type {
   ErrorPatternData,
   MasteryData,
@@ -34,6 +36,9 @@ export interface ProfileState {
   errorPatternsState: PanelState
   recommendationsState: PanelState
   radarState: PanelState
+  /** DNA-005 实时掌握度（埋点驱动，无缓存） */
+  dnaMastery: MasteryData | null
+  dnaState: PanelState
 }
 
 function emptyPanel(): PanelState {
@@ -50,6 +55,8 @@ export const profileState = reactive<ProfileState>({
   errorPatternsState: emptyPanel(),
   recommendationsState: emptyPanel(),
   radarState: emptyPanel(),
+  dnaMastery: null,
+  dnaState: emptyPanel(),
 })
 
 /**
@@ -102,7 +109,22 @@ export async function loadRadar(force?: boolean): Promise<void> {
 }
 
 /**
- * 三路并行拉取画像（Dashboard 入口）。
+ * 拉取 DNA-005 实时掌握度（埋点驱动，恒 fresh，无缓存概念）。
+ *
+ * 失败不抛异常（safeLoad 局部降级），由 Dashboard 决定降级到 T04 mastery。
+ */
+export async function loadDna(): Promise<void> {
+  const data = await safeLoad(profileState.dnaState, async () =>
+    toMasteryData(await getLearningDna(getStudentId())),
+  )
+  if (data) profileState.dnaMastery = data
+}
+
+/**
+ * 并行拉取画像（Dashboard 入口）。
+ *
+ * 掌握度展示数据源为 DNA-005（dnaMastery，埋点实时驱动）；radar/errorPatterns/
+ * recommendations 仍走 T04。四位并行，单路失败不影响其它（局部降级）。
  *
  * @param opts.force      绕过掌握度/推荐缓存
  * @param opts.rangeDays  错因统计窗口天数
@@ -118,5 +140,6 @@ export async function loadDashboard(opts?: {
     loadRadar(opts?.force),
     loadErrorPatterns(opts?.rangeDays),
     loadRecommendations(opts?.limit, opts?.force),
+    loadDna(),
   ])
 }

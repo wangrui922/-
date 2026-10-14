@@ -25,13 +25,14 @@ from app.ai.agents import diagnose, exercise, question, tutor  # noqa: F401  (di
 from app.ai.agents._json_utils import extract_json as _extract_json
 from app.ai.ark_client import ArkError
 from app.ai.guards import check_ai_quota
-from app.ai.intent import MODE_DEMO, MODE_GUIDE
+from app.ai.intent import MODE_DEMO, MODE_GUIDE, MODE_HINT
 from app.ai.state_machine import (  # T04B 状态机
     SESSION_STATE_GUIDING,
     SESSION_STATE_INTRO,
     SESSION_STATE_PRACTICING,
 )
 from app.core.config import settings
+from app.core.error_categories import normalize_error  # 方向八：错因 → 诊断话术
 from app.core.response import ApiError, CODE_BAD_REQUEST
 from app.db import SessionLocal  # noqa: F401  (只读脚本按需自建会话，写操作一律用传入的 db)
 from app.models.ai import AiMessage, AiSession
@@ -66,6 +67,26 @@ PHOTO_SOURCE_DOC: str = "ai_wrong"
 STUDENT_QUESTION_SOURCE_DOC: str = "student_asked"
 
 
+def _emit_chat_dna_event(
+    db: Session, *, student_id: uuid.UUID, event_type: str, meta: Dict[str, Any]
+) -> None:
+    """DNA-004 行为事件埋点（Sprint 2 T2，chat 侧旁路）。
+
+    与 practice 侧一致：任何异常只记日志，绝不拖垮辅导主流程；只 ``flush``，
+    由调用方现有 ``db.commit()`` 一并收口（本模块统一约定）。
+    """
+    try:
+        from app.services.student_dna_service import record_learning_event
+
+        record_learning_event(
+            db, student_id=student_id, event_type=event_type, meta=meta
+        )
+    except Exception:  # noqa: BLE001 - 埋点失败不影响辅导主流程
+        logger.warning(
+            "chat DNA 埋点失败 event=%s session=%s", event_type, meta, exc_info=True
+        )
+
+
 def _file_url(image_key: Optional[str]) -> Optional[str]:
     """把上传接口返回的纯文件 key 转为可回看的站内地址。"""
     key = (image_key or "").strip()
@@ -90,7 +111,9 @@ def _find_student_question(db: Session, content: str) -> Optional[Question]:
         .where(Question.source_doc.in_((STUDENT_QUESTION_SOURCE_DOC, PHOTO_SOURCE_DOC)))
         .order_by(Question.created_at.asc())
     ).scalars()
-    return next((row for row in rows if _question_fingerprint(row.content) == fingerprint), None)
+    return next(
+        (row for row in rows if _question_fingerprint(row.content) == fingerprint), None
+    )
 
 
 def _archive_student_question(
@@ -104,9 +127,13 @@ def _archive_student_question(
     content = str(analysis.get("question_text") or "").strip()
     question_row = _find_student_question(db, content)
     knowledge = str(analysis.get("knowledge") or "").strip()
-    kp_id = db.execute(
-        select(KnowledgePoint.id).where(KnowledgePoint.name == knowledge).limit(1)
-    ).scalar_one_or_none() if knowledge else None
+    kp_id = (
+        db.execute(
+            select(KnowledgePoint.id).where(KnowledgePoint.name == knowledge).limit(1)
+        ).scalar_one_or_none()
+        if knowledge
+        else None
+    )
 
     if question_row is None:
         question_row = Question(
@@ -132,7 +159,9 @@ def _archive_student_question(
         question_row.kp_verified = False
         question_row.image_url = question_row.image_url or image_url
         question_row.kp_id = question_row.kp_id or kp_id
-        question_row.type_ = question_row.type_ or str(analysis.get("type") or "").strip() or None
+        question_row.type_ = (
+            question_row.type_ or str(analysis.get("type") or "").strip() or None
+        )
 
     answer_row = db.execute(
         select(Answer).where(Answer.question_id == question_row.id)
@@ -140,16 +169,22 @@ def _archive_student_question(
     if answer_row is None:
         answer_row = Answer(question_id=question_row.id)
         db.add(answer_row)
-    answer_row.correct_answer = answer_row.correct_answer or str(
-        analysis.get("correct_answer") or ""
-    ).strip() or None
-    answer_row.analysis = answer_row.analysis or str(analysis.get("solution") or "").strip() or None
+    answer_row.correct_answer = (
+        answer_row.correct_answer
+        or str(analysis.get("correct_answer") or "").strip()
+        or None
+    )
+    answer_row.analysis = (
+        answer_row.analysis or str(analysis.get("solution") or "").strip() or None
+    )
 
     existing_mistake = db.execute(
-        select(Mistake.id).where(
+        select(Mistake.id)
+        .where(
             Mistake.student_id == student_id,
             Mistake.question_id == question_row.id,
-        ).limit(1)
+        )
+        .limit(1)
     ).scalar_one_or_none()
     if existing_mistake is None:
         db.add(
@@ -178,7 +213,9 @@ def _to_uuid(raw: Any, field: str) -> uuid.UUID:
 def _get_session(session_id: Any, db: Session) -> AiSession:
     """按 ID 取会话，不存在抛 400。"""
     sid = _to_uuid(session_id, "session_id")
-    session = db.execute(select(AiSession).where(AiSession.id == sid)).scalar_one_or_none()
+    session = db.execute(
+        select(AiSession).where(AiSession.id == sid)
+    ).scalar_one_or_none()
     if session is None:
         raise ApiError(CODE_BAD_REQUEST, "会话不存在")
     return session
@@ -255,7 +292,80 @@ def start_session(
             ),
         }
     ]
-    first_question = tutor.next_question(session_messages=history, state=SESSION_STATE_INTRO)
+    first_question = tutor.next_question(
+        session_messages=history, state=SESSION_STATE_INTRO
+    )
+
+    db.add(
+        AiMessage(
+            session_id=session.id,
+            role="assistant",
+            content=f"{ANALYSIS_PREFIX}{json.dumps(public_analysis, ensure_ascii=False)}",
+        )
+    )
+    db.add(AiMessage(session_id=session.id, role="assistant", content=first_question))
+    # T04B 状态机：首问后即进入引导阶段，记为第 1 步
+    session.session_state = SESSION_STATE_GUIDING
+    session.step = 1
+    session.state_updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return {
+        "session_id": str(session.id),
+        "analysis": public_analysis,
+        "first_question": first_question,
+    }
+
+
+async def start_session_async(
+    *,
+    student_id: Any,
+    image_b64: Optional[str],
+    text: Optional[str],
+    image_key: Optional[str] = None,
+    db: Session,
+) -> Dict[str, Any]:
+    """``start_session`` 的异步版：读写题分析用 async Agent，不阻塞事件循环。
+
+    Args、Returns、Raises 与 ``start_session`` 完全一致（DB 写操作为了保持与同步
+    版共享 Session 语义，仍是同步调用；耗尽时间集中在网络 I/O，已被异步化）。
+    """
+    sid = _to_uuid(student_id, "student_id")
+    check_ai_quota(sid, db)
+
+    analysis = await question.analyze_question_async(text=text, image_b64=image_b64)
+
+    source_image_url = _file_url(image_key)
+    source_question = _archive_student_question(
+        student_id=sid,
+        analysis=analysis,
+        image_url=source_image_url,
+        db=db,
+    )
+    source_question_id = source_question.id
+    public_analysis = {
+        key: value
+        for key, value in analysis.items()
+        if key not in {"correct_answer", "solution"}
+    }
+
+    session = AiSession(student_id=sid, question_id=source_question_id, status="active")
+    session.session_state = SESSION_STATE_INTRO  # T04B 状态机：开场
+    db.add(session)
+    db.flush()  # 拿到 session.id，供两条消息挂载
+
+    history = [
+        {
+            "role": "assistant",
+            "content": (
+                f"我先看了一下，这道题主要考：{analysis.get('knowledge')}，"
+                f"难度约 {analysis.get('difficulty')}。"
+            ),
+        }
+    ]
+    first_question = await tutor.next_question_async(
+        session_messages=history, state=SESSION_STATE_INTRO
+    )
 
     db.add(
         AiMessage(
@@ -330,10 +440,18 @@ def continue_session(
         detected.matched or "-",
     )
 
+    # 方向八：从开场分析结论回捞错因 → 透传给引导层注入「诊断式追问」话术。
+    # （此前 analysis 里的 error 只用于出题与画像，引导轮从未用到——诊断链断点已补）
+    raw_error = str(
+        (_pick_analysis(_load_messages(session.id, db)).get("error") or "")
+    ).strip()
+    error_type = normalize_error(raw_error) if raw_error else None
+
     reply = tutor.next_question(
         session_messages=history + [{"role": "user", "content": content}],
         state=state,
         mode=active_mode,
+        error_type=error_type,
     )
 
     # #67→生产流：DEMO 讲解过质量闸门（低于阈值自动重讲一次），默认关闭需显式开启
@@ -353,6 +471,111 @@ def continue_session(
     if state == SESSION_STATE_INTRO:
         session.session_state = SESSION_STATE_GUIDING
     session.state_updated_at = datetime.now(timezone.utc)
+
+    # DNA-004 埋点（旁路不拖垮主流程）：HINT=学生要提示，DEMO=讲解复习
+    if active_mode == MODE_HINT:
+        _emit_chat_dna_event(
+            db,
+            student_id=session.student_id,
+            event_type="HINT",
+            meta={"session_id": str(session.id), "step": step + 1},
+        )
+    elif active_mode == MODE_DEMO:
+        _emit_chat_dna_event(
+            db,
+            student_id=session.student_id,
+            event_type="REVIEW",
+            meta={"session_id": str(session.id), "step": step + 1, "mode": "DEMO"},
+        )
+    db.commit()
+
+    # D3-a：讲解只讲这一轮，讲完立刻回到引导，避免"一路讲到底"
+    next_mode = MODE_GUIDE if active_mode == MODE_DEMO else active_mode
+
+    return {"reply": reply, "mode": active_mode, "next_mode": next_mode}
+
+
+async def continue_session_async(
+    *,
+    session_id: Any,
+    user_text: str,
+    mode: Optional[str] = None,
+    db: Session,
+) -> Dict[str, Any]:
+    """``continue_session`` 的异步版：await async tutor / 质量闸门。
+
+    Args、Returns、Raises 与 ``continue_session`` 完全一致（DB 写操作仍是同步调用，
+    网络 I/O 已异步化）。
+    """
+    content = (user_text or "").strip()
+    if not content:
+        raise ApiError(CODE_BAD_REQUEST, "说点什么吧，比如你现在是怎么想的")
+
+    session = _get_session(session_id, db)
+    check_ai_quota(session.student_id, db)
+
+    history = _to_history(_load_messages(session.id, db))
+    state = session.session_state  # T04B 读回持久化的阶段
+    step = session.step
+
+    # T2 意图识别：override（前端快捷按钮）优先，其次按文本 + 历史自动判定
+    detected = intent.detect(text=content, history=history, state=state, override=mode)
+    active_mode = detected.mode
+    logger.info(
+        "intent session=%s mode=%s source=%s confidence=%.2f matched=%s",
+        session.id,
+        active_mode,
+        detected.source,
+        detected.confidence,
+        detected.matched or "-",
+    )
+
+    # 方向八：从开场分析结论回捞错因 → 透传给引导层注入「诊断式追问」话术
+    raw_error = str(
+        (_pick_analysis(_load_messages(session.id, db)).get("error") or "")
+    ).strip()
+    error_type = normalize_error(raw_error) if raw_error else None
+
+    reply = await tutor.next_question_async(
+        session_messages=history + [{"role": "user", "content": content}],
+        state=state,
+        mode=active_mode,
+        error_type=error_type,
+    )
+
+    # #67→生产流：DEMO 讲解过质量闸门（低于阈值自动重讲一次），默认关闭需显式开启
+    if active_mode == MODE_DEMO and settings.explanation_quality_gate_enabled:
+        reply = await _apply_demo_quality_gate_async(
+            db=db,
+            session=session,
+            student_text=content,
+            reply=reply,
+            threshold=settings.explanation_quality_gate_threshold,
+        )
+
+    db.add(AiMessage(session_id=session.id, role="user", content=content))
+    db.add(AiMessage(session_id=session.id, role="assistant", content=reply))
+    # T04B 状态机：步数 +1；开场首轮后即转入引导阶段
+    session.step = step + 1
+    if state == SESSION_STATE_INTRO:
+        session.session_state = SESSION_STATE_GUIDING
+    session.state_updated_at = datetime.now(timezone.utc)
+
+    # DNA-004 埋点（旁路不拖垮主流程）：HINT=学生要提示，DEMO=讲解复习
+    if active_mode == MODE_HINT:
+        _emit_chat_dna_event(
+            db,
+            student_id=session.student_id,
+            event_type="HINT",
+            meta={"session_id": str(session.id), "step": step + 1},
+        )
+    elif active_mode == MODE_DEMO:
+        _emit_chat_dna_event(
+            db,
+            student_id=session.student_id,
+            event_type="REVIEW",
+            meta={"session_id": str(session.id), "step": step + 1, "mode": "DEMO"},
+        )
     db.commit()
 
     # D3-a：讲解只讲这一轮，讲完立刻回到引导，避免"一路讲到底"
@@ -401,6 +624,45 @@ def _apply_demo_quality_gate(
         )
 
     final_text, _quality = explanation_quality.ensure_explanation_quality(
+        question=first_user,
+        student_attempt=student_text,
+        ai_explanation=reply,
+        error_type=error_type,
+        regenerate=_regenerate,
+        threshold=threshold,
+        max_retries=1,
+    )
+    return final_text
+
+
+async def _apply_demo_quality_gate_async(
+    *,
+    db: Session,
+    session: AiSession,
+    student_text: str,
+    reply: str,
+    threshold: int,
+) -> str:
+    """``_apply_demo_quality_gate`` 的异步版：评测与重讲均走 async Agent。
+
+    非阻塞语义与同步版一致：任何异常都回落到原讲解。
+    """
+    from app.services import explanation_quality
+
+    messages = _load_messages(session.id, db)
+    history = _to_history(messages)
+    first_user = next((m["content"] for m in history if m["role"] == "user"), "")
+    analysis = _pick_analysis(messages)
+    error_type = str(analysis.get("error") or "").strip() or None
+
+    async def _regenerate() -> str:
+        return await tutor.next_question_async(
+            session_messages=history + [{"role": "user", "content": student_text}],
+            state=session.session_state,
+            mode=MODE_DEMO,
+        )
+
+    final_text, _quality = await explanation_quality.ensure_explanation_quality_async(
         question=first_user,
         student_attempt=student_text,
         ai_explanation=reply,
@@ -521,10 +783,91 @@ def generate_exercise(*, session_id: Any, db: Session) -> Dict[str, Any]:
     }
 
 
+async def generate_exercise_async(*, session_id: Any, db: Session) -> Dict[str, Any]:
+    """``generate_exercise`` 的异步版：await ``exercise.gen_exercises_async``。
+
+    Args、Returns、Raises 与 ``generate_exercise`` 完全一致（DB 写操作仍是同步调用）。
+    """
+    # 分层纪律：``app.services`` 依赖 ``app.ai``（见 practice_service），反向不许在模块级
+    # 依赖，否则 ai_exercise_service ← → orchestrator 形成 import 环。故此处延迟导入。
+    from app.services import ai_exercise_service
+
+    session = _get_session(session_id, db)
+    messages = _load_messages(session.id, db)
+
+    analysis = _pick_analysis(messages)
+    kp = str(analysis.get("knowledge") or "").strip() or DEFAULT_KP
+    error_type = str(analysis.get("error") or "").strip() or DEFAULT_ERROR_TYPE
+    try:
+        difficulty = int(float(str(analysis.get("difficulty")).strip()))
+    except (TypeError, ValueError):
+        difficulty = DEFAULT_DIFFICULTY
+
+    # ★ T1 定向推题：先算薄弱画像（纯本地 SQL，零外网），再把 Top-2 弱项注入出题提示词。
+    # 弱项为空（source=fallback）时 weak_context=""，走现有出题行为；kp 仍锚定当前错题。
+    weak = ai_exercise_service.get_weak_profile(db, student_id=session.student_id)
+    weak_context = ""
+    if weak["source"] == "profile" and weak["weak_tags"]:
+        labels = "、".join(tag["label"] for tag in weak["weak_tags"])
+        weak_context = (
+            f"【定向推题】该学生历史上反复出错的薄弱错因是：{labels}。"
+            f"请在保持薄弱知识点「{kp}」不变的前提下，让这两道练习题的变式"
+            f"专门去反复练习和踩这些薄弱错因的坑，帮他把易错点练扎实。"
+        )
+
+    exercises = await exercise.gen_exercises_async(
+        error_type=error_type,  # 仍锚定当前错题的 drill 目标
+        kp=kp,  # 知识点锚定当前错题，主题不跑偏
+        difficulty=difficulty,
+        context=weak_context,  # ★ 弱项 Top-2 注入点（为空即不注入，走现有行为）
+    )
+
+    # D1 落库：拿到与 exercises 等长的 question_id 列表（失败位置为 None）
+    question_ids = ai_exercise_service.persist_exercises(
+        db,
+        session=session,
+        exercises=exercises,
+        student_id=session.student_id,
+    )
+    for item, qid in zip(exercises, question_ids):
+        item["question_id"] = str(qid) if qid else None
+
+    meta = [
+        {
+            "question_id": item.get("question_id"),
+            "role": item.get("role"),
+            "tag": item.get("tag"),
+            "type": item.get("type"),
+        }
+        for item in exercises
+    ]
+    db.add(
+        AiMessage(
+            session_id=session.id,
+            role="assistant",
+            content=f"{EXERCISE_PREFIX}{json.dumps(meta, ensure_ascii=False)}",
+        )
+    )
+
+    # T04B 状态机：已出题进入练习阶段
+    session.session_state = SESSION_STATE_PRACTICING
+    session.summary_text = None
+    session.state_updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {
+        "exercises": exercises,
+        "weak_tags": weak["weak_tags"],
+        "weak_source": weak["source"],
+    }
+
+
 __all__ = [
     "start_session",
+    "start_session_async",
     "continue_session",
+    "continue_session_async",
     "generate_exercise",
+    "generate_exercise_async",
     "ANALYSIS_PREFIX",
     "EXERCISE_PREFIX",
     "EXERCISE_GUIDE_PREFIX",

@@ -23,7 +23,7 @@ from app.ai.prompts import ocr as ocr_prompt
 from app.ai.prompts import summary as summary_prompt
 from app.models.ai import AiMessage, AiSession
 
-#: ``ark_respond`` 的全部引用点，一个都不能漏
+#: ``ark_respond`` 的全部同步引用点，一个都不能漏
 ARK_PATCH_TARGETS = (
     "app.ai.ark_client.ark_respond",  # 定义处（任务书指定）
     "app.ai.ark_respond",  # 包级 re-export
@@ -33,6 +33,17 @@ ARK_PATCH_TARGETS = (
     "app.ai.answer_guard.ark_respond",  # T04B 输出检查器（tutor 经此调用方舟）
     "app.api.file.ark_respond",
     "app.services.explanation_quality.ark_respond",  # #67 讲解质量评测裁判
+)
+
+#: ``ark_respond_async`` 的全部引用点（与同步版一一对应，缺一个离线测试就会真调方舟）
+ARK_PATCH_TARGETS_ASYNC = (
+    "app.ai.ark_client.ark_respond_async",  # 定义处
+    "app.ai.ark_respond_async",  # 包级 re-export
+    "app.ai.agents.question.ark_respond_async",
+    "app.ai.agents.exercise.ark_respond_async",
+    "app.ai.answer_guard.ark_respond_async",
+    "app.api.file.ark_respond_async",
+    "app.services.explanation_quality.ark_respond_async",
 )
 
 #: 假 AI 默认给出的两道练习题
@@ -103,6 +114,19 @@ class FakeArk:
         )
         return self._reply(kind)
 
+    async def acall(
+        self,
+        *,
+        messages: List[Dict[str, Any]],
+        system: Optional[str] = None,
+        image_b64: Optional[str] = None,
+        timeout: float = 60.0,
+    ) -> str:
+        """``ark_respond_async`` 的假实现：语义与 ``__call__`` 完全一致，仅 awaitable。"""
+        return self.__call__(
+            messages=messages, system=system, image_b64=image_b64, timeout=timeout
+        )
+
     # ---------------------------------------------------------------- 内部
     @staticmethod
     def _last_content(messages: List[Dict[str, Any]]) -> str:
@@ -166,7 +190,10 @@ class FakeArk:
 
 
 def patch_ark(monkeypatch, fake: Optional[FakeArk] = None) -> FakeArk:
-    """把所有 ``ark_respond`` 引用点替换成假实现，测试结束由 monkeypatch 自动还原。
+    """替换**全部** ``ark_respond`` 与 ``ark_respond_async`` 引用点。
+
+    同步引用点塞 ``fake``（可调用对象），异步引用点塞 ``fake.acall``
+    （async 可调用）。测试结束由 monkeypatch 自动还原。
 
     Args:
         monkeypatch: pytest 的 monkeypatch 夹具。
@@ -178,6 +205,8 @@ def patch_ark(monkeypatch, fake: Optional[FakeArk] = None) -> FakeArk:
     ark = fake or FakeArk()
     for target in ARK_PATCH_TARGETS:
         monkeypatch.setattr(target, ark)
+    for target in ARK_PATCH_TARGETS_ASYNC:
+        monkeypatch.setattr(target, ark.acall)
     return ark
 
 
@@ -230,5 +259,6 @@ __all__ = [
     "count_sessions",
     "load_messages",
     "ARK_PATCH_TARGETS",
+    "ARK_PATCH_TARGETS_ASYNC",
     "DEFAULT_EXERCISES",
 ]

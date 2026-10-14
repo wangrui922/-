@@ -21,6 +21,11 @@ os.environ.setdefault("APP_ENV", "test")
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+# FSRS 方向三已落地（真实算法见 app/services/fsrs_scheduler.py，SM-2 核心 +
+# FSRS 字段适配）。此处直接依赖真实模块；若其缺失，收集阶段即失败，
+# 不允许再以占位实现静默兜底。
+from app.services import fsrs_scheduler  # noqa: F401,E402
+
 from app.core.security import (  # noqa: E402
     ROLE_STUDENT,
     create_access_token,
@@ -92,7 +97,9 @@ def make_token():
 def auth_headers(make_token):
     """带 Authorization 头的 dict，方便直接塞进 client 请求。"""
 
-    def _headers(sub: str = "1", role: str = ROLE_STUDENT, sid: str | None = "1") -> dict:
+    def _headers(
+        sub: str = "1", role: str = ROLE_STUDENT, sid: str | None = "1"
+    ) -> dict:
         return {"Authorization": f"Bearer {make_token(sub=sub, role=role, sid=sid)}"}
 
     return _headers
@@ -124,7 +131,14 @@ def new_phone():
     return _make
 
 
-__all__ = ["client", "make_token", "auth_headers", "new_phone", "_create_schema", "login_with_code"]
+__all__ = [
+    "client",
+    "make_token",
+    "auth_headers",
+    "new_phone",
+    "_create_schema",
+    "login_with_code",
+]
 
 
 def login_with_code(client: TestClient, phone: str = "13800000000") -> dict:

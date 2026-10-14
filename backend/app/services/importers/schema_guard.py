@@ -95,7 +95,9 @@ def ensure_bank_columns(engine: Engine, *, strict: bool = True) -> Dict[str, obj
     """
     columns = existing_columns(engine)
     if not columns:
-        raise SchemaGuardError("questions 表不存在，请先执行 Base.metadata.create_all() 或 001 迁移")
+        raise SchemaGuardError(
+            "questions 表不存在，请先执行 Base.metadata.create_all() 或 001 迁移"
+        )
 
     sqlite = _is_sqlite(engine)
     added: List[str] = []
@@ -113,7 +115,9 @@ def ensure_bank_columns(engine: Engine, *, strict: bool = True) -> Dict[str, obj
 
         # ---- 2. 补索引 -------------------------------------------------
         for index_name, definition in BANK_INDEXES:
-            conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {definition}"))
+            conn.execute(
+                text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {definition}")
+            )
 
     # ---- 3. V7 复查（独立连接，读到的是已提交状态）----------------------
     with engine.connect() as conn:
@@ -152,10 +156,15 @@ def ensure_bank_columns(engine: Engine, *, strict: bool = True) -> Dict[str, obj
             )
         backfilled = legacy_unverified
         logger.warning(
-            "[schema_guard] 已回填 %d 道存量题的 kp_verified=TRUE（非严格模式）", backfilled
+            "[schema_guard] 已回填 %d 道存量题的 kp_verified=TRUE（非严格模式）",
+            backfilled,
         )
 
-    return {"added": added, "backfilled": backfilled, "legacy_unverified": legacy_unverified}
+    return {
+        "added": added,
+        "backfilled": backfilled,
+        "legacy_unverified": legacy_unverified,
+    }
 
 
 def ensure_mistake_kp_column(engine: Engine) -> Dict[str, object]:
@@ -180,14 +189,18 @@ def ensure_mistake_kp_column(engine: Engine) -> Dict[str, object]:
     """
     columns = existing_columns(engine, table="mistakes")
     if not columns:
-        raise SchemaGuardError("mistakes 表不存在，请先执行 Base.metadata.create_all() 或 001 迁移")
+        raise SchemaGuardError(
+            "mistakes 表不存在，请先执行 Base.metadata.create_all() 或 001 迁移"
+        )
 
     if "kp_id" in columns:
         return {"added": False, "backfilled": 0}
 
     sqlite = _is_sqlite(engine)
-    col_ddl = "CHAR(36) REFERENCES knowledge_points(id) ON DELETE SET NULL" if sqlite else (
-        "UUID REFERENCES knowledge_points(id) ON DELETE SET NULL"
+    col_ddl = (
+        "CHAR(36) REFERENCES knowledge_points(id) ON DELETE SET NULL"
+        if sqlite
+        else ("UUID REFERENCES knowledge_points(id) ON DELETE SET NULL")
     )
 
     added = False
@@ -211,7 +224,9 @@ def ensure_mistake_kp_column(engine: Engine) -> Dict[str, object]:
             logger.warning("[schema_guard] 已回填 %d 条存量错题的 kp_id", backfilled)
 
         # 建索引
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mistakes_kp ON mistakes (kp_id)"))
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_mistakes_kp ON mistakes (kp_id)")
+        )
 
     return {"added": added, "backfilled": backfilled}
 
@@ -237,7 +252,9 @@ def ensure_source_tag_column(engine: Engine) -> Dict[str, object]:
     """
     columns = existing_columns(engine, table="questions")
     if not columns:
-        raise SchemaGuardError("questions 表不存在，请先执行 Base.metadata.create_all() 或 001 迁移")
+        raise SchemaGuardError(
+            "questions 表不存在，请先执行 Base.metadata.create_all() 或 001 迁移"
+        )
 
     if "source_tag" in columns:
         return {"added": False, "backfilled": 0, "red": 0, "green": 0}
@@ -271,7 +288,9 @@ def ensure_source_tag_column(engine: Engine) -> Dict[str, object]:
             )
 
         conn.execute(
-            text("CREATE INDEX IF NOT EXISTS idx_questions_source_tag ON questions (source_tag)")
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_questions_source_tag ON questions (source_tag)"
+            )
         )
 
     return {"added": added, "backfilled": backfilled, "red": red, "green": green}
@@ -299,7 +318,9 @@ def ensure_ship_ready_column(engine: Engine) -> Dict[str, object]:
     """
     columns = existing_columns(engine, table="questions")
     if not columns:
-        raise SchemaGuardError("questions 表不存在，请先执行 Base.metadata.create_all() 或 001 迁移")
+        raise SchemaGuardError(
+            "questions 表不存在，请先执行 Base.metadata.create_all() 或 001 迁移"
+        )
 
     if "ship_ready" in columns:
         return {"added": False, "backfilled": 0}
@@ -319,22 +340,119 @@ def ensure_ship_ready_column(engine: Engine) -> Dict[str, object]:
         backfilled = int(r.rowcount or 0)
         if backfilled:
             logger.warning(
-                "[schema_guard] 已回填 %d 道存量题的 ship_ready=1（默认可发布）", backfilled
+                "[schema_guard] 已回填 %d 道存量题的 ship_ready=1（默认可发布）",
+                backfilled,
             )
 
         conn.execute(
-            text("CREATE INDEX IF NOT EXISTS idx_questions_ship_ready ON questions (ship_ready)")
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_questions_ship_ready ON questions (ship_ready)"
+            )
         )
 
     return {"added": added, "backfilled": backfilled}
 
 
+#: V6.5(KG-001) 要保证存在的 9 列：``列名 -> (PG DDL 片段, SQLite DDL 片段)``
+KP_METADATA_COLUMNS: Tuple[Tuple[str, str, str], ...] = (
+    (
+        "subject",
+        "VARCHAR(16) NOT NULL DEFAULT 'math'",
+        "VARCHAR(16) NOT NULL DEFAULT 'math'",
+    ),
+    ("grade", "SMALLINT", "SMALLINT"),
+    ("semester", "VARCHAR(8)", "VARCHAR(8)"),
+    ("chapter", "VARCHAR(64)", "VARCHAR(64)"),
+    ("difficulty", "SMALLINT NOT NULL DEFAULT 3", "SMALLINT NOT NULL DEFAULT 3"),
+    ("importance", "SMALLINT NOT NULL DEFAULT 3", "SMALLINT NOT NULL DEFAULT 3"),
+    (
+        "status",
+        "VARCHAR(16) NOT NULL DEFAULT 'active'",
+        "VARCHAR(16) NOT NULL DEFAULT 'active'",
+    ),
+    (
+        "created_at",
+        "TIMESTAMPTZ NOT NULL DEFAULT now()",
+        # SQLite 的 ALTER TABLE ADD COLUMN 不允许非恒定默认值
+        # （CURRENT_TIMESTAMP），故建可空列、回填段统一补 datetime('now')
+        "DATETIME",
+    ),
+    (
+        "updated_at",
+        "TIMESTAMPTZ NOT NULL DEFAULT now()",
+        "DATETIME",
+    ),
+)
+
+
+def ensure_knowledge_point_metadata(engine: Engine) -> Dict[str, object]:
+    """保证 ``knowledge_points`` 表上 V6.5(KG-001) 的 7 列齐全。
+
+    与 014 迁移 SQL 的关系（沿用 :func:`ensure_bank_columns` 惯例）：
+        * PostgreSQL 走迁移文件（``014_kp_v65_metadata.sql``，IF NOT EXISTS）；
+        * SQLite 的 ``ADD COLUMN`` 不支持 ``IF NOT EXISTS``，靠本函数运行时探测兜底；
+        * 两套机制互不依赖，谁先跑都行，重复执行不报错；
+        * 已存在的列一律跳过，只补缺失列；补完后回填 subject/status 默认值。
+
+    Args:
+        engine: SQLAlchemy 引擎。
+
+    Returns:
+        ``{"added": [列名...], "backfilled": int}``。
+
+    Raises:
+        SchemaGuardError: ``knowledge_points`` 表不存在。
+    """
+    columns = existing_columns(engine, table="knowledge_points")
+    if not columns:
+        raise SchemaGuardError(
+            "knowledge_points 表不存在，请先执行 Base.metadata.create_all() 或 001 迁移"
+        )
+
+    sqlite = _is_sqlite(engine)
+    added: List[str] = []
+
+    with engine.begin() as conn:
+        for name, pg_ddl, sqlite_ddl in KP_METADATA_COLUMNS:
+            if name in columns:
+                continue
+            ddl = sqlite_ddl if sqlite else pg_ddl
+            conn.execute(text(f"ALTER TABLE knowledge_points ADD COLUMN {name} {ddl}"))
+            added.append(name)
+            logger.warning("[schema_guard] knowledge_points 表补充列: %s %s", name, ddl)
+
+        if added:
+            # 回填（与 ADD COLUMN 同事务）：存量知识点视为 math / active
+            conn.execute(
+                text(
+                    "UPDATE knowledge_points SET subject = 'math' WHERE subject IS NULL OR subject = ''"
+                )
+            )
+            conn.execute(
+                text(
+                    "UPDATE knowledge_points SET status = 'active' WHERE status IS NULL OR status = ''"
+                )
+            )
+            # SQLite 时间戳列无可空默认值，统一在此补值；PG 列自带 now()
+            # 默认且 NOT NULL，不会命中 NULL 条件
+            conn.execute(
+                text(
+                    "UPDATE knowledge_points SET created_at = datetime('now'), "
+                    "updated_at = datetime('now') WHERE created_at IS NULL"
+                )
+            )
+
+    return {"added": added, "backfilled": len(added)}
+
+
 __all__ = [
     "BANK_COLUMNS",
     "BANK_INDEXES",
+    "KP_METADATA_COLUMNS",
     "existing_columns",
     "ensure_bank_columns",
     "ensure_mistake_kp_column",
     "ensure_source_tag_column",
     "ensure_ship_ready_column",
+    "ensure_knowledge_point_metadata",
 ]

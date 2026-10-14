@@ -8,6 +8,11 @@
 from __future__ import annotations
 
 from app.ai import prompts
-from app.ai.ark_client import ARK_ENDPOINT, ArkError, ark_respond
+from app.ai.ark_client import (
+    ARK_ENDPOINT,
+    ArkError,
+    ark_respond,
+    ark_respond_async,
+)
 
-__all__ = ["prompts", "ark_respond", "ArkError", "ARK_ENDPOINT"]
+__all__ = ["prompts", "ark_respond", "ark_respond_async", "ArkError", "ARK_ENDPOINT"]

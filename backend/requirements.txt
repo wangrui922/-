@@ -15,7 +15,12 @@ python-multipart==0.0.12
 httpx==0.27.*
 # 云端 TTS：读题/讲题更甜的「小云朵」小朋友嗓音（免 key、国内可达、不用翻墙）
 edge-tts==7.2.*
-APScheduler==3.10.*
+# 任务队列（AI 异步化 + 定时任务）
+celery[redis]==5.4.*
+redis==5.0.*
+
+# 定时任务（内置 APScheduler，保留向后兼容）
+apscheduler
 orjson==3.10.*
 pytest==8.3.*
 pytest-asyncio==0.24.*

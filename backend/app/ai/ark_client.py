@@ -206,6 +206,104 @@ def _build_input(
     return items
 
 
+def _build_payload(
+    api_key: str,
+    model: str,
+    messages: List[Dict[str, Any]],
+    system: Optional[str],
+    image_b64: Optional[str],
+) -> tuple[Dict[str, Any], Dict[str, str]]:
+    """构造请求体与请求头（同步 / 异步两条调用链共用，保证行为不漂移）。
+
+    Args:
+        api_key: 方舟 API Key（已校验非空）。
+        model: 模型名（已校验非空）。
+        messages: 对话消息列表。
+        system: 系统提示词，可为空。
+        image_b64: 图片 base64，可为空。
+
+    Returns:
+        ``(payload, headers)`` 二元组。
+    """
+    payload: Dict[str, Any] = {
+        "model": model,
+        "input": _build_input(messages, system, image_b64),
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+    return payload, headers
+
+
+async def ark_respond_async(
+    *,
+    messages: List[Dict[str, Any]],
+    system: Optional[str] = None,
+    image_b64: Optional[str] = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str:
+    """调用方舟 Responses API（**异步版**，基于 ``httpx.AsyncClient``）。
+
+    与 ``ark_respond`` 完全等价：同样的端点、请求体、超时、重试与错误语义，
+    只是不阻塞事件循环——API 层 async 路由直接 ``await`` 即可，无需再套
+    ``run_in_threadpool``。
+
+    Args:
+        messages: 对话消息列表，元素形如 ``{"role": "user"|"assistant", "content": "文本"}``。
+        system: 系统提示词（通常来自 ``app.ai.prompts.*`` 的 ``PROMPT``），可为空。
+        image_b64: 图片 base64 或 data URL，非空时挂到最后一条 user 消息上，可为空。
+        timeout: 单次请求超时（秒），默认 60。
+
+    Returns:
+        模型输出文本（已 strip）。
+
+    Raises:
+        ArkError: Key 未配置、参数非法、网络/超时失败、上游非 2xx、响应结构异常。
+    """
+    api_key = (settings.ark_api_key or "").strip()
+    if not api_key:
+        raise ArkError("ARK_API_KEY 未配置")
+
+    # 模型名一律读配置（环境变量 ARK_MODEL），代码里不留硬编码
+    model = (settings.ark_model or "").strip()
+    if not model:
+        raise ArkError("ARK_MODEL 未配置")
+
+    payload, headers = _build_payload(api_key, model, messages, system, image_b64)
+
+    last_error: str = "未知错误"
+    total_attempts = MAX_RETRY + 1
+
+    for attempt in range(1, total_attempts + 1):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(ARK_ENDPOINT, json=payload, headers=headers)
+
+            if response.status_code >= 400:
+                snippet = response.text[:200] if response.text else ""
+                last_error = f"方舟返回 {response.status_code} {snippet}"
+                # 4xx 属于请求本身的问题（鉴权/参数），重试无意义，直接失败
+                if response.status_code < 500 and response.status_code != 429:
+                    raise ArkError(last_error)
+                logger.warning("方舟调用失败（第 %s/%s 次）：%s", attempt, total_attempts, last_error)
+            else:
+                try:
+                    data = response.json()
+                except ValueError as exc:  # 非 JSON 响应
+                    raise ArkError(f"方舟返回非 JSON 内容：{exc}") from exc
+                return _extract_text(data)
+
+        except httpx.TimeoutException as exc:
+            last_error = f"方舟请求超时（{timeout:.0f}s）：{exc}"
+            logger.warning("方舟调用超时（第 %s/%s 次）", attempt, total_attempts)
+        except httpx.HTTPError as exc:
+            last_error = f"方舟连接失败：{exc}"
+            logger.warning("方舟连接失败（第 %s/%s 次）：%s", attempt, total_attempts, exc)
+
+    raise ArkError(last_error)
+
+
 def _extract_text(data: Any) -> str:
     """从 Responses API 返回体中抽取纯文本。
 
@@ -254,7 +352,7 @@ def ark_respond(
     messages: List[Dict[str, Any]],
     system: Optional[str] = None,
     image_b64: Optional[str] = None,
-    timeout: Optional[float] = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> str:
     """调用方舟 Responses API，返回模型输出的纯文本。
 
@@ -262,7 +360,7 @@ def ark_respond(
         messages: 对话消息列表，元素形如 ``{"role": "user"|"assistant", "content": "文本"}``。
         system: 系统提示词（通常来自 ``app.ai.prompts.*`` 的 ``PROMPT``），可为空。
         image_b64: 图片 base64 或 data URL，非空时挂到最后一条 user 消息上，可为空。
-        timeout: 单次请求超时（秒）；未传入时读取 ``ARK_TIMEOUT_SEC``，默认 60。
+        timeout: 单次请求超时（秒），默认 60。
 
     Returns:
         模型输出文本（已 strip）。
@@ -279,25 +377,14 @@ def ark_respond(
     if not model:
         raise ArkError("ARK_MODEL 未配置")
 
-    effective_timeout = float(timeout if timeout is not None else (settings.ark_timeout_sec or DEFAULT_TIMEOUT))
-    if effective_timeout <= 0:
-        effective_timeout = DEFAULT_TIMEOUT
-
-    payload: Dict[str, Any] = {
-        "model": model,
-        "input": _build_input(messages, system, image_b64),
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-    }
+    payload, headers = _build_payload(api_key, model, messages, system, image_b64)
 
     last_error: str = "未知错误"
     total_attempts = MAX_RETRY + 1
 
     for attempt in range(1, total_attempts + 1):
         try:
-            with httpx.Client(timeout=effective_timeout) as client:
+            with httpx.Client(timeout=timeout) as client:
                 response = client.post(ARK_ENDPOINT, json=payload, headers=headers)
 
             if response.status_code >= 400:
@@ -315,11 +402,8 @@ def ark_respond(
                 return _extract_text(data)
 
         except httpx.TimeoutException as exc:
-            last_error = f"方舟请求超时（{effective_timeout:.0f}s）：{exc}"
+            last_error = f"方舟请求超时（{timeout:.0f}s）：{exc}"
             logger.warning("方舟调用超时（第 %s/%s 次）", attempt, total_attempts)
-            # 超时通常意味着上游已经处理了请求；再次发送会增加等待时间，
-            # 也可能造成同一轮老师回答被重复生成。短暂网络错误仍按原策略重试。
-            break
         except httpx.HTTPError as exc:
             last_error = f"方舟连接失败：{exc}"
             logger.warning("方舟连接失败（第 %s/%s 次）：%s", attempt, total_attempts, exc)
@@ -329,6 +413,7 @@ def ark_respond(
 
 __all__ = [
     "ark_respond",
+    "ark_respond_async",
     "ArkError",
     "ARK_ENDPOINT",
     "DEFAULT_TIMEOUT",

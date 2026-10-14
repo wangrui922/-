@@ -2061,3 +2061,2370 @@
 - 导出 CSV：（已跳过 dry-run）
 - 内置关键词数：16
 
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-11 14:57
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-11 14:57
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-11 14:57
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-11 15:26
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-11 15:26
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-11 15:26
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-09-11T15:34:10.311840+00:00
+- 模式：dry-run
+- 扫描：active 选择题 1351 道
+- 命中归档：269 道
+- 期望核对：未设（跳过熔断）
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：（未写出）
+
+## N0.2 · 全库残缺选择题批量归档
+
+- 脚本：scripts/data_cleanup/20260812_archive_residual_choices.py
+- 时间：2026-09-11T15:34:22.935797+00:00
+- 模式：实际执行
+- 扫描：active 选择题 1351 道
+- 命中归档：269 道
+- 期望核对：--expect 269
+- 跳过的已补D id：N/A（dry-run）
+- 备份表：questions_removed_backup_20260812（reason=residual_choice_missing_abcd）
+- CSV：C:\Users\ADMINI~1\AppData\Local\Temp\residual-choice-removed-20260812.csv
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-11 15:35
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-11 15:35
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-11 15:35
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-11 15:37
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-11 15:37
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-11 15:37
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-11 15:38
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-11 15:38
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-11 15:38
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-11 15:40
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-11 15:41
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-11 15:41
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-11 15:42
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-11 15:42
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-11 15:42
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-11 15:44
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-11 15:44
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-11 15:44
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-12 02:33
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-12 02:34
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-12 02:34
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-12 02:34
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-12 02:34
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-12 02:35
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-12 02:35
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-12 02:35
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-12 02:35
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-12 02:36
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-12 02:36
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-12 02:36
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-12 02:38
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-12 02:39
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-12 02:39
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-12 02:55
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-12 02:55
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-12 02:55
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-22 14:33
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-22 14:33
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-22 14:34
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-22 14:35
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-22 14:35
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-22 14:35
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-22 14:36
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-22 14:36
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-22 14:36
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-09-22 14:37
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-09-22 14:37
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-09-22 14:37
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 03:37
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 03:37
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 03:37
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 06:45
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 06:45
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 06:45
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 06:45
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 06:45
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 06:45
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 07:39
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 07:39
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 07:39
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 07:40
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 07:41
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 07:41
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 07:41
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 07:41
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 07:41
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 07:42
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 07:42
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 07:42
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 07:43
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 07:43
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 07:43
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 08:34
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 08:34
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 08:34
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 08:40
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 08:40
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 08:40
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 08:49
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 08:49
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 08:49
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 15:47
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 15:47
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 15:47
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 15:47
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 15:47
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 15:47
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 15:48
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 15:48
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 15:48
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 15:48
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 15:48
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 15:48
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 15:48
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 15:48
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 15:48
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 15:49
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 15:49
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 15:49
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 15:49
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 15:49
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 15:49
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 15:49
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 15:49
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 15:50
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 15:50
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 15:50
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 15:50
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 15:50
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 15:50
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 15:50
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 16:06
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 16:06
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 16:06
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 16:06
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 16:06
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 16:06
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 16:07
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 16:07
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 16:07
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 16:07
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 16:07
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 16:07
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 16:38
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 16:38
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 16:38
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 16:38
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 16:38
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 16:38
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 16:38
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 16:38
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 16:38
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 16:39
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 16:39
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 16:39
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 16:39
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 16:39
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 16:39
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 16:40
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 16:40
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 16:40
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 16:40
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 16:40
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 16:40
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 17:13
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 17:13
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 17:13
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 17:14
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 17:14
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 17:14
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 17:25
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 17:25
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 17:25
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 17:26
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 17:26
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 17:26
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 17:27
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 17:27
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 17:27
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 17:54
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 17:54
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 17:54
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 17:55
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 17:55
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 17:55
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 17:56
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 17:56
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 17:56
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 17:57
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 17:57
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 17:57
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 17:57
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 17:57
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 17:57
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-01 18:06
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-01 18:06
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-01 18:06
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-05 01:19
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-05 01:19
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-05 01:19
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-05 01:20
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-05 01:20
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-05 01:20
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-05 01:21
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-05 01:21
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-05 01:21
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-05 01:50
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-05 01:50
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-05 01:50
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-05 01:52
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-05 01:52
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-05 01:52
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-05 01:52
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-05 01:52
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-05 01:52
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-05 02:05
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-05 02:05
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-05 02:05
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-05 02:05
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-05 02:05
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-05 02:05
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-05 02:06
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-05 02:06
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-05 02:06
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+
+## 阶段 A · 缺选项归档
+
+- 脚本：scripts/data_cleanup/20260811_archive_incomplete_options.py
+- 时间：2026-10-05 02:08
+- 备份表：questions_options_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：active 选择题 5 道
+- 命中归档：2 道
+- 不动字段：options 内容、correct_answer
+
+## 阶段 B · E2E 前缀剥离
+
+- 脚本：scripts/data_cleanup/20260811_strip_e2e_prefix.py
+- 时间：2026-10-05 02:08
+- 备份表：questions_content_backup_20260811（已跳过）
+- 模式：dry-run
+- 扫描：questions 全表 5 行
+- 命中剥离：2 行
+- 不动字段：correct_answer、options
+- 正则：^\s*E2E\s+ (re.IGNORECASE)
+
+## 阶段 C · KP 自动打标 + 人工标注导出
+
+- 脚本：scripts/data_cleanup/20260811_autotag_unmapped.py
+- 时间：2026-10-05 02:08
+- 模式：dry-run
+- active 无 kp 全库：3 题
+- 本轮候选扫描：3 题
+- 自动打标：0 题
+- 待人工标注：3 题
+- 导出 CSV：（已跳过 dry-run）
+- 内置关键词数：16
+

@@ -137,10 +137,14 @@ backend/scripts/_audit_*.py
 # ��˽����ػ���������־Ŀ¼��start_server.ps1 �Զ����ɣ�
 backend/logs/
 
-# 2026-09-02 仓库卫生补全
-# 数据库备份目录（本地旧库快照，不入库）
-backend/backups/
-# *.db* 通配兜底（覆盖 .db / .db-shm / .db-wal / .db.bak 等全部变体）
-*.db*
-# 根目录调试日志（部署/冒烟测试产生）
-_*.log
+# ---------- T01 回填补充：构建产物与工具产物 ----------
+student-web/dist.tar.gz
+student-web/dist.zip
+student-web/web-dist.zip
+student-web-dist/
+backend/.build/
+backend/.dumate/
+backend/dev.db.bak_*
+backend/dev.db.bakbefore*
+*.tar.gz
+*.zip

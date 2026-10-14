@@ -6,8 +6,8 @@
 
 硬约定：
     * 需要登录且 ``user.sid`` 非空；
-    * ``orchestrator`` / ``ai_exercise_service`` 的相关函数都是同步的且内含
-      方舟调用，一律用 ``run_in_threadpool`` 包裹；
+    * ``orchestrator`` / ``ai_exercise_service`` 的 ``*_async`` 版本均为**纯 async**
+      （内部 await async Agent），路由直接 ``await``，不再包 ``run_in_threadpool``；
     * 生成结果按 D1 落成 ``status='archived'`` + ``source_doc='ai_gen'`` 的归档题
       （**不会**进入题库抽题池），响应里回带 ``questionId``，供后续引导 / 判错入本
       挂外键；错题建档由 ``POST /api/exercise/judge`` 自动完成，前端无需再调
@@ -19,7 +19,6 @@ from __future__ import annotations
 from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends
-from fastapi.concurrency import run_in_threadpool
 from pydantic import Field
 from sqlalchemy.orm import Session
 
@@ -122,8 +121,7 @@ async def gen_exercise(
     """
     require_student_id(current.sid)
 
-    result = await run_in_threadpool(
-        orchestrator.generate_exercise,
+    result = await orchestrator.generate_exercise_async(
         session_id=to_uuid(body.session_id, "sessionId"),
         db=db,
     )
@@ -148,8 +146,7 @@ async def guide_exercise(
     """
     require_student_id(current.sid)
 
-    result = await run_in_threadpool(
-        ai_exercise_service.guide_exercise,
+    result = await ai_exercise_service.guide_exercise_async(
         db,
         student_id=current.sid,
         session_id=to_uuid(body.session_id, "sessionId"),
@@ -182,8 +179,7 @@ async def judge_exercise(
     if not body.final_confirmed:
         raise ApiError(CODE_BAD_REQUEST, "先确认这道题已经答完，再请老师判断最终答案")
 
-    result = await run_in_threadpool(
-        ai_exercise_service.judge_and_record,
+    result = await ai_exercise_service.judge_and_record_async(
         db,
         student_id=current.sid,
         session_id=to_uuid(body.session_id, "sessionId"),
@@ -207,8 +203,7 @@ async def summarize_exercise(
 ) -> dict:
     """两道相似题都最终判定后生成一次学习小结。"""
     require_student_id(current.sid)
-    result = await run_in_threadpool(
-        ai_exercise_service.generate_summary,
+    result = await ai_exercise_service.generate_summary_async(
         db,
         student_id=current.sid,
         session_id=to_uuid(body.session_id, "sessionId"),

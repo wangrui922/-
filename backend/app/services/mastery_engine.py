@@ -29,6 +29,7 @@ from typing import Dict, List, Mapping, Optional, Sequence
 from app.core.constants import (
     ERROR_EVIDENCE_LIMIT,
     MASTERY_CONFIDENCE_K,
+    MASTERY_GAP_THRESHOLD,
     MASTERY_HALF_LIFE_DAYS,
     MASTERY_LEVEL1_MIN,
     MASTERY_LEVEL2_MIN,
@@ -129,6 +130,54 @@ class Recommendation:
     error_rate: float
     top_error_category: Optional[str]
     suggested_question_ids: List[str] = field(default_factory=list)
+
+
+# ====================================================== 知识图谱传播（P0·Phase2）
+@dataclass(frozen=True)
+class PrerequisiteEdge:
+    """一条前置依赖边（GKT 图骨架）。
+
+    Attributes:
+        pre_kp_id: 前置知识点 ID（须先掌握）。
+        kp_id: 后置知识点 ID（依赖前置）。
+        weight: 依赖强度 0~1；>= ``MASTERY_GAP_MIN_HARD_WEIGHT`` 视为硬门槛。
+    """
+
+    pre_kp_id: str
+    kp_id: str
+    weight: float = 1.0
+
+
+@dataclass(frozen=True)
+class PrerequisiteGap:
+    """一条「前置知识点缺口」。
+
+    语义：学生在练（``kp_id`` 有练习数据）时，其前置知识点
+    （``pre_kp_id``）的掌握度低于缺口线 → 建议先补前置再练后置。
+
+    Attributes:
+        kp_id: 后置知识点 ID（正在练）。
+        kp_name: 后置知识点名称（调用方补齐，算法层可为空）。
+        kp_score: 后置知识点当前掌握度（0~1）。
+        kp_level: 后置知识点当前等级（0~3）。
+        pre_kp_id: 前置知识点 ID。
+        pre_kp_name: 前置知识点名称（调用方补齐）。
+        pre_score: 前置知识点当前掌握度；完全没练过视为 0。
+        pre_level: 前置知识点等级；没练过视为 0。
+        weight: 依赖强度 0~1（取自 ``knowledge_prerequisite``）。
+        missing: True 表示前置知识点完全没有练习数据。
+    """
+
+    kp_id: str
+    pre_kp_id: str
+    kp_name: str = ""
+    kp_score: float = 0.0
+    kp_level: int = 0
+    pre_kp_name: str = ""
+    pre_score: float = 0.0
+    pre_level: int = 0
+    weight: float = 1.0
+    missing: bool = False
 
 
 # ==================================================================== 时间工具
@@ -372,6 +421,111 @@ def top_error_category(error_counts: Mapping[str, int]) -> Optional[str]:
     return ranked[0][0] if ranked else None
 
 
+# ================================================== 图谱传播与缺口检测（P0·Phase2）
+def rollup_mastery(children: Sequence[MasteryResult]) -> MasteryResult:
+    """子知识点掌握度 → 父知识点（**有效样本量加权传播**）。
+
+    规则（GKT 图中父节点 = 子节点聚合）::
+
+        score   = Σ(子 score × 子 effective_attempts) / Σ(effective_attempts)
+        attempts / correct_count / effective_attempts = 直接求和
+        error_rate = 1 - Σcorrect / Σattempts   （按题量重算，不加权 error_rate）
+        level   = grade_level(聚合后的 score / eff / attempts)
+
+    设计取舍：
+        * 用 ``effective_attempts`` 做权重 = 「样本越多、越近期的子知识点
+          越有发言权」，避免 1 道题 100% 正确率的小样本拉高整个父节点；
+        * 所有子节点 ``effective_attempts`` 全为 0 时退化为算术平均（防御）；
+        * 父节点等级**不取子节点的众数/最大值**，而是用聚合分重新走
+          ``grade_level``，保证「父等级」与「父分数」口径一致。
+
+    Args:
+        children: 该父节点下全部**有练习数据**的子节点结果
+                  （attempts>0）；为空返回全零 ``MasteryResult``。
+
+    Returns:
+        聚合后的父节点掌握度。
+    """
+    raw = [r for r in children if r is not None and int(r.attempts) > 0]
+    if not raw:
+        return MasteryResult()
+
+    total_eff = sum(max(0.0, float(r.effective_attempts)) for r in raw)
+    total_attempts = sum(int(r.attempts) for r in raw)
+    total_correct = sum(int(r.correct_count) for r in raw)
+
+    if total_eff > 0.0:
+        score = sum(float(r.score) * max(0.0, float(r.effective_attempts)) for r in raw) / total_eff
+    else:  # pragma: no cover - eff>0 恒成立，仅防御
+        score = sum(float(r.score) for r in raw) / len(raw)
+
+    last_practiced: Optional[datetime] = None
+    for r in raw:
+        stamp = as_utc(r.last_practiced_at)
+        if stamp is not None and (last_practiced is None or stamp > last_practiced):
+            last_practiced = stamp
+
+    return MasteryResult(
+        score=round(min(1.0, max(0.0, score)), 4),
+        level=grade_level(score, total_eff, total_attempts),
+        attempts=total_attempts,
+        correct_count=total_correct,
+        error_rate=round(1.0 - total_correct / total_attempts, 4) if total_attempts else 0.0,
+        effective_attempts=round(total_eff, 4),
+        last_practiced_at=last_practiced,
+    )
+
+
+def detect_prerequisite_gaps(
+    mastery: Mapping[str, MasteryResult],
+    edges: Sequence[PrerequisiteEdge],
+    *,
+    threshold: float = MASTERY_GAP_THRESHOLD,
+) -> List[PrerequisiteGap]:
+    """前置知识点缺口检测（GKT 图上的「依赖未满足」）。
+
+    判定口径：
+        1. 只考察**后置已练过**的边（``mastery[kp_id].attempts > 0``）——
+           后置完全没学的不判缺口，避免把整张图全标红；
+        2. 前置掌握度 >= threshold → 不缺口；
+        3. 前置完全没练过 or 掌握度 < threshold → 缺口，
+           且 ``missing=True`` 表示「前置零样本」；
+        4. 边按 ``weight`` 降序、``pre_score`` 升序排序——
+           最强依赖、最严重的缺口排最前，方便抽题直接取前 N。
+
+    Args:
+        mastery: ``{kp_id(str): MasteryResult}``，本学生当前掌握度（L2 粒度）。
+        edges: 前置依赖边序列（仅需含 ``PrerequisiteEdge`` 三字段）。
+        threshold: 前置缺口线（默认 :data:`MASTERY_GAP_THRESHOLD`）。
+
+    Returns:
+        缺口列表（仅含后置有练习的边）；无缺口返回空列表。
+    """
+    gaps: List[PrerequisiteGap] = []
+    for edge in edges:
+        target = mastery.get(edge.kp_id)
+        if target is None or int(target.attempts) <= 0:
+            continue  # 后置没练过 → 不下缺口结论
+        pre = mastery.get(edge.pre_kp_id)
+        if pre is not None and float(pre.score) >= threshold:
+            continue  # 前置已达标
+        gaps.append(
+            PrerequisiteGap(
+                kp_id=edge.kp_id,
+                pre_kp_id=edge.pre_kp_id,
+                kp_score=float(target.score),
+                kp_level=int(target.level),
+                pre_score=float(pre.score) if pre is not None else 0.0,
+                pre_level=int(pre.level) if pre is not None else 0,
+                weight=float(edge.weight),
+                missing=pre is None or int(pre.attempts) <= 0,
+            )
+        )
+
+    gaps.sort(key=lambda gap: (-gap.weight, gap.pre_score, gap.kp_id))
+    return gaps
+
+
 # ==================================================================== 推荐排序
 def _build_reason(entry: MasteryEntry, category: Optional[str]) -> str:
     """按模板生成中文推荐理由（后端生成，前端直接展示）。
@@ -484,6 +638,8 @@ __all__ = [
     "ErrorPattern",
     "MasteryEntry",
     "Recommendation",
+    "PrerequisiteEdge",
+    "PrerequisiteGap",
     "as_utc",
     "decay_weight",
     "compute_mastery",
@@ -494,4 +650,6 @@ __all__ = [
     "top_error_category",
     "compute_priority",
     "rank_recommendations",
+    "rollup_mastery",
+    "detect_prerequisite_gaps",
 ]

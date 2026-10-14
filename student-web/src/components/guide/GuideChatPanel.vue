@@ -7,7 +7,7 @@
  * 前端这里不做任何「顺便展示答案」的旁路。
  *
  * 接口很慢（走大模型，超时 90s），所以：
- *   - loading 期间发送按钮禁用，并明确提示正在认真看题；
+ *   - loading 期间发送按钮禁用 + 文案变「老师正在想…」；
  *   - loading 期间不允许关抽屉误操作丢上下文（关闭按钮仍可用，对话会保留）。
  *
  * `askFinalConfirm` 为 true 时，老师在问「这是你的最终答案吗」，
@@ -308,7 +308,7 @@ function handleQuickAction(action: QuickAction): void {
 
         <div v-if="loading" class="flex justify-start">
           <div class="rounded-2xl bg-slate-100 px-4 py-3 text-base text-slate-500">
-            老师正在认真看题，请别重复点击
+            老师正在想…（这一步有点慢，稍等一下）
           </div>
         </div>
 

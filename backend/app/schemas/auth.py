@@ -49,6 +49,18 @@ class RegisterIn(BaseSchema):
     role: str = Field(default="student", description="student/parent")
 
 
+class AdminLoginIn(BaseSchema):
+    """``POST /api/auth/admin/login`` 入参（管理员专用）。
+
+    Attributes:
+        phone: 管理员手机号。
+        pin: 管理员个人密码（6 位以上，存取在 ``access_pin_hash``）。
+    """
+
+    phone: str = Field(..., min_length=1, max_length=20, description="管理员手机号")
+    pin: str = Field(..., min_length=6, max_length=64, description="管理员个人密码")
+
+
 class RefreshIn(BaseSchema):
     """``POST /api/auth/refresh`` 入参。
 

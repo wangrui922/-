@@ -705,7 +705,7 @@ function stripConfirm(text: string): string {
 function handleGuideSend(work: string): void {
   const idx = activeExerciseIdx.value
   const thread = threads.value[idx]
-  if (!thread || guideLoading.value) return
+  if (!thread) return
 
   const text = work.trim()
   if (thread.askFinalConfirm && text && FINAL_CONFIRM_RE.test(text)) {
@@ -744,7 +744,7 @@ async function handleGuideImage(file: File, dataUrl: string): Promise<void> {
 function handleGuideQuick(action: QuickAction, draft: string): void {
   const idx = activeExerciseIdx.value
   const thread = threads.value[idx]
-  if (!thread || guideLoading.value) return
+  if (!thread) return
 
   const typed = draft.trim()
   // 孩子写了一半再点「给点提示」：把他写的和诉求一起发过去，老师才接得住

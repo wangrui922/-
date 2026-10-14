@@ -27,6 +27,8 @@ from app.ai.intent import (  # mode 常量的唯一定义处，禁止在本文�
     MODE_JUDGE,
     normalize_mode,
 )
+from app.ai.prompts import mathdial  # 方向八：MathDial 诊断式话术库
+from app.core.error_categories import error_label, normalize_error
 
 #: 阶段枚举
 SESSION_STATE_INTRO = "intro"            # 刚开场，提出第一个引导问题
@@ -164,6 +166,74 @@ def is_strict_guard(state: str, *, mode: Optional[str] = None) -> bool:
     return state in (SESSION_STATE_INTRO, SESSION_STATE_GUIDING)
 
 
+# ==================================================================== 诊断式追问
+#: 方向八新增：按「响应模式 × 错因」挑选的**教学环节**（先诊断再教学）。
+#:
+#: * GUIDE / JUDGE → 诊断：先让孩子说出思路，定位卡点再干预；
+#: * HINT → 诊断 + 提示：快速确认卡点后，给一条贴着题目的方向性线索；
+#: * DEMO → 讲解：孩子已明确请讲，重点是把每一步「为什么」讲透，讲完回扣追问。
+#:
+#: JUDGE 虽属 UNGUARDED_MODES（可以说结果），但「先诊断」仍适用：先让孩子
+#: 确认「你是怎么想出来的」，避免他蒙对就当掌握。
+_MODE_TO_TACTIC: Dict[str, str] = {
+    MODE_GUIDE: mathdial.TACTIC_DIAGNOSE,
+    MODE_HINT: mathdial.TACTIC_HINT,
+    MODE_DEMO: mathdial.TACTIC_ELABORATE,
+    MODE_JUDGE: mathdial.TACTIC_DIAGNOSE,
+}
+
+
+def diagnostic_tactic_prompt(
+    mode: Optional[str],
+    *,
+    error_type: Optional[str] = None,
+) -> str:
+    """返回追加到 tutor 系统提示的**诊断式追问**后缀（方向八 · 先诊断再教学）。
+
+    这是 L2（状态机）→ L3（话术生成）的诊断注入点：把 MathDial 教学属性和
+    universal-diagnostic-tutor-skill 的「先诊断再教学」翻译成一段机器指令，
+    让模型的引导话术从「固定模板」升级为「先让孩子暴露思路，再按错因干预」。
+
+    Args:
+        mode: 本轮响应模式（``app.ai.intent.MODE_*``）。``None`` / 非法值
+            返回空串——调用方不追加任何诊断指令，行为与改造前完全一致。
+        error_type: 错因机器码（``app.core.error_categories`` 五码之一，
+            或中文标签等任意脏输入，本函数内部统一收敛）。``None`` / 收敛
+            失败时给通用诊断指令（不绑定具体错因）。
+
+    Returns:
+        诊断式追问指令文本；无需追加时为空串。
+
+    Examples:
+        >>> diagnostic_tactic_prompt(None)
+        ''
+        >>> diagnostic_tactic_prompt("nonsense")
+        ''
+        >>> diagnostic_tactic_prompt("GUIDE").startswith("【诊断式追问】")
+        True
+        >>> "读题错" in diagnostic_tactic_prompt("HINT", error_type="READ")
+        True
+    """
+    normalized = normalize_mode(mode)
+    if normalized is None:
+        return ""
+    tactic = _MODE_TO_TACTIC.get(normalized, mathdial.TACTIC_DIAGNOSE)
+
+    code = normalize_error(error_type)
+    label = error_label(code) if code else ""
+    lines = [
+        "【诊断式追问】" + mathdial.DIAGNOSE_FIRST_INSTRUCTION,
+    ]
+    if label and label != "其他":
+        lines.append(f"本轮错因（内部参考，不要念给孩子）：{label}。")
+    lines.append("本轮教学动作（" + mathdial.tactic_label(tactic) + "）：")
+    lines.append(mathdial.tactic_instruction(code, tactic))
+    phrase = mathdial.pick_phrase(code, tactic)
+    if phrase:
+        lines.append(f"参考问法（数字 / 情境必须换成当前题的真实对象）：「{phrase}」")
+    return "\n".join(lines)
+
+
 __all__ = [
     "SESSION_STATE_INTRO",
     "SESSION_STATE_GUIDING",
@@ -174,6 +244,7 @@ __all__ = [
     "state_prompt",
     "mode_prompt",
     "is_strict_guard",
+    "diagnostic_tactic_prompt",
     # 从 intent 转出，方便下游只 import 一个模块（真相源仍是 app.ai.intent）
     "MODE_GUIDE",
     "MODE_HINT",

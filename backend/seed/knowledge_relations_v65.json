@@ -1,0 +1,25 @@
+{
+  "version": "6.5.0",
+  "knowledgeRelations": [
+    {
+      "sourceCode": "KP_FRAC_MEANING",
+      "relationType": "prerequisite",
+      "targetCode": "KP_FRAC_ADD_SUB"
+    },
+    {
+      "sourceCode": "KP_FRAC_ADD_SUB",
+      "relationType": "prerequisite",
+      "targetCode": "KP_FRAC_WORD"
+    },
+    {
+      "sourceCode": "KP_FRAC_ADD_SUB",
+      "relationType": "related",
+      "targetCode": "KP_DEC_ADD_SUB"
+    },
+    {
+      "sourceCode": "KP_FRAC_ADD_SUB",
+      "relationType": "next",
+      "targetCode": "KP_FRAC_MUL_DIV"
+    }
+  ]
+}

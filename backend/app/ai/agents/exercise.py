@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 
 from app.ai.agents._json_utils import extract_json as _extract_json
 from app.ai.agents.question import DIFFICULTY_LEVELS, QUESTION_TYPES
-from app.ai.ark_client import ArkError, ark_respond
+from app.ai.ark_client import ArkError, ark_respond, ark_respond_async
 from app.ai.prompts import exercise as exercise_prompt
 
 #: 固定产出题目数（与 prompts.exercise.PRACTICE_COUNT 一致）
@@ -93,6 +93,26 @@ def _normalize_item(raw: Dict[str, Any], *, index: int, kp: str, difficulty: int
 }
 
 
+def _finalize_exercises(raw: str, *, knowledge: str, level: int) -> List[Dict[str, Any]]:
+    """把模型原始回复归一化成两题（同步 / 异步共用）。"""
+    items = [
+        _normalize_item(item, index=index, kp=knowledge, difficulty=level)
+        for index, item in enumerate(_as_items(_extract_json(raw)))
+    ]
+    items = [item for item in items if item["q"]]
+
+    if not items:
+        raise ArkError("AI 未生成有效练习题")
+
+    # 不足 2 道时复制补足，保证前端"修复+迁移"两栏永远有内容
+    while len(items) < PRACTICE_COUNT:
+        clone = dict(items[-1])
+        clone["role"] = ROLE_VALUES[min(len(items), len(ROLE_VALUES) - 1)]
+        items.append(clone)
+
+    return items[:PRACTICE_COUNT]
+
+
 def gen_exercises(*, error_type: str, kp: str, difficulty: int, context: str = "") -> List[Dict[str, Any]]:
     """生成两道针对性练习题。
 
@@ -125,22 +145,37 @@ def gen_exercises(*, error_type: str, kp: str, difficulty: int, context: str = "
         system=exercise_prompt.PROMPT,
     )
 
-    items = [
-        _normalize_item(item, index=index, kp=knowledge, difficulty=level)
-        for index, item in enumerate(_as_items(_extract_json(raw)))
-    ]
-    items = [item for item in items if item["q"]]
-
-    if not items:
-        raise ArkError("AI 未生成有效练习题")
-
-    # 不足 2 道时复制补足，保证前端"修复+迁移"两栏永远有内容
-    while len(items) < PRACTICE_COUNT:
-        clone = dict(items[-1])
-        clone["role"] = ROLE_VALUES[min(len(items), len(ROLE_VALUES) - 1)]
-        items.append(clone)
-
-    return items[:PRACTICE_COUNT]
+    return _finalize_exercises(raw, knowledge=knowledge, level=level)
 
 
-__all__ = ["gen_exercises", "PRACTICE_COUNT", "ROLE_VALUES"]
+async def gen_exercises_async(*, error_type: str, kp: str, difficulty: int, context: str = "") -> List[Dict[str, Any]]:
+    """``gen_exercises`` 的异步版：await ``ark_respond_async``，不阻塞事件循环。
+
+    Args:
+        与 ``gen_exercises`` 完全相同。
+
+    Returns:
+        与 ``gen_exercises`` 相同。
+
+    Raises:
+        ArkError: 方舟调用失败、返回无法解析为 JSON，或一道有效题都没解析出来。
+    """
+    knowledge = str(kp or "").strip() or "综合"
+    level = _normalize_difficulty(difficulty, DEFAULT_DIFFICULTY)
+
+    user_content = _USER_TEMPLATE.format(
+        error_type=str(error_type or "").strip() or "未知",
+        kp=knowledge,
+        difficulty=level,
+        context=(context or "").strip(),
+    )
+
+    raw = await ark_respond_async(
+        messages=[{"role": "user", "content": user_content}],
+        system=exercise_prompt.PROMPT,
+    )
+
+    return _finalize_exercises(raw, knowledge=knowledge, level=level)
+
+
+__all__ = ["gen_exercises", "gen_exercises_async", "PRACTICE_COUNT", "ROLE_VALUES"]

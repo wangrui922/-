@@ -1,0 +1,15 @@
+{
+  "generated_at": "2026-09-22T14:33:05+00:00",
+  "scope": "tutor-diagnostic-v1",
+  "offline": {
+    "passed": true,
+    "problems": []
+  },
+  "online": {
+    "cases": 0,
+    "leak_free": 0,
+    "followup": 0,
+    "ok": 0,
+    "details": []
+  }
+}

@@ -67,22 +67,19 @@ from app.models.content import (
     Question,
 )
 from app.models.learning import Attempt, LearningTask, Mistake
-from app.services import judge_engine, learning_service, profile_service
+from app.services import (
+    adaptive_service,
+    judge_engine,
+    learning_service,
+    profile_service,
+    review_service,
+)
 from app.services.judge_engine import JudgeOutcome
+from app.services.student_dna_service import record_learning_event
 from app.services.kp_tree import load_kp_tree
 from app.services.learning_service import clamp_duration, to_uuid
 
 logger = logging.getLogger("app.services.practice")
-
-# 题干明确依赖配图时，缺少图片的题目无法让学生作答，不能进入练习池。
-IMAGE_REQUIRED_RE = re.compile(
-    r"如图所示|如图|如下图|下图|图中所示|图中是|图中|看图|读图|右图|左图|上图|涂色部分|示意图|图示"
-)
-
-
-def _requires_question_image(content: Optional[str]) -> bool:
-    """判断题干是否明确要求学生参考图片。"""
-    return bool(IMAGE_REQUIRED_RE.search(content or ""))
 
 # ------------------------------------------------------------------ 常量
 #: 练习会话在 ``learning_tasks`` 里的 task_type。
@@ -137,6 +134,40 @@ RELAXATION_LABELS: Dict[int, str] = {
 HUMAN_ERROR_TEXT_LIMIT: int = 100
 
 
+def _emit_dna_event(
+    db: Session,
+    *,
+    student_id: uuid.UUID,
+    event_type: str,
+    question_id: Optional[uuid.UUID] = None,
+    knowledge_point_id: Optional[uuid.UUID] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> None:
+    """DNA-004 行为事件埋点（Sprint 2 T2）。
+
+    ⚠️ 埋点是**旁路**：任何异常（含事件枚举/落库失败）只记日志，绝不
+    拖垮判分主流程。本函数内部 ``commit``（与 ``_patch_item`` 同风格），
+    调用方拿到结果时事件已独立落库。
+    """
+    try:
+        record_learning_event(
+            db,
+            student_id=student_id,
+            event_type=event_type,
+            question_id=question_id,
+            knowledge_point_id=knowledge_point_id,
+            meta=meta,
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 - 埋点失败不影响主流程
+        logger.warning(
+            "DNA 事件埋点失败 event=%s question=%s",
+            event_type,
+            question_id,
+            exc_info=True,
+        )
+
+
 # ================================================================== 内部工具
 def _clean(value: Any) -> str:
     """任意值 → 去首尾空白的字符串。"""
@@ -154,7 +185,9 @@ def _clamp_count(count: Optional[int]) -> int:
     return max(MIN_COUNT, min(value, MAX_COUNT))
 
 
-def _recent_question_ids(db: Session, student_id: uuid.UUID, days: int = RECENT_DAYS) -> List[uuid.UUID]:
+def _recent_question_ids(
+    db: Session, student_id: uuid.UUID, days: int = RECENT_DAYS
+) -> List[uuid.UUID]:
     """取该学生最近 ``days`` 天做过的题目 ID（抽题时回避）。
 
     C1：时间边界在 Python 侧算好再下发参数，SQL 里不出现任何日期函数。
@@ -202,7 +235,7 @@ def _candidate_rows(
        ``judge_engine.SUPPORTED_TYPES`` 内 + 标准答案非空，外加调用方的
        年级/版本/分区/知识点/难度/回避集等业务筛选；
     2. **Python 复核**：取回后逐行过 ``is_l1_safe()``，踢掉复合多小问
-       （铁律 C2）、「选择题却没有可用选项」的脏题，以及题干要求看图但图片缺失的题。
+       （铁律 C2）与「选择题却没有可用选项」的脏题。
 
     为什么复核放 Python 层：``options`` 是 JSON 列、复合题判据要正则数
     ``(n)`` 编号，这两件事用 SQL 表达在 PostgreSQL / SQLite 双方言下都不可靠
@@ -233,8 +266,6 @@ def _candidate_rows(
             Question.kp_verified,
             Question.type_,
             Question.options,
-            Question.content,
-            Question.image_url,
             Answer.correct_answer,
         )
         .join(Answer, Answer.question_id == Question.id)
@@ -270,9 +301,9 @@ def _candidate_rows(
         stmt = stmt.where(Question.id.notin_(list(exclude_ids)))
 
     rows: List[Tuple[uuid.UUID, Optional[uuid.UUID], bool]] = []
-    for qid, question_kp_id, kp_verified, type_, options, content, image_url, correct_answer in db.execute(stmt).all():
-        if _requires_question_image(content) and not (image_url or "").strip():
-            continue
+    for qid, question_kp_id, kp_verified, type_, options, correct_answer in db.execute(
+        stmt
+    ).all():
         if not judge_engine.is_l1_safe(type_, options, correct_answer):
             continue
         rows.append((qid, question_kp_id, bool(kp_verified)))
@@ -319,7 +350,9 @@ def _question_payload(question: Question) -> Dict[str, Any]:
         "question_id": str(question.id),
         "type": question.type_ or "",
         "stem": question.content or "",
-        "options": [item.to_dict() for item in judge_engine.normalize_options(question.options)],
+        "options": [
+            item.to_dict() for item in judge_engine.normalize_options(question.options)
+        ],
         "options_status": _options_status(question.type_, question.options),
         "difficulty": question.difficulty,
         "grade": question.grade,
@@ -354,7 +387,9 @@ def _normalize_items(raw: Any) -> List[Dict[str, Any]]:
     return items
 
 
-def _load_session(db: Session, *, student_id: uuid.UUID, session_id: Any) -> LearningTask:
+def _load_session(
+    db: Session, *, student_id: uuid.UUID, session_id: Any
+) -> LearningTask:
     """按 ID 取练习会话并校验归属。
 
     归属口径与 ``mark_mistake_solved`` 对齐：**别人的会话一律按 404**，
@@ -372,13 +407,17 @@ def _load_session(db: Session, *, student_id: uuid.UUID, session_id: Any) -> Lea
         ApiError: code=400 ID 非法；code=404 会话不存在或不属于当前学生。
     """
     tid = to_uuid(session_id, "session_id")
-    task = db.execute(select(LearningTask).where(LearningTask.id == tid)).scalar_one_or_none()
+    task = db.execute(
+        select(LearningTask).where(LearningTask.id == tid)
+    ).scalar_one_or_none()
     if task is None or task.student_id != student_id:
         raise ApiError(CODE_NOT_FOUND, "练习会话不存在")
     return task
 
 
-def _find_item(items: Sequence[Dict[str, Any]], question_id: uuid.UUID) -> Optional[Dict[str, Any]]:
+def _find_item(
+    items: Sequence[Dict[str, Any]], question_id: uuid.UUID
+) -> Optional[Dict[str, Any]]:
     """在 items 快照里找到指定题目那一条。"""
     target = str(question_id)
     for item in items:
@@ -448,7 +487,9 @@ def _recent_guide_history(item: Optional[Dict[str, Any]]) -> List[Dict[str, str]
 
 def _question_numbers(stem: str) -> List[str]:
     """提取题干里的少量数字，帮助兜底提示仍然贴着当前题目。"""
-    return re.findall(r"(?:\d+(?:\.\d+)?|[一二三四五六七八九十百千万]+)", stem or "")[:4]
+    return re.findall(r"(?:\d+(?:\.\d+)?|[一二三四五六七八九十百千万]+)", stem or "")[
+        :4
+    ]
 
 
 def _stuck_hint_reply(question: Question, stuck_round: int) -> str:
@@ -489,12 +530,18 @@ def _save_guide_turn(
     _patch_item(db, task, question_id, {GUIDE_HISTORY_KEY: history[-6:]})
 
 
-def _load_question(db: Session, question_id: uuid.UUID) -> Tuple[Question, Optional[Answer]]:
+def _load_question(
+    db: Session, question_id: uuid.UUID
+) -> Tuple[Question, Optional[Answer]]:
     """取题目与其标准答案（题目不存在按 404）。"""
-    question = db.execute(select(Question).where(Question.id == question_id)).scalar_one_or_none()
+    question = db.execute(
+        select(Question).where(Question.id == question_id)
+    ).scalar_one_or_none()
     if question is None:
         raise ApiError(CODE_NOT_FOUND, "题目不存在")
-    answer = db.execute(select(Answer).where(Answer.question_id == question_id)).scalar_one_or_none()
+    answer = db.execute(
+        select(Answer).where(Answer.question_id == question_id)
+    ).scalar_one_or_none()
     return question, answer
 
 
@@ -604,15 +651,19 @@ def _draw_with_relaxation(
                 "applied": False,
             }
         )
-        return [], steps, {
-            "pool_size": 0,
-            "unmapped_count": 0,
-            "auto_relaxed": False,
-            "requested_count": want,
-            "actual_count": 0,
-            "miss_count": want,
-            "relaxed_to_level": 6,
-        }
+        return (
+            [],
+            steps,
+            {
+                "pool_size": 0,
+                "unmapped_count": 0,
+                "auto_relaxed": False,
+                "requested_count": want,
+                "actual_count": 0,
+                "miss_count": want,
+                "relaxed_to_level": 6,
+            },
+        )
 
     return _sample_and_meta(chosen_rows, want, steps, level=chosen_level)
 
@@ -632,15 +683,19 @@ def _sample_and_meta(
     )
     picked_ids = [row[0] for row in picked]
     miss_count = max(0, want - len(picked))
-    return picked_ids, steps, {
-        "pool_size": pool_size,
-        "unmapped_count": _unmapped_of(rows),
-        "auto_relaxed": level > 1,
-        "requested_count": want,
-        "actual_count": len(picked_ids),
-        "miss_count": miss_count,
-        "relaxed_to_level": level,
-    }
+    return (
+        picked_ids,
+        steps,
+        {
+            "pool_size": pool_size,
+            "unmapped_count": _unmapped_of(rows),
+            "auto_relaxed": level > 1,
+            "requested_count": want,
+            "actual_count": len(picked_ids),
+            "miss_count": miss_count,
+            "relaxed_to_level": level,
+        },
+    )
 
 
 def draw_questions(
@@ -654,10 +709,16 @@ def draw_questions(
     kp_id: Optional[Any] = None,
     difficulty: Optional[int] = None,
     count: Optional[int] = DEFAULT_COUNT,
+    adaptive: bool = False,
 ) -> Dict[str, Any]:
     """抽一组题并开一个练习会话（C6 逐档 fallback）。
 
     6 档 fallback 本期只做 1-3 档 + 兜底 404（Q8 拍板）；4/5 档留 P2。
+
+    **自适应难度（#4 draw_adaptive）**：``adaptive=True`` 时忽略 ``difficulty``，
+    改按学生画像推荐的主难度抽约 70% 题 + 相邻难度抽约 30% 题（Python 侧
+    ``random.sample`` 混池，C1 跨方言约束不变）。学生尚未建立画像时回退默认
+    难度 3，行为与显式 ``difficulty=3`` 一致。
 
     出参新增 4 字段（与 ``DrawResponse`` 一一对应）：
 
@@ -676,13 +737,14 @@ def draw_questions(
         edition: 教材版本（青岛版/苏教版）。
         section: 册内分区。
         kp_id: 指定知识点 ID。
-        difficulty: 难度 1/3/5。
+        difficulty: 难度 1/3/5（``adaptive=True`` 时忽略）。
         count: 题量，夹在 ``[1, 30]``，默认 10。
+        adaptive: 是否开启自适应难度（#4）。
 
     Returns:
         ``{session_id, questions, pool_size, unmapped_count, auto_relaxed,
         requested_count, actual_count, miss_count, relaxed_to_level,
-        relaxation_steps}``。
+        relaxation_steps, adaptive_used, adaptive_difficulty}``。
 
     Raises:
         ApiError: code=400 参数非法；code=404 当前筛选条件下没有可练的题（3 档全空）。
@@ -701,12 +763,53 @@ def draw_questions(
         "difficulty": difficulty,
     }
 
-    picked_ids, steps, meta = _draw_with_relaxation(
-        db,
-        common=common,
-        recent=recent,
-        want=want,
-    )
+    # ---- #4 自适应难度：主难度 70% + 相邻难度 30%（均复用逐档回退）----
+    adaptive_used = False
+    adaptive_difficulty: Optional[int] = None
+    if adaptive:
+        base = adaptive_service.recommend_difficulty(db, student_id=sid)
+        adaptive_difficulty = base
+        adaptive_used = True
+        neighbors = adaptive_service.neighbor_difficulties(base)
+        main_count = max(1, int(round(want * 0.7)))
+        side_count = want - main_count
+
+        picked_ids, steps, meta = _draw_with_relaxation(
+            db,
+            common={**common, "difficulty": base},
+            recent=recent,
+            want=main_count,
+        )
+        # 主难度凑不满时，从相邻难度补齐（各相邻档依次尝试，不重复已抽题）
+        seen: set[uuid.UUID] = set(picked_ids)
+        if len(picked_ids) < want and neighbors:
+            for neighbor in neighbors:
+                if len(seen) >= want:
+                    break
+                need = want - len(seen)
+                neighbor_ids, neighbor_steps, _neighbor_meta = _draw_with_relaxation(
+                    db,
+                    common={**common, "difficulty": neighbor},
+                    recent=list(recent) + list(seen),
+                    want=need,
+                )
+                added = [qid for qid in neighbor_ids if qid not in seen]
+                picked_ids.extend(added)
+                seen.update(added)
+                steps.extend(neighbor_steps)
+
+        # 自适应池完全为空：回退普通全难度抽题，避免 404 裸奔
+        if not picked_ids:
+            picked_ids, steps, meta = _draw_with_relaxation(
+                db, common=common, recent=recent, want=want
+            )
+    else:
+        picked_ids, steps, meta = _draw_with_relaxation(
+            db,
+            common=common,
+            recent=recent,
+            want=want,
+        )
 
     # ---- 兜底 404：所有档位都没有可抽题 --------------------------------------
     if not picked_ids:
@@ -714,7 +817,9 @@ def draw_questions(
 
     task = create_session(db, student_id=sid, question_ids=picked_ids)
 
-    questions = db.execute(select(Question).where(Question.id.in_(picked_ids))).scalars().all()
+    questions = (
+        db.execute(select(Question).where(Question.id.in_(picked_ids))).scalars().all()
+    )
     by_id = {q.id: q for q in questions}
     payload = [_question_payload(by_id[qid]) for qid in picked_ids if qid in by_id]
 
@@ -731,10 +836,15 @@ def draw_questions(
         "miss_count": meta["miss_count"],
         "relaxed_to_level": meta["relaxed_to_level"],
         "relaxation_steps": steps,
+        # #4 自适应难度披露字段
+        "adaptive_used": adaptive_used,
+        "adaptive_difficulty": adaptive_difficulty,
     }
 
 
-def create_session(db: Session, *, student_id: Any, question_ids: Sequence[uuid.UUID]) -> LearningTask:
+def create_session(
+    db: Session, *, student_id: Any, question_ids: Sequence[uuid.UUID]
+) -> LearningTask:
     """开一个练习会话（复用 ``LearningTask``，不建新表）。
 
     Args:
@@ -851,6 +961,40 @@ def submit_answer(
     result = outcome.to_dict()
     result["question_id"] = str(qid)
     result["duration_sec"] = safe_duration
+
+    # ---- #4 自适应难度：每次判分后更新学生的难度画像（失败不拖垮主流程）----
+    try:
+        adaptive_service.record_attempt_result(
+            db, student_id=sid, is_correct=outcome.is_correct
+        )
+    except Exception:  # noqa: BLE001 - 自适应更新失败只影响难度推荐，不影响判分
+        logger.warning(
+            "自适应难度更新失败 session=%s question=%s", task.id, qid, exc_info=True
+        )
+
+    # ---- DNA-004 行为事件埋点：一次作答 = ANSWER +（CORRECT 或 ERROR）----
+    _emit_dna_event(
+        db,
+        student_id=sid,
+        event_type="ANSWER",
+        question_id=qid,
+        knowledge_point_id=question.kp_id if question is not None else None,
+        meta={
+            "session_id": str(task.id),
+            "is_correct": outcome.is_correct,
+            "level": outcome.level,
+            "duration_sec": safe_duration,
+        },
+    )
+    _emit_dna_event(
+        db,
+        student_id=sid,
+        event_type="CORRECT" if outcome.is_correct else "ERROR",
+        question_id=qid,
+        knowledge_point_id=question.kp_id if question is not None else None,
+        meta={"session_id": str(task.id), "level": outcome.level},
+    )
+
     return result
 
 
@@ -892,6 +1036,16 @@ def reveal_answer(
 
     question, answer = _load_question(db, qid)
     _patch_item(db, task, qid, {"revealed": True})
+
+    # ---- DNA-004 行为事件埋点：看参考答案算一次 REVIEW 复习行为 ----
+    _emit_dna_event(
+        db,
+        student_id=sid,
+        event_type="REVIEW",
+        question_id=qid,
+        knowledge_point_id=question.kp_id if question is not None else None,
+        meta={"session_id": str(task.id)},
+    )
 
     return {
         "question_id": str(question.id),
@@ -941,6 +1095,46 @@ def _latest_attempts(
     return latest
 
 
+def _aggregate_kp_results(
+    db: Session,
+    latest: Dict[uuid.UUID, Attempt],
+    question_ids: Sequence[uuid.UUID],
+) -> Dict[str, Dict[str, Any]]:
+    """把本次练习的答题结果按知识点聚合（复习卡流建档用）。
+
+    Args:
+        db: 数据库会话。
+        latest: ``_latest_attempts`` 返回值（{question_id: Attempt}）。
+        question_ids: 本次练习的题目 ID。
+
+    Returns:
+        ``{kp_id(str): {"correct": bool, "attempts": int}}``
+        —— 只含**有知识点归属**的题：该 kp 下所有题全对则 correct=True，
+        有任一题答错则 False；确实无 kp 的题不参与聚合（不进复习卡）。
+    """
+    if not latest:
+        return {}
+    mapped = list(
+        db.execute(
+            select(Question.id, Question.kp_id).where(
+                Question.id.in_(list(question_ids)),
+                Question.kp_id.isnot(None),
+            )
+        ).all()
+    )
+    results: Dict[str, Dict[str, Any]] = {}
+    for qid, kp_id in mapped:
+        attempt = latest.get(qid)
+        if attempt is None or kp_id is None:
+            continue
+        key = str(kp_id)
+        cur = results.setdefault(key, {"correct": True, "attempts": 0})
+        cur["attempts"] += 1
+        if not attempt.is_correct:
+            cur["correct"] = False
+    return results
+
+
 def _weak_points(
     db: Session,
     wrong_question_ids: Sequence[uuid.UUID],
@@ -962,8 +1156,9 @@ def _weak_points(
     if not wrong_question_ids:
         return []
     rows = db.execute(
-        select(Question.kp_id)
-        .where(Question.id.in_(list(wrong_question_ids)), Question.kp_id.isnot(None))
+        select(Question.kp_id).where(
+            Question.id.in_(list(wrong_question_ids)), Question.kp_id.isnot(None)
+        )
     ).all()
 
     index = load_kp_tree(db)
@@ -986,9 +1181,13 @@ def _weak_points(
         return []
 
     name_rows = db.execute(
-        select(KnowledgePoint.id, KnowledgePoint.name).where(KnowledgePoint.id.in_(rolled_ids))
+        select(KnowledgePoint.id, KnowledgePoint.name).where(
+            KnowledgePoint.id.in_(rolled_ids)
+        )
     ).all()
-    names: Dict[str, str] = {str(kid): (kname or "未命名知识点") for kid, kname in name_rows}
+    names: Dict[str, str] = {
+        str(kid): (kname or "未命名知识点") for kid, kname in name_rows
+    }
 
     bucket: Dict[str, Dict[str, Any]] = {}
     for key, wrong_count in counted.items():
@@ -997,7 +1196,10 @@ def _weak_points(
             continue
         bucket[key] = {"kp_id": key, "kp_name": names[key], "wrong_count": wrong_count}
 
-    ordered = sorted(bucket.values(), key=lambda item: (-int(item["wrong_count"]), str(item["kp_name"])))
+    ordered = sorted(
+        bucket.values(),
+        key=lambda item: (-int(item["wrong_count"]), str(item["kp_name"])),
+    )
     return ordered[:WEAK_POINT_LIMIT]
 
 
@@ -1066,9 +1268,13 @@ def finish_session(db: Session, *, student_id: Any, session_id: Any) -> Dict[str
         try:
             question_ids.append(uuid.UUID(str(item.get("question_id"))))
         except (TypeError, ValueError):
-            logger.warning("练习会话 %s 的 items 里有非法 question_id：%s", task.id, item)
+            logger.warning(
+                "练习会话 %s 的 items 里有非法 question_id：%s", task.id, item
+            )
 
-    latest = _latest_attempts(db, student_id=sid, question_ids=question_ids, since=task.generated_at)
+    latest = _latest_attempts(
+        db, student_id=sid, question_ids=question_ids, since=task.generated_at
+    )
 
     correct_ids: List[uuid.UUID] = []
     wrong_ids: List[uuid.UUID] = []
@@ -1128,8 +1334,12 @@ def finish_session(db: Session, *, student_id: Any, session_id: Any) -> Dict[str
     if practiced_ids:
         mapped = list(
             db.execute(
-                select(Question.id).where(Question.id.in_(practiced_ids), Question.kp_id.isnot(None))
-            ).scalars().all()
+                select(Question.id).where(
+                    Question.id.in_(practiced_ids), Question.kp_id.isnot(None)
+                )
+            )
+            .scalars()
+            .all()
         )
         for qid in mapped:
             try:
@@ -1140,7 +1350,12 @@ def finish_session(db: Session, *, student_id: Any, session_id: Any) -> Dict[str
                     practiced_at=stamp,
                 )
             except Exception:  # noqa: BLE001 - 缓存失效失败不能拖垮结算主流程
-                logger.warning("练习结算刷新画像缓存失败 session=%s question=%s", task.id, qid, exc_info=True)
+                logger.warning(
+                    "练习结算刷新画像缓存失败 session=%s question=%s",
+                    task.id,
+                    qid,
+                    exc_info=True,
+                )
         if refreshed_rows:
             db.commit()
         logger.debug(
@@ -1149,6 +1364,25 @@ def finish_session(db: Session, *, student_id: Any, session_id: Any) -> Dict[str
             len(mapped),
             refreshed_rows,
         )
+
+    # ---- V6.5 复习卡流联动：为本次练到的知识点自动建档 FSRS 复习卡片 -------
+    # Review.vue 复习页的卡片来自 review_cards 表；若练习结算不建档，
+    # 学生永远没有复习卡片可刷。这里按知识点聚合本次答题结果：
+    #   答对 → 初始 rating=3(Good，隔日到期)；答错 → 1(Again，近期再出现)。
+    # 幂等（ReviewService.create_card_for_knowledge_point 已存在则跳过），
+    # 单独 try/except 兜底——建卡失败不影响错题/掌握度主链路。
+    review_synced = review_service.upsert_cards_from_practice(
+        sid,
+        _aggregate_kp_results(db, latest, practiced_ids),
+        now=stamp,
+    )
+    logger.debug(
+        "练习结算复习卡流：session=%s 新建 %d 张，跳过 %d 张（共 %d 个知识点）",
+        task.id,
+        review_synced["created"],
+        review_synced["skipped"],
+        review_synced["total"],
+    )
 
     # ---- 会话收尾 ---------------------------------------------------------
     task.status = SESSION_DONE
@@ -1299,10 +1533,13 @@ def guide_question(
     if options:
         stem = stem + "\n" + "\n".join(f"{item.key}. {item.text}" for item in options)
 
-    history_text = "\n".join(
-        f"第 {index} 轮：学生：{turn['work'] or '（未写过程）'}；老师：{turn['reply']}"
-        for index, turn in enumerate(guide_history, start=1)
-    ) or "（这是第一轮，还没有之前的问答）"
+    history_text = (
+        "\n".join(
+            f"第 {index} 轮：学生：{turn['work'] or '（未写过程）'}；老师：{turn['reply']}"
+            for index, turn in enumerate(guide_history, start=1)
+        )
+        or "（这是第一轮，还没有之前的问答）"
+    )
     prompt = practice_guide.PROMPT.replace("{{QUESTION}}", stem).replace(
         "{{WORK}}", _clean(work) or "（孩子还没写下过程，只是点开了求助）"
     )
@@ -1320,7 +1557,9 @@ def guide_question(
     try:
         raw = ark_client.ark_respond(messages=[{"role": "user", "content": prompt}])
     except ark_client.ArkError as exc:
-        logger.warning("练习引导调用方舟失败 session=%s question=%s: %s", task.id, qid, exc)
+        logger.warning(
+            "练习引导调用方舟失败 session=%s question=%s: %s", task.id, qid, exc
+        )
         raise ApiError(CODE_SERVER_ERROR, "老师这会儿有点忙，稍后再点一次试试") from exc
 
     reply = _clean(raw)
@@ -1331,7 +1570,9 @@ def guide_question(
         parsed = None
     if isinstance(parsed, dict):
         reply = _clean(parsed.get("reply")) or reply
-        ask_final_confirm = bool(parsed.get("askFinalConfirm") or parsed.get("ask_final_confirm"))
+        ask_final_confirm = bool(
+            parsed.get("askFinalConfirm") or parsed.get("ask_final_confirm")
+        )
 
     reply = sanitize_guide_reply(
         reply,
@@ -1348,7 +1589,111 @@ def guide_question(
             task.id,
             qid,
         )
-        stuck_round = sum(1 for turn in guide_history if _is_stuck_text(turn.get("work"))) + 1
+        stuck_round = (
+            sum(1 for turn in guide_history if _is_stuck_text(turn.get("work"))) + 1
+        )
+        reply = _stuck_hint_reply(question, stuck_round)
+
+    _save_guide_turn(db, task, qid, work=work, reply=reply)
+
+    return {
+        "question_id": str(qid),
+        "reply": reply,
+        "ask_final_confirm": ask_final_confirm,
+        "prompt_version": practice_guide.VERSION,
+    }
+
+
+async def guide_question_async(
+    db: Session,
+    *,
+    student_id: Any,
+    session_id: Any,
+    question_id: Any,
+    work: Optional[str] = None,
+) -> Dict[str, Any]:
+    """``guide_question`` 的异步版：await ``ark_client.ark_respond_async``。
+
+    Args、Returns、Raises 与 ``guide_question`` 完全一致（DB 写操作仍是同步调用）。
+    """
+    sid = to_uuid(student_id, "student_id")
+    qid = to_uuid(question_id, "question_id")
+    task = _load_session(db, student_id=sid, session_id=session_id)
+
+    if _find_item(_normalize_items(task.items), qid) is None:
+        raise ApiError(CODE_BAD_REQUEST, "这道题不在本次练习中")
+
+    question, answer = _load_question(db, qid)
+    item = _find_item(_normalize_items(task.items), qid)
+    guide_history = _recent_guide_history(item)
+    stuck = _is_stuck_text(work)
+
+    stem = question.content or ""
+    options = judge_engine.normalize_options(question.options)
+    if options:
+        stem = stem + "\n" + "\n".join(f"{item.key}. {item.text}" for item in options)
+
+    history_text = (
+        "\n".join(
+            f"第 {index} 轮：学生：{turn['work'] or '（未写过程）'}；老师：{turn['reply']}"
+            for index, turn in enumerate(guide_history, start=1)
+        )
+        or "（这是第一轮，还没有之前的问答）"
+    )
+    prompt = practice_guide.PROMPT.replace("{{QUESTION}}", stem).replace(
+        "{{WORK}}", _clean(work) or "（孩子还没写下过程，只是点开了求助）"
+    )
+    prompt += (
+        "\n\n【本题之前的引导记录】\n"
+        f"{history_text}\n"
+        "请先看清之前老师已经问过什么。绝对不要原样重复之前的问题。"
+    )
+    if stuck:
+        prompt += (
+            "\n孩子这次明确表示不会/不知道。先接住他，再从这道题的数字、单位、图形或"
+            "已知条件里给一个具体小线索，最后只问一个更小的问题；不要继续问上一轮同一个问题。"
+        )
+
+    try:
+        raw = await ark_client.ark_respond_async(
+            messages=[{"role": "user", "content": prompt}]
+        )
+    except ark_client.ArkError as exc:
+        logger.warning(
+            "练习引导调用方舟失败 session=%s question=%s: %s", task.id, qid, exc
+        )
+        raise ApiError(CODE_SERVER_ERROR, "老师这会儿有点忙，稍后再点一次试试") from exc
+
+    reply = _clean(raw)
+    ask_final_confirm = False
+    try:
+        parsed = extract_json(raw)
+    except Exception:  # noqa: BLE001 - 模型没给 JSON 时按纯文本处理，不影响主流程
+        parsed = None
+    if isinstance(parsed, dict):
+        reply = _clean(parsed.get("reply")) or reply
+        ask_final_confirm = bool(
+            parsed.get("askFinalConfirm") or parsed.get("ask_final_confirm")
+        )
+
+    reply = sanitize_guide_reply(
+        reply,
+        q_type=question.type_,
+        options=question.options,
+        correct_answer=answer.correct_answer if answer else None,
+        context=f"session={task.id} question={qid}",
+    )
+
+    previous_replies = {turn["reply"] for turn in guide_history if turn.get("reply")}
+    if (stuck and reply in previous_replies) or reply in previous_replies:
+        logger.warning(
+            "练习引导检测到重复回复，已切换为题目关键条件提示 session=%s question=%s",
+            task.id,
+            qid,
+        )
+        stuck_round = (
+            sum(1 for turn in guide_history if _is_stuck_text(turn.get("work"))) + 1
+        )
         reply = _stuck_hint_reply(question, stuck_round)
 
     _save_guide_turn(db, task, qid, work=work, reply=reply)
@@ -1368,6 +1713,7 @@ __all__ = [
     "reveal_answer",
     "finish_session",
     "guide_question",
+    "guide_question_async",
     "sanitize_guide_reply",
     "GUIDE_FALLBACK_REPLY",
     "PRACTICE_TASK_TYPE",

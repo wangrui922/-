@@ -51,6 +51,16 @@ ERROR_EVIDENCE_LIMIT: Final[int] = 5
 RECOMMEND_QUESTION_LIMIT: Final[int] = 3
 
 # ---------------------------------------------------------------- 分级阈值
+# ---------------------------------------------------------- 知识图谱（P0·Phase2）
+#: 前置知识点缺口线：前置掌握度低于该值时，后置知识点被标记为「前置缺口」
+#: （GKT 图上的依赖未满足），抽题与复习建议优先补前置。
+MASTERY_GAP_THRESHOLD: Final[float] = 0.5
+
+#: 硬缺口最小依赖强度：``knowledge_prerequisite.weight >=`` 该值的边视为「硬门槛」，
+#: 抽题补漏必须优先满足；低于该值的弱边只是「建议前置」，允许后置先行。
+#: 缺口检测全量返回（调用方自取），本常量供 Phase 3 抽题策略过滤使用。
+MASTERY_GAP_MIN_HARD_WEIGHT: Final[float] = 0.8
+
 #: level 1 下限（低于此值为 level 0）
 MASTERY_LEVEL1_MIN: Final[float] = 0.40
 #: level 2 下限
@@ -77,6 +87,29 @@ EVENT_WEIGHT_ATTEMPT: Final[float] = 1.0
 EVENT_WEIGHT_MISTAKE: Final[float] = 0.8
 #: 错题被标记攻克 → 近似正样本（OQ 默认值：solved 近似正确）
 EVENT_WEIGHT_MISTAKE_SOLVED: Final[float] = 0.6
+
+# ------------------------------------------------- 增量掌握度（DNA-003 M-002）
+# 规划 V6.5 M-002 初始规则（数值 0~100，此处按表口径 /100 收敛为 0~1）：
+#   基础题独立正确 +10 / 提示后正确 +5 / 大量提示后正确 +2 /
+#   独立迁移题正确 +12 / 核心题错误 -8（超纲情况待 adaptive_config 扩展）。
+# 数值全部进常量集中管理，不写死在函数体（后续迁入 adaptive_config 时只动此处）。
+#: 基础题独立正确：掌握度 +0.10
+MASTERY_DELTA_CORRECT_BASE: Final[float] = 0.10
+#: 提示后正确：掌握度 +0.05
+MASTERY_DELTA_CORRECT_HINTED: Final[float] = 0.05
+#: 大量提示（>=3 次）后才正确：掌握度 +0.02
+MASTERY_DELTA_CORRECT_HINTED_HEAVY: Final[float] = 0.02
+#: 独立迁移题正确：掌握度 +0.12
+MASTERY_DELTA_CORRECT_TRANSFER: Final[float] = 0.12
+#: 核心题错误：掌握度 -0.08
+MASTERY_DELTA_WRONG_CORE: Final[float] = 0.08
+#: 单次跳变上限（M-003：0~100 制 ±15 → 0~1 制 ±0.15）
+MASTERY_DELTA_MAX_ABS: Final[float] = 0.15
+#: 掌握度夹紧边界（M-003：0 ≤ mastery ≤ 100 → 0 ≤ mastery ≤ 1）
+MASTERY_CLAMP_LOW: Final[float] = 0.0
+MASTERY_CLAMP_HIGH: Final[float] = 1.0
+#: 置信度公式的样本基数（confidence 随样本量增大趋近 1，防止 1~2 次作答即满置信）
+MASTERY_CONFIDENCE_SAMPLE_K: Final[float] = 5.0
 
 # ================================================================ 其他默认值
 #: ``/api/profile/error-patterns`` 默认统计窗口（天）
@@ -140,6 +173,9 @@ __all__ = [
     "MASTERY_PRIOR_SCORE",
     "MASTERY_CACHE_TTL_SECONDS",
     "RECOMMEND_TOP_N",
+    # 知识图谱（P0·Phase2）
+    "MASTERY_GAP_THRESHOLD",
+    "MASTERY_GAP_MIN_HARD_WEIGHT",
     "ERROR_EVIDENCE_LIMIT",
     "RECOMMEND_QUESTION_LIMIT",
     "MASTERY_LEVEL1_MIN",
@@ -151,6 +187,16 @@ __all__ = [
     "EVENT_WEIGHT_ATTEMPT",
     "EVENT_WEIGHT_MISTAKE",
     "EVENT_WEIGHT_MISTAKE_SOLVED",
+    # V6.5 DNA-003 增量掌握度
+    "MASTERY_DELTA_CORRECT_BASE",
+    "MASTERY_DELTA_CORRECT_HINTED",
+    "MASTERY_DELTA_CORRECT_HINTED_HEAVY",
+    "MASTERY_DELTA_CORRECT_TRANSFER",
+    "MASTERY_DELTA_WRONG_CORE",
+    "MASTERY_DELTA_MAX_ABS",
+    "MASTERY_CLAMP_LOW",
+    "MASTERY_CLAMP_HIGH",
+    "MASTERY_CONFIDENCE_SAMPLE_K",
     "ERROR_PATTERN_DEFAULT_DAYS",
     "ERROR_PATTERN_MAX_DAYS",
     "CODE_PROFILE_COMPUTE_FAILED",

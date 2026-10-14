@@ -1,0 +1,1592 @@
+{
+  "audit_at": "2026-09-22 12:57:19",
+  "total_yellow": 198,
+  "passed": 0,
+  "failed": 198,
+  "failures": [
+    {
+      "id": "3c573b2e-a906-4459-b50c-77d7690df5a5",
+      "content": "8 + ___ = 12",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "319cf76f-65c5-42e1-95fa-760c0ece7890",
+      "content": "___ - 11 = 3",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "3712e2f0-af45-4084-b48a-c04e06f47499",
+      "content": "15 + ___ = 28",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "d5ffffa6-9413-4f1e-9360-ad880a8e930f",
+      "content": "___ - 1 = 14",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "e1ef4cd4-f2ab-444d-8e24-f8fab7326b7d",
+      "content": "13 + ___ = 14",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "af372968-b268-49a8-aa64-80dd401339cf",
+      "content": "___ - 10 = 4",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "eaf1dc72-4863-4873-b640-e19da2000656",
+      "content": "6 + ___ = 8",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "0b4a9e85-81e8-46cb-8c63-d0c0306c9113",
+      "content": "___ - 6 = 6",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "ce300bc0-37b5-4532-89c3-10a3e4fbe6d6",
+      "content": "12 + ___ = 32",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "2871092e-be59-45ce-8fa5-2eb4d053d835",
+      "content": "___ - 10 = 6",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "dfc7c5f5-5a84-4505-bd93-4dd9a260333c",
+      "content": "16 + ___ = 26",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "22aec2b3-5095-41b5-803b-cbac0f937682",
+      "content": "___ - 7 = 1",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "5c4e7a8a-7593-4053-8aa5-6521d8e80d59",
+      "content": "14 + ___ = 19",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "19baee98-60b3-48ff-85bc-ca8a1c47bc0d",
+      "content": "___ - 1 = 11",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "9db877e3-6887-4bce-8853-eba0fd783868",
+      "content": "14 + ___ = 26",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "85936171-a5b3-4b08-8c63-eb69d606197b",
+      "content": "___ - 1 = 19",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "72cabf59-c08b-411e-bb50-28f11e9bf433",
+      "content": "9 + ___ = 29",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "5f307c0f-c088-4866-8b25-72ffbc001b41",
+      "content": "___ - 2 = 4",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c0a73796-b4da-4952-9db0-5be15bb56460",
+      "content": "9 + ___ = 18",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "6a5066f6-34be-4b78-97f1-45b40f8d993d",
+      "content": "___ - 12 = 3",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "03b192ab-1e8d-43a1-9fee-c77079ef12ed",
+      "content": "6 x ___ = 42",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "fe06cfd3-6da0-4362-a4e0-8bb3a52d7d25",
+      "content": "___ x 3 = 21",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "f842c736-96bd-49a4-8500-828c468c7d12",
+      "content": "4 x ___ = 20",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "eabe93cf-732f-424f-acf7-9c5e2ef0d237",
+      "content": "___ x 5 = 45",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "ea5fc37c-91da-4944-bd06-61cc64eb2f1f",
+      "content": "5 x ___ = 30",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "f486d36d-76fa-4e24-b07b-331126fd7c0b",
+      "content": "___ x 8 = 32",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "2d1058b9-e67f-46c6-afd0-37c1b2273440",
+      "content": "6 x ___ = 48",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "d8fbbf17-7100-4abc-9872-ab9697441dac",
+      "content": "___ x 3 = 24",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b0eb99e7-5f98-4ccf-80b0-bf2abe308dc7",
+      "content": "3 x ___ = 18",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "2a629e2b-8464-4097-a49e-bf374656fd4e",
+      "content": "___ x 9 = 72",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "436740cf-fcb9-4cbd-a28c-8df79e25ed34",
+      "content": "12 小时 = ___ 分钟",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b7ac0c44-38e6-46b0-91e8-78ad80194981",
+      "content": "16 小时 = ___ 分钟",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "f0984f12-b840-43c4-bf64-1de45b2ac1a0",
+      "content": "3 米 = ___ 厘米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "744d8062-14df-4acc-9aca-b37bf0a2cb72",
+      "content": "18 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "966b7e02-aa68-4d7a-a932-edae758856a2",
+      "content": "10 千克 = ___ 克",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "61134a04-8550-4ec4-ac14-b9be8c19844d",
+      "content": "14 小时 = ___ 分钟",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "bc82d1ff-5e97-444c-9a4b-fe4930acfeb1",
+      "content": "18 小时 = ___ 分钟",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "bb1d83db-f58d-4126-8f95-e6abc785491c",
+      "content": "13 米 = ___ 厘米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "721c27d3-836e-4351-a516-d291cc89e549",
+      "content": "25 + ___ = 96",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "fd3e2420-befb-4129-a078-f005fd3c3292",
+      "content": "___ - 24 = 2",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "8ebe6508-267a-443a-b624-6d9de94efcff",
+      "content": "90 + ___ = 101",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "5c7a823d-fc26-4ee4-8ffd-0e3e6603880c",
+      "content": "___ - 35 = 63",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "a995fde4-df76-47f1-8429-7bb57616c6b8",
+      "content": "25 + ___ = 117",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "39902d68-a77a-4612-8605-7827b2d57da7",
+      "content": "___ - 30 = 66",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "6d5b0427-e06d-470a-a425-1dfd8edd1b77",
+      "content": "41 + ___ = 94",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c08c2f66-175d-4fe0-8ee5-e48687540ce0",
+      "content": "___ - 38 = 25",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "e3276820-6d0f-490a-9a4d-f2ce49085be9",
+      "content": "18 + ___ = 49",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "ab20b002-df32-4426-9a41-c9710809cb0b",
+      "content": "___ - 54 = 41",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "2d9e4798-bd28-4d9c-b1fd-d9c6553c1f63",
+      "content": "7 x ___ = 14",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "843782d0-e89d-4a8b-8d86-4278ac591895",
+      "content": "___ x 3 = 15",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "2d9ba2f4-f1c4-40fe-b0c1-446797634354",
+      "content": "9 x ___ = 63",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "5116d93d-a011-4a6e-889b-9e739a02530f",
+      "content": "___ x 9 = 36",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "7acd6a9e-003c-46bb-bcd0-80e081c5abba",
+      "content": "___ x 9 = 45",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "9801dc44-2404-43e6-b860-f8dbf311cfd8",
+      "content": "3 x ___ = 9",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b5bd9139-d7e4-44db-b73f-0c8ddb7d1e29",
+      "content": "___ x 2 = 6",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "7f517c53-eafb-478f-9282-f9c1775d23b8",
+      "content": "___ x 3 = 6",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "17963ab1-6181-454b-ab6b-caa94c59e612",
+      "content": "8 x ___ = 72",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "3b1ce4e9-95c0-4fb4-b7e8-4a14447cc388",
+      "content": "___ x 3 = 27",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b358792c-18fd-436a-81fe-4927a88de1f3",
+      "content": "16 千克 = ___ 克",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "012f1a48-0cc7-4692-8ea4-d829a1e3e3e3",
+      "content": "17 千米 = ___ 米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "2a0db149-b4ee-40d2-ab5a-fd70a804b1a1",
+      "content": "2 千米 = ___ 米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "fe026bfd-08e8-4674-8acf-01bf99655808",
+      "content": "2 千克 = ___ 克",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "f60ab99a-9ac9-4e37-945e-9190ec6f3db3",
+      "content": "7 千米 = ___ 米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "a1d66dab-cf14-4018-88ae-a1942e128bb2",
+      "content": "3 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "6f0d5453-37b2-4119-9b04-5e7ae13313d7",
+      "content": "8 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "2534a9ce-ec0e-4971-a328-0d9e34f3f897",
+      "content": "19 小时 = ___ 分钟",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c1391129-98ed-4c06-9562-f2d5af79305b",
+      "content": "85 + ___ = 102",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c146ad8f-f1dc-478c-a8dd-c346f2885028",
+      "content": "23 + ___ = 62",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "816e52b3-9988-4bac-b8d6-0d47b81f952b",
+      "content": "___ - 22 = 21",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b67a2930-7286-4418-befd-6e26fb7a7935",
+      "content": "13 + ___ = 28",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "76b54a06-b8a3-4637-9ce7-17f3497fe8f2",
+      "content": "___ - 25 = 38",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "cd3a75e5-c292-4bef-887d-80a8449335d5",
+      "content": "36 + ___ = 61",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "058e1e07-7a0e-4ee4-b16b-1c27e7a0b511",
+      "content": "___ - 25 = 20",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "0d7ce4ab-ca53-4b6a-a802-0b464f5b57ee",
+      "content": "60 + ___ = 81",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "2f6a1846-ec22-4e99-99f3-d18c92165a6b",
+      "content": "___ - 11 = 67",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c3b38993-8168-4960-9793-8751c66b91fd",
+      "content": "70 + ___ = 118",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "6f7b8d8c-c9af-4bfa-8840-fbd904a51a34",
+      "content": "8 x ___ = 24",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "d23c9257-2d11-40b0-8069-0ac0743ef80a",
+      "content": "___ x 7 = 21",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "ab56dbf5-65dc-422b-af76-beb321e95a63",
+      "content": "___ x 3 = 9",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "71060b17-2cd2-46ab-8e44-dcfff9a8cadb",
+      "content": "8 x ___ = 64",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b58adaa3-5f40-414c-9fd6-beabc001f912",
+      "content": "___ x 9 = 81",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "364090ab-a891-4b27-8d46-b1a4f1e30797",
+      "content": "5 x ___ = 60",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "5a7c06dd-056a-42b5-a160-273271f63333",
+      "content": "___ x 7 = 42",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "553e7c24-8fde-4a32-8735-c129c2075f74",
+      "content": "12 x ___ = 24",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "94dc5b78-76dc-4b0f-b768-401dea485bfd",
+      "content": "4 x ___ = 28",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "10bd9ead-98ba-4ff0-bd89-d99464226e37",
+      "content": "___ x 8 = 56",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "032e7048-26a9-4d58-ab3a-3a92abb54038",
+      "content": "2/4 + 3/4 = ___/4",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "100416af-1daa-4c26-ae69-6cd740c4aa05",
+      "content": "1/2 + 1/2 = ___/2",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "54f1258f-864f-43f6-a4d7-08d0745b6efe",
+      "content": "3/6 + 4/6 = ___/6",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "0c8830dd-30b0-45ee-9654-8571b43c51fc",
+      "content": "2/5 + 4/5 = ___/5",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "806c3c57-1b80-408a-b51d-24db2c74ddbb",
+      "content": "3/10 + 5/10 = ___/10",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "e5a2c105-98f1-44b6-904c-5bbc1748d2e8",
+      "content": "1/11 + 5/11 = ___/11",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b9f32752-33ad-4313-af25-1d28e38eb68f",
+      "content": "8/9 + 1/9 = ___/9",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "0b8a9e93-7deb-46af-b63d-f7e400431d64",
+      "content": "2/10 + 3/10 = ___/10",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "235e270f-59db-4e86-8559-7d08be7abaf1",
+      "content": "3.0 + ___ = 10.2",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "5db83be3-dd3b-4e34-b70a-e303089106c9",
+      "content": "5.6 + ___ = 8.2",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "12196c44-ffdb-4574-8fc7-38f21d9678a6",
+      "content": "2.6 + ___ = 11.2",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "74c03675-690c-482e-8f8b-3985e57dc421",
+      "content": "0.5 + ___ = 4.0",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "7ba9ffe0-f4a5-4603-b310-8180538255b6",
+      "content": "9.0 + ___ = 15.4",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "5c029c35-1ccd-44ec-8545-d45163b4bb24",
+      "content": "5.3 + ___ = 7.5",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "faf49cdf-4da3-454e-96e1-28d2a85e4016",
+      "content": "7.6 + ___ = 10.1",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "81faf0a3-44d2-46f2-b3b8-575d42f1e1cf",
+      "content": "2.2 + ___ = 7.4",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c9ae0cf2-63e8-41c3-82b2-bcdf00dbac46",
+      "content": "11 米 = ___ 厘米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "1186a8fb-9710-47a0-ac30-e519101418bb",
+      "content": "8 米 = ___ 厘米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "0b83041f-f1e5-4782-9e69-e0fc83e1b990",
+      "content": "14 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "3bc38626-6fb6-4620-8a45-e92e9f118d31",
+      "content": "2 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "a3c22a19-365a-448b-b57b-7d5e92b5c22c",
+      "content": "13 小时 = ___ 分钟",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "f4691a41-c894-41f4-9a29-59163c4cafc9",
+      "content": "4 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "f9655a5e-60f6-499b-8b8e-b700f5c02bca",
+      "content": "20 千克 = ___ 克",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "036648d2-e5f5-4a12-a22a-94367a8e6138",
+      "content": "3 千米 = ___ 米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "480300d0-c8d9-4e86-bd90-2769aef484e5",
+      "content": "81 + ___ = 161",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "2df7f8ab-2f1a-4662-b618-905a5d4a88b3",
+      "content": "___ - 10 = 21",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "aea19abf-c507-4bdb-a11c-4fee618dc417",
+      "content": "76 + ___ = 90",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "af601fb8-49fb-4c07-9106-0dfe7746e0bf",
+      "content": "___ - 57 = 40",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "7e4ce806-fa82-4308-b80b-b73969846d3b",
+      "content": "50 + ___ = 63",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "68999818-c181-4494-bea2-404264391406",
+      "content": "___ - 16 = 6",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "ffb024fd-84a9-41a5-814d-f74bff71b619",
+      "content": "31 + ___ = 111",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "d08d9719-d0ae-4a5a-ba2c-4749609cbb07",
+      "content": "___ - 16 = 16",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "00bc3a71-0430-43da-ad52-575d6c00d76b",
+      "content": "49 + ___ = 91",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "11750dce-4c8d-431c-8140-8bd8a01ddde1",
+      "content": "___ - 27 = 72",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "81e206f4-1407-45c0-83a9-3d0e8d6259f1",
+      "content": "9 x ___ = 36",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "498aabf8-a6ec-4ee6-9c2e-0df44ca4c056",
+      "content": "___ x 9 = 90",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "27a4b744-eb23-4fda-9313-5f7f12884b72",
+      "content": "___ x 6 = 18",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "e2b60d67-9797-4578-9d87-495fc542dfd9",
+      "content": "10 x ___ = 100",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "e524df28-bb07-4659-9140-3a4216987a22",
+      "content": "___ x 8 = 16",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "81632257-4d02-4882-811b-530ed5cc940c",
+      "content": "6 x ___ = 60",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c44aa406-53bc-463f-9432-0c4766adf437",
+      "content": "___ x 10 = 100",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "4b15538e-afe7-4fc1-8b98-5ec4c942d598",
+      "content": "___ x 6 = 66",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "01062c47-c71d-4850-80de-f05da2bdae05",
+      "content": "11 x ___ = 99",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "543e311f-a48a-485d-8390-4a59845c06fd",
+      "content": "2 x ___ = 20",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "cc65c116-8939-48ff-b29b-7134831d0d3f",
+      "content": "4/7 + 3/7 = ___/7",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "be787768-f611-42c1-aa86-db3728f8c7b9",
+      "content": "5/12 + 7/12 = ___/12",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "656cdcca-8b5e-4543-a674-9e5ed76412f5",
+      "content": "3/4 + 3/4 = ___/4",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "44c6bce3-cc6a-4ee3-adaf-58c9a6627198",
+      "content": "4/11 + 4/11 = ___/11",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "60f23785-d6c1-4b09-a205-c15522340c27",
+      "content": "3/4 + 1/4 = ___/4",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b3966873-22db-428b-822c-63afa6190eae",
+      "content": "4/5 + 1/5 = ___/5",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "7517b3cd-aa95-483b-b888-2f4afe3cfcdf",
+      "content": "3/6 + 1/6 = ___/6",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "5308f70c-4e58-4ab3-840b-2bd2ae5f6f1b",
+      "content": "5/7 + 3/7 = ___/7",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "4b2b0fa0-da8c-47c4-85db-fc87e2eb178e",
+      "content": "5.4 + ___ = 14.6",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "9cb734da-f43b-4f28-84c1-fe67f98b03c5",
+      "content": "4.2 + ___ = 6.7",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "88b61351-cb5d-4e23-83a7-e31e43b4cb48",
+      "content": "6.4 + ___ = 9.4",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "50f3494f-f953-4442-8eb1-11fe9b851e08",
+      "content": "9.0 + ___ = 12.9",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "8973151c-5f88-44df-8664-de9666663706",
+      "content": "7.0 + ___ = 13.1",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "16d68c18-4036-4bb1-adb5-e02457d36c4a",
+      "content": "6.4 + ___ = 7.9",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c3aedf70-9d1d-46f9-803e-abc7446c05b4",
+      "content": "8.8 + ___ = 9.6",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "100ea90f-aeaa-4617-ade2-4e56b8de5e45",
+      "content": "3.0 + ___ = 7.8",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b41c5bdc-2a95-4c92-aa6b-1c2f7b69be47",
+      "content": "18 米 = ___ 厘米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "900777ae-d40e-4cf4-ac1c-56f59d1809f3",
+      "content": "9 米 = ___ 厘米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "3adec4d8-fb15-4260-a2dc-2ed3bddfa787",
+      "content": "14 千克 = ___ 克",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "e1eed295-ead9-403d-acde-257ad86171df",
+      "content": "13 千米 = ___ 米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "1c7a82c9-8104-4eff-8b4e-9da963d235b7",
+      "content": "16 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "6a9c432e-a652-4c92-a4a6-64a3ec71e426",
+      "content": "7 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c65a8c88-80ac-4996-998c-bf0d91e3175d",
+      "content": "17 千克 = ___ 克",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "8c3eb756-1cdd-485f-8218-5d63595ca23b",
+      "content": "12 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "a223a881-c056-4638-b2f1-81ec6f30213a",
+      "content": "45 + ___ = 131",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b84657f1-44ea-405b-aa1c-38d67bd74018",
+      "content": "___ - 54 = 33",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "ae9cb767-125a-4bd5-8287-1db3699da315",
+      "content": "10 + ___ = 97",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c4c03937-f928-46db-8b5f-03e239ff3713",
+      "content": "___ - 54 = 44",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "989b9173-53ad-46d7-8d12-ac028ad8e7d5",
+      "content": "26 + ___ = 67",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "7d37af4b-c218-46a8-875b-a8c9db7aac1a",
+      "content": "___ - 80 = 18",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c223a987-391e-450b-8ffe-76f2f2f96afa",
+      "content": "87 + ___ = 106",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "982d22f6-51ab-49f2-a672-f2dff41c364e",
+      "content": "___ - 20 = 5",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "cfd706d5-8da1-47be-ac43-82a4035b7ab8",
+      "content": "18 + ___ = 58",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b85b8d89-d0e6-4122-9d70-6680a6e4da27",
+      "content": "___ - 50 = 37",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "16b5354f-5770-4506-96d6-c969afe03b1b",
+      "content": "12 x ___ = 72",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "dc0d316a-25a9-4ffb-965e-c36488c3e3fe",
+      "content": "___ x 6 = 42",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "2200f5a8-e7bf-4f56-8326-0c25d4a34867",
+      "content": "11 x ___ = 44",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "3320d0df-61e3-4805-8f6b-3bf669ce46f0",
+      "content": "___ x 5 = 50",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "b377a385-ae8a-4ac6-9bb9-8a8b0644ed7c",
+      "content": "8 x ___ = 56",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "63df84e8-ece6-434a-a833-6d199d6b2a00",
+      "content": "___ x 11 = 77",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "8562de2a-ea91-418c-927f-170397f6c5b7",
+      "content": "12 x ___ = 144",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "c8436062-442a-45bf-bb60-a9928446ed03",
+      "content": "___ x 12 = 72",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "252bcf0b-f3f0-456c-8e21-3e1617cb6a75",
+      "content": "9 x ___ = 54",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "ddccaddd-a988-403e-96c8-ceb60880be71",
+      "content": "___ x 7 = 35",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "d16e487e-5a89-4b7b-a3fd-5e8dc3a2de88",
+      "content": "1/9 + 5/9 = ___/9",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "27a9f5e5-53fd-47b0-b9aa-07f13b7a4a39",
+      "content": "10/11 + 8/11 = ___/11",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "8d53bd34-0c9d-4d85-af0c-5ecf853a4162",
+      "content": "1/6 + 5/6 = ___/6",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "32fa152b-45b4-4bfb-b235-2d009f08940d",
+      "content": "6/12 + 11/12 = ___/12",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "51567a66-04e5-4060-bb05-a49de0862104",
+      "content": "5/12 + 4/12 = ___/12",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "6852117c-a622-4903-8d00-a9190394474e",
+      "content": "7/9 + 3/9 = ___/9",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "82b863d7-3468-4691-9f85-4013838c2db1",
+      "content": "2/7 + 5/7 = ___/7",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "f6de22cf-f954-4bfb-b477-530727e4c2dc",
+      "content": "1/8 + 6/8 = ___/8",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "fe61b404-3dbb-4de8-a092-ac35ddf1d0b4",
+      "content": "5.0 + ___ = 9.3",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "da984ae7-124b-463b-bb7a-ba8471669433",
+      "content": "1.0 + ___ = 8.2",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "dd978c99-aae9-4679-a7cf-74181a138a3b",
+      "content": "2.7 + ___ = 8.9",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "3137b3c5-5e39-43e3-b8a0-f1bfd91afbd4",
+      "content": "1.8 + ___ = 2.2",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "a5fdca1c-6aa1-4a79-ac00-96c9dffc6356",
+      "content": "2.2 + ___ = 3.8",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "13872a7c-3af5-4c73-884e-315be80417c6",
+      "content": "5.6 + ___ = 15.4",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "ae7b48e6-2881-49a5-99a5-cb27447928bb",
+      "content": "8.2 + ___ = 13.6",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "d883bc95-8c1a-4c51-b05e-b8bda9b88587",
+      "content": "9.9 + ___ = 10.3",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "d5ab98bf-d99c-4e6f-9a1f-e033d5fd5085",
+      "content": "16 米 = ___ 厘米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "eb9e9345-aebb-472e-9598-ac676c6416e3",
+      "content": "1 小时 = ___ 分钟",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "6478139f-814c-437b-81d7-6e709dc7ddca",
+      "content": "6 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "24e837a8-5d9c-42e8-ae3f-7a19a4c5dc02",
+      "content": "4 千米 = ___ 米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "1cb816fb-ac6d-4356-b853-7e06e59e728f",
+      "content": "4 米 = ___ 厘米",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "51abcc29-cad1-4aef-ba03-95b639cd22aa",
+      "content": "5 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "e617e648-8555-401e-b5ee-08a6f9096219",
+      "content": "13 元 = ___ 角",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    },
+    {
+      "id": "a2d451a7-f703-4bda-8fad-41a0e569cb2d",
+      "content": "5 千克 = ___ 克",
+      "type": "填空",
+      "issues": [
+        "fill_not_auto_judgeable"
+      ]
+    }
+  ]
+}

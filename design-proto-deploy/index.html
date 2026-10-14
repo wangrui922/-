@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>错题小老师 · 改版方向原型 v2</title>
+<style>
+  :root{
+    --bg:#f6f8fc; --card:#ffffff; --ink:#2b2d42; --sub:#7a8194;
+    --brand:#ff8a3d; --brand-soft:#fff1e6; --accent:#5b8def; --accent-soft:#eaf1ff;
+    --good:#3ecf8e; --good-soft:#e6faf1; --warn:#ffb020; --warn-soft:#fff7e6;
+    --purple:#9b7bff; --purple-soft:#f1ecff; --line:#eceff5; --shadow:0 8px 24px rgba(40,60,120,.08);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .phone{max-width:430px;margin:0 auto;background:var(--bg);min-height:100vh;position:relative;padding-bottom:78px;}
+  /* 顶部 */
+  .top{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 10px;}
+  .hi{font-size:15px;color:var(--sub);}
+  .hi b{color:var(--ink);font-size:17px;}
+  .chips{display:flex;gap:8px;}
+  .chip{background:var(--card);border-radius:14px;padding:7px 11px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:5px;box-shadow:var(--shadow);}
+  .chip .e{font-size:15px;}
+  /* 小老师问候卡 */
+  .tutor{margin:6px 16px 14px;background:linear-gradient(135deg,#fff6ee,#eaf1ff);border-radius:22px;padding:14px 16px;display:flex;gap:10px;align-items:flex-end;box-shadow:var(--shadow);position:relative;overflow:hidden;min-height:140px;}
+  .ip{width:118px;flex:none;align-self:flex-end;margin-bottom:-4px;}
+  .ip img{width:100%;display:block;}
+  .tutor .say{font-size:15px;line-height:1.5;}
+  .tutor .say b{color:var(--brand);}
+  .tutor .say .small{display:block;color:var(--sub);font-size:12px;margin-top:4px;}
+  /* 区块标题 */
+  .sec{margin:18px 16px 8px;display:flex;align-items:center;justify-content:space-between;}
+  .sec h3{margin:0;font-size:16px;}
+  .sec .more{font-size:12px;color:var(--sub);}
+  /* 星图 */
+  .map{margin:0 16px;background:var(--card);border-radius:22px;padding:16px;box-shadow:var(--shadow);}
+  .stars{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+  .star{aspect-ratio:1;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:600;cursor:pointer;transition:.2s;border:2px solid transparent;}
+  .star .ico{font-size:22px;}
+  .star.on{background:var(--brand-soft);color:var(--brand);}
+  .star.lock{background:var(--line);color:#c4cad6;}
+  .star.half{background:var(--warn-soft);color:var(--warn);}
+  .star.on{border-color:#ffd9bd;}
+  .pp{height:5px;width:80%;border-radius:4px;background:var(--line);overflow:hidden;margin-top:2px;}
+  .pp i{display:block;height:100%;background:var(--brand);border-radius:4px;}
+  /* 闯关 CTA */
+  .cta{margin:14px 16px;background:linear-gradient(135deg,var(--brand),#ff6a3d);border-radius:20px;padding:18px;color:#fff;display:flex;align-items:center;justify-content:space-between;box-shadow:0 10px 26px rgba(255,138,61,.32);}
+  .cta .t{font-size:17px;font-weight:700;}
+  .cta .d{font-size:13px;opacity:.92;margin-top:3px;}
+  .cta .go{background:#fff;color:var(--brand);border-radius:14px;padding:10px 16px;font-weight:700;font-size:14px;}
+  /* 练习演示 */
+  .demo{margin:14px 16px;background:var(--card);border-radius:22px;padding:18px;box-shadow:var(--shadow);}
+  .q{font-size:16px;line-height:1.6;margin-bottom:14px;}
+  .q .tag{display:inline-block;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600;padding:3px 9px;border-radius:10px;margin-bottom:8px;}
+  .opts{display:grid;gap:10px;}
+  .opt{border:2px solid var(--line);border-radius:14px;padding:13px 14px;font-size:15px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:.15s;}
+  .opt .k{width:26px;height:26px;flex:none;border-radius:8px;background:var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--sub);font-size:13px;}
+  .opt.sel{border-color:var(--accent);background:var(--accent-soft);}
+  .opt.correct{border-color:var(--good);background:var(--good-soft);}
+  .opt.correct .k{background:var(--good);color:#fff;}
+  .opt.wrong{border-color:#ff6b6b;background:#fff0f0;}
+  .opt.wrong .k{background:#ff6b6b;color:#fff;}
+  .opt.dim{opacity:.55;}
+  /* 反馈气泡 */
+  .fb{margin-top:14px;border-radius:16px;padding:14px;font-size:14px;line-height:1.55;display:none;animation:pop .3s ease;}
+  .fb.show{display:block;}
+  .fb.good{background:var(--good-soft);border:1px solid #c8f0da;}
+  .fb.good b{color:var(--good);}
+  .fb.wrong{background:#fff0f0;border:1px solid #ffd6d6;}
+  .fb.wrong b{color:#ff6b6b;}
+  .fb .who{font-size:12px;color:var(--sub);margin-bottom:4px;}
+  @keyframes pop{from{transform:scale(.96);opacity:.4}to{transform:scale(1);opacity:1}}
+  /* 切换按钮 */
+  .switch{display:flex;gap:8px;margin:0 16px 6px;}
+  .switch button{flex:1;border:none;border-radius:12px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;background:var(--line);color:var(--sub);}
+  .switch button.act{background:var(--brand);color:#fff;}
+  /* 底部导航 */
+  .nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#fff;border-top:1px solid var(--line);display:flex;padding:8px 0 10px;}
+  .nav a{flex:1;text-align:center;font-size:11px;color:var(--sub);text-decoration:none;}
+  .nav a .i{font-size:20px;display:block;margin-bottom:2px;}
+  .nav a.act{color:var(--brand);}
+  .note{max-width:430px;margin:24px auto 0;padding:14px 18px;font-size:12px;color:var(--sub);line-height:1.6;}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="top">
+    <div class="hi">下午好，<b>小宇</b> 👋</div>
+    <div class="chips">
+      <div class="chip"><span class="e">🔥</span>连续 12 天</div>
+      <div class="chip"><span class="e">⭐</span>348</div>
+    </div>
+  </div>
+
+  <!-- AI 小老师问候 -->
+  <div class="tutor">
+    <div class="ip"><img src="assets/yueyue-think.png" alt="小玥老师" /></div>
+    <div class="say">
+      今天状态不错呀！<b>分数加减</b>这关就差 2 颗星啦～
+      <span class="small">小玥老师陪你，做完这关送你一个成就徽章 🏅</span>
+    </div>
+  </div>
+
+  <!-- 知识星图 -->
+  <div class="sec"><h3>🗺️ 我的数学星图</h3><span class="more">查看全部</span></div>
+  <div class="map">
+    <div class="stars" id="stars">
+      <div class="star on" data-n="分数加减"><span class="ico">⭐</span>分数加减<div class="pp"><i style="width:80%"></i></div></div>
+      <div class="star half" data-n="小数乘除"><span class="ico">🌗</span>小数乘除<div class="pp"><i style="width:45%"></i></div></div>
+      <div class="star on" data-n="植树问题"><span class="ico">🌳</span>植树问题<div class="pp"><i style="width:100%"></i></div></div>
+      <div class="star lock" data-n="行程问题"><span class="ico">🔒</span>行程问题<div class="pp"><i style="width:0%"></i></div></div>
+      <div class="star on" data-n="面积计算"><span class="ico">⭐</span>面积计算<div class="pp"><i style="width:90%"></i></div></div>
+      <div class="star half" data-n="倍数问题"><span class="ico">🌗</span>倍数问题<div class="pp"><i style="width:50%"></i></div></div>
+      <div class="star lock" data-n="统计图"><span class="ico">🔒</span>统计图<div class="pp"><i style="width:0%"></i></div></div>
+      <div class="star lock" data-n="方程入门"><span class="ico">🔒</span>方程入门<div class="pp"><i style="width:0%"></i></div></div>
+    </div>
+  </div>
+
+  <!-- 闯关入口 -->
+  <div class="cta">
+    <div><div class="t">🚀 继续闯关：分数加减</div><div class="d">本关还差 2 题，预计 5 分钟</div></div>
+    <div class="go">出发</div>
+  </div>
+
+  <!-- 练习 + 情感化反馈演示 -->
+  <div class="sec"><h3>💡 练习界面（新视觉）</h3><span class="more">演示</span></div>
+  <div class="demo">
+    <div class="q"><span class="tag">五年级 · 分数加减</span><br>一根绳子长 <b>3/4</b> 米，用掉 <b>1/3</b> 米，还剩多少米？</div>
+    <div class="opts" id="opts">
+      <div class="opt" data-r="A"><span class="k">A</span>5/12 米</div>
+      <div class="opt" data-r="B"><span class="k">B</span>1/3 米</div>
+      <div class="opt" data-r="C"><span class="k">C</span>2/3 米</div>
+      <div class="opt" data-r="D"><span class="k">D</span>1/2 米</div>
+    </div>
+    <div class="fb good" id="fbGood">
+      <div class="who">🤖 小玥老师</div>
+      <b>太棒了！你这一步走得特别稳 ✨</b><br>你先通分再相减，思路特别清楚——3/4−1/3 = 9/12−4/12 = 5/12，完全正确！把这颗星点亮给你 🌟
+    </div>
+    <div class="fb wrong" id="fbWrong">
+      <div class="who">🤖 小玥老师</div>
+      <b>差一点点就够到啦，别急～</b><br>单位都是"米"，可以直接减，但要先通分哦：3/4 和 1/3 的公分母是 12。我陪你再走一遍这一小步 👇
+    </div>
+  </div>
+  <div class="switch">
+    <button class="act" id="btnGood" onclick="pick('good')">演示：做对反馈</button>
+    <button id="btnWrong" onclick="pick('wrong')">演示：做错反馈</button>
+  </div>
+
+  <!-- 底部导航 -->
+  <div class="nav">
+    <a class="act"><span class="i">🏠</span>首页</a>
+    <a><span class="i">🗺️</span>闯关</a>
+    <a><span class="i">📕</span>错题本</a>
+    <a><span class="i">🏅</span>成就</a>
+    <a><span class="i">👤</span>我的</a>
+  </div>
+
+  <div class="note">
+    原型说明：这是「错题小老师」升级方向 v2 的高保真示意，用于确认视觉与交互基调。
+    · AI 小老师「小玥」固定形象+语音后续接入 · 星图即知识点掌握度可视化 · 反馈文案主打"具体夸、不打击"。
+    确认方向后，将落地为 Vue 组件并接入已有 practice_service / weak_profile。
+  </div>
+</div>
+
+<script>
+  function pick(type){
+    document.getElementById('btnGood').classList.toggle('act', type==='good');
+    document.getElementById('btnWrong').classList.toggle('act', type==='wrong');
+    const opts=document.querySelectorAll('#opts .opt');
+    const fbG=document.getElementById('fbGood'), fbW=document.getElementById('fbWrong');
+    fbG.classList.remove('show'); fbW.classList.remove('show');
+    opts.forEach(o=>o.classList.remove('sel','correct','wrong','dim'));
+    if(type==='good'){
+      opts.forEach(o=>{ if(o.dataset.r==='A') o.classList.add('correct'); else o.classList.add('dim'); });
+      fbG.classList.add('show');
+    }else{
+      opts.forEach(o=>{ if(o.dataset.r==='C'||o.dataset.r==='D') o.classList.add('dim'); });
+      const wrong=document.querySelector('#opts .opt[data-r="B"]'); wrong.classList.add('wrong','sel');
+      fbW.classList.add('show');
+    }
+  }
+  // 星图点击：演示点亮
+  document.querySelectorAll('#stars .star').forEach(s=>{
+    s.addEventListener('click',()=>{
+      if(s.classList.contains('lock')){ s.classList.remove('lock'); s.classList.add('half'); s.querySelector('.ico').textContent='🌗'; }
+      else if(s.classList.contains('half')){ s.classList.remove('half'); s.classList.add('on'); s.querySelector('.ico').textContent='⭐'; s.querySelector('.pp i').style.width='100%'; }
+    });
+  });
+</script>
+</body>
+</html>

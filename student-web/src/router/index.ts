@@ -52,7 +52,79 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Mistakes.vue'),
         meta: { title: '错题本' },
       },
+      {
+        path: 'subscription',
+        name: 'subscription',
+        component: () => import('@/views/Subscription.vue'),
+        meta: { title: '会员中心' },
+      },
+      {
+        path: 'review',
+        name: 'review',
+        component: () => import('@/views/Review.vue'),
+        meta: { title: '今日复习' },
+      },
+      {
+        path: 'game',
+        name: 'game-hub',
+        component: () => import('@/views/GameHub.vue'),
+        meta: { title: '游戏大厅' },
+      },
+      {
+        path: 'game/speed',
+        name: 'speed-challenge',
+        component: () => import('@/views/game/SpeedChallenge.vue'),
+        meta: { title: '限时挑战' },
+      },
+      {
+        path: 'game/leaderboard',
+        name: 'game-leaderboard',
+        component: () => import('@/views/game/Leaderboard.vue'),
+        meta: { title: '排行榜' },
+      },
+      {
+        path: 'game/battle',
+        name: 'math-battle',
+        component: () => import('@/views/game/MathBattle.vue'),
+        meta: { title: '回合战斗' },
+      },
+      {
+        path: 'game/badges',
+        name: 'badge-wall',
+        component: () => import('@/views/game/BadgeWall.vue'),
+        meta: { title: '徽章墙' },
+      },
+      {
+        path: 'game/scenes',
+        name: 'scene-quiz',
+        component: () => import('@/views/game/SceneQuiz.vue'),
+        meta: { title: '生活场景题库' },
+      },
     ],
+  },
+  {
+    path: '/parent/login',
+    name: 'parent-login',
+    component: () => import('@/views/parent/ParentLogin.vue'),
+    meta: { public: true, title: '家长登录' },
+  },
+  {
+    path: '/parent/children',
+    name: 'parent-children',
+    component: () => import('@/views/parent/Children.vue'),
+    meta: { title: '我的孩子' },
+  },
+  {
+    path: '/parent/bind',
+    name: 'parent-bind',
+    component: () => import('@/views/parent/BindChild.vue'),
+    meta: { title: '绑定孩子' },
+  },
+  {
+    path: '/parent/children/:sid',
+    name: 'parent-child-detail',
+    component: () => import('@/views/parent/ChildDetail.vue'),
+    meta: { title: '孩子学习档案' },
   },
   {
     path: '/r/:token',
@@ -73,6 +145,10 @@ router.beforeEach((to) => {
   const isPublic = Boolean(to.meta.public)
 
   if (!isPublic && !isLoggedIn()) {
+    // 家长专区未登录 -> 家长登录页；其余 -> 学生登录页
+    if (to.path.startsWith('/parent')) {
+      return { name: 'parent-login', query: { redirect: to.fullPath } }
+    }
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.name === 'login' && isLoggedIn()) {

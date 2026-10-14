@@ -9,9 +9,9 @@
  *  - 错题库图标刻意与错题本页的宝石 SVG 同形，强化「宝藏」心智。
  *
  * props:
- *  - kind:  'practice' | 'ai' | 'mistakes' | 'dashboard'
+ *  - kind:  'practice' | 'ai' | 'mistakes' | 'subscription'
  */
-defineProps<{ kind: 'practice' | 'ai' | 'mistakes' | 'dashboard' }>()
+defineProps<{ kind: 'practice' | 'ai' | 'mistakes' | 'subscription' | 'review' | 'game' }>()
 </script>
 
 <template>
@@ -85,30 +85,63 @@ defineProps<{ kind: 'practice' | 'ai' | 'mistakes' | 'dashboard' }>()
     <circle cx="25" cy="22" r="1.1" fill="currentColor" stroke="none" class="animate-twinkle" style="animation-delay: 1s" />
   </svg>
 
-  <!-- ④ 学习画像：霓虹雷达扫描盘 + 旋转指针 + 探测点 -->
+  <!-- ④ 会员中心：皇冠 + 闪光 -->
   <svg
-    v-else-if="kind === 'dashboard'"
+    v-else-if="kind === 'subscription'"
     class="h-7 w-7"
-    style="color: #1fbf85; filter: drop-shadow(0 0 3px currentColor)"
+    style="color: #f59e0b; filter: drop-shadow(0 0 3px currentColor)"
     viewBox="0 0 32 32"
     fill="none"
     stroke="currentColor"
-    stroke-width="1.5"
+    stroke-width="1.6"
     stroke-linejoin="round"
     stroke-linecap="round"
   >
-    <circle cx="16" cy="16" r="12" opacity="0.55" stroke-width="1" />
-    <circle cx="16" cy="16" r="8" opacity="0.6" stroke-width="1" />
-    <circle cx="16" cy="16" r="4" opacity="0.7" stroke-width="1" />
-    <line x1="16" y1="3" x2="16" y2="29" opacity="0.4" stroke-width="0.8" />
-    <line x1="3" y1="16" x2="29" y2="16" opacity="0.4" stroke-width="0.8" />
-    <g class="radar-scan" style="transform-origin: 16px 16px">
-      <path d="M16 16 L26 6 A11 11 0 0 0 22 5 Z" fill="currentColor" opacity="0.35" stroke="none" />
-      <line x1="16" y1="16" x2="25" y2="7" stroke-width="1.3" />
-    </g>
-    <circle cx="16" cy="16" r="2" fill="currentColor" stroke="none" />
-    <circle cx="22" cy="10" r="1.4" fill="currentColor" stroke="none" class="animate-twinkle" />
-    <circle cx="9" cy="22" r="1.4" fill="currentColor" stroke="none" class="animate-twinkle" style="animation-delay: 0.7s" />
+    <path d="M6 24h20M8 24l-2-8 6 3 4-8 4 8 6-3-2 8H8z" />
+    <circle cx="16" cy="6" r="2" fill="currentColor" stroke="none" class="animate-twinkle" />
+    <circle cx="26" cy="10" r="1.2" fill="currentColor" stroke="none" class="animate-twinkle" style="animation-delay: 0.6s" />
+    <circle cx="6" cy="12" r="1.2" fill="currentColor" stroke="none" class="animate-twinkle" style="animation-delay: 1.2s" />
+  </svg>
+
+  <!-- ⑤ 今日复习：科学复排 - 日历卡片 + 对勾 + 循环箭头（间隔记忆心智） -->
+  <svg
+    v-else-if="kind === 'review'"
+    class="h-7 w-7"
+    style="color: #7c5cfc; filter: drop-shadow(0 0 3px currentColor)"
+    viewBox="0 0 32 32"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+  >
+    <rect x="6" y="8" width="20" height="18" rx="3" />
+    <line x1="6" y1="13" x2="26" y2="13" />
+    <line x1="11" y1="5.5" x2="11" y2="9.5" />
+    <line x1="21" y1="5.5" x2="21" y2="9.5" />
+    <path d="M11 19 l3.5 3.5 L21 15.5" opacity="0.92" />
+    <circle cx="24" cy="5.5" r="2.6" fill="currentColor" stroke="none" class="animate-twinkle">
+      <animate attributeName="r" values="2.6;2.1;2.6" dur="1.6s" repeatCount="indefinite" />
+    </circle>
+  </svg>
+
+  <!-- ⑥ 游戏大厅：手柄 + 方向键（斜上导读图标，可识别度高） -->
+  <svg
+    v-else
+    class="h-7 w-7"
+    style="color: #ff7043; filter: drop-shadow(0 0 3px currentColor)"
+    viewBox="0 0 32 32"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+  >
+    <rect x="4" y="11" width="24" height="13" rx="6" />
+    <path d="M10 14v4M8 16h4" opacity="0.92" />
+    <circle cx="22" cy="16" r="1.6" fill="currentColor" stroke="none" class="animate-twinkle" />
+    <circle cx="25" cy="19" r="1.4" fill="currentColor" stroke="none" class="animate-twinkle" style="animation-delay: 0.5s" />
+    <path d="M14 16.5 l1.5 1.5 2.5 -2.5" opacity="0.92" />
   </svg>
 </template>
 

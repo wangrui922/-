@@ -26,7 +26,7 @@ import logging
 import re
 from typing import List, Optional
 
-from app.ai.ark_client import ark_respond
+from app.ai.ark_client import ark_respond, ark_respond_async
 from app.ai.intent import UNGUARDED_MODES, normalize_mode  # mode 常量唯一真相源
 
 logger = logging.getLogger("app.ai.answer_guard")
@@ -139,9 +139,51 @@ def generate_guarded_reply(
     return reply or fallback
 
 
+async def generate_guarded_reply_async(
+    *,
+    messages: List[dict],
+    system: Optional[str] = None,
+    strict: bool = True,
+    mode: Optional[str] = None,
+    max_retries: int = MAX_GUARD_RETRIES,
+    fallback: str = _DEFAULT_FALLBACK,
+) -> str:
+    """``generate_guarded_reply`` 的异步版（await ``ark_respond_async``）。
+
+    语义与同步版**完全一致**（mode 直通、泄漏重试、兜底），只是不阻塞事件循环，
+    供 async 编排层直接 ``await``。
+
+    Args:
+        与 ``generate_guarded_reply`` 相同。
+
+    Returns:
+        经检查的最终回复文本；或安全兜底语。
+    """
+    reply = (await ark_respond_async(messages=messages, system=system) or "").strip()
+
+    normalized_mode = normalize_mode(mode)
+    if normalized_mode in UNGUARDED_MODES:
+        logger.info("mode=%s 跳过答案泄漏检查，原样返回模型回复", normalized_mode)
+        return reply or fallback
+
+    attempts = 0
+    while has_answer_leak(reply, strict=strict) and attempts < max_retries:
+        attempts += 1
+        logger.warning("检测到答案泄漏，第 %s/%s 次重新生成", attempts, max_retries)
+        messages = list(messages) + [{"role": "system", "content": LEAK_RETRY_HINT}]
+        reply = (await ark_respond_async(messages=messages, system=system) or "").strip()
+
+    if has_answer_leak(reply, strict=strict):
+        logger.error("重生成 %s 次后仍泄漏答案，退回安全兜底引导语", max_retries)
+        return fallback
+
+    return reply or fallback
+
+
 __all__ = [
     "has_answer_leak",
     "generate_guarded_reply",
+    "generate_guarded_reply_async",
     "LEAK_RETRY_HINT",
     "MAX_GUARD_RETRIES",
 ]

@@ -17,22 +17,19 @@ T04 说明：
 from __future__ import annotations
 
 import socket
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import models as _models  # noqa: F401  确保全部 ORM 模型注册进 Base.metadata
+from app import models as _models  # noqa: F401
 from app.api import api_router
 from app.core.config import settings
 from app.core.response import register_exception_handlers
+from app.tasks import cron_jobs
 
 
 def _lan_cors_origins() -> list[str]:
-    """dev 模式：把本机局域网 IP 的各常用前端端口加入 CORS 白名单，
-    手机连同一 WiFi 访问 http://<本机IP>:5174 即可跨域调用后端，免手动算 IP。
-
-    生产环境（is_prod）不启用，跨域由 CORS_ORIGINS 环境变量显式配置。
-    """
     ports = [5173, 5174, 5175, 4173, 8000]
     hosts: set[str] = set()
     try:
@@ -45,6 +42,23 @@ def _lan_cors_origins() -> list[str]:
     except Exception:
         pass
     return [f"http://{h}:{p}" for h in sorted(hosts) for p in ports]
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """应用生命周期：启动定时任务，关闭时清理。"""
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
+    # 每天凌晨 2 点：掌握度刷新 + 周日周报生成
+    scheduler.add_job(cron_jobs.daily_sync, "cron", hour=2, minute=0)
+    # 每天凌晨 3 点：清理 30 天前的 AI 会话
+    scheduler.add_job(cron_jobs.cleanup_old_sessions, "cron", hour=3, minute=0)
+    scheduler.start()
+    try:
+        yield
+    finally:
+        scheduler.shutdown()
 
 
 def create_app() -> FastAPI:
@@ -77,6 +91,7 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
+        lifespan=_lifespan,
     )
 
     # ---- CORS：白名单取自环境变量 CORS_ORIGINS（逗号分隔），默认含常用本地地址 ----

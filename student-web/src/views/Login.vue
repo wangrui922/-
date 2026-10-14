@@ -61,7 +61,7 @@ const phoneValid = computed<boolean>(() => /^1[3-9]\d{9}$/.test(phone.value.trim
 const phoneCanSubmit = computed<boolean>(
   () => phoneValid.value && code.value.trim().length > 0 && !loading.value,
 )
-const activationCodeValid = computed<boolean>(() => /^YY(?:-[A-Z0-9]{4}){4}$/.test(activationCode.value))
+const activationCodeValid = computed<boolean>(() => !!activationCode.value.trim())
 const activationCanSubmit = computed<boolean>(
   () => activationCodeValid.value && /^\d{6}$/.test(pin.value) && !loading.value,
 )

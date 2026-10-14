@@ -31,13 +31,14 @@
 """
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from app.ai import ark_respond
+from app.ai import ark_respond, ark_respond_async
 from app.ai.ark_client import ArkError
 
 logger = logging.getLogger("app.services.explanation_quality")
@@ -265,6 +266,49 @@ def evaluate_explanation(
         timeout=timeout,
     )
 
+    return _quality_from_raw(raw)
+
+
+async def evaluate_explanation_async(
+    *,
+    question: str,
+    student_attempt: str,
+    ai_explanation: str,
+    error_type: Optional[str] = None,
+    timeout: float = 60.0,
+) -> ExplanationQuality:
+    """``evaluate_explanation`` 的异步版：await ``ark_respond_async``。
+
+    Args:
+        与 ``evaluate_explanation`` 完全相同。
+
+    Returns:
+        与 ``evaluate_explanation`` 相同。
+
+    Raises:
+        ArkError: 方舟调用本身失败时原样抛出，由调用方决定降级策略。
+    """
+    raw = await ark_respond_async(
+        messages=[
+            {
+                "role": "user",
+                "content": _build_user_content(
+                    question=question,
+                    student_attempt=student_attempt,
+                    ai_explanation=ai_explanation,
+                    error_type=error_type,
+                ),
+            }
+        ],
+        system=_QUALITY_SYSTEM,
+        timeout=timeout,
+    )
+
+    return _quality_from_raw(raw)
+
+
+def _quality_from_raw(raw: str) -> ExplanationQuality:
+    """从裁判原始回复构造 ``ExplanationQuality``（同步 / 异步共用）。"""
     parsed = parse_quality(raw)
     return ExplanationQuality(
         dimensions=parsed["dimensions"],
@@ -367,11 +411,81 @@ def ensure_explanation_quality(
     return current_text, quality
 
 
+async def ensure_explanation_quality_async(
+    *,
+    question: str,
+    student_attempt: str,
+    ai_explanation: str,
+    error_type: Optional[str] = None,
+    regenerate: Optional[Callable[[], Any]] = None,
+    threshold: int = 3,
+    max_retries: int = 1,
+    timeout: float = 60.0,
+) -> Tuple[str, ExplanationQuality]:
+    """``ensure_explanation_quality`` 的异步版（await async 裁判）。
+
+    ``regenerate`` 回调**同步 / 异步皆可**：返回 ``Awaitable`` 时自动 ``await``；
+    其余语义（best-effort、绝不阻塞主流程、``(text, quality)`` 返回）与同步版一致。
+
+    Args:
+        与 ``ensure_explanation_quality`` 完全相同（``regenerate`` 可为 async 函数）。
+
+    Returns:
+        ``(text, quality)``：最终采用的讲解与最后一次评测结果。
+    """
+    threshold = max(1, min(5, int(threshold)))
+    current_text = ai_explanation
+    quality: ExplanationQuality = _empty_quality()
+
+    async def _evaluate() -> ExplanationQuality:
+        return await evaluate_explanation_async(
+            question=question,
+            student_attempt=student_attempt,
+            ai_explanation=current_text,
+            error_type=error_type,
+            timeout=timeout,
+        )
+
+    try:
+        quality = await _evaluate()
+    except ArkError as exc:
+        logger.warning("讲解质量评测调用失败，跳过闸门：%s", exc)
+        return current_text, _empty_quality(error=str(exc))
+
+    if quality.parsed_ok and quality.passes(threshold):
+        return current_text, quality
+
+    for _ in range(max(1, min(3, max_retries))):
+        if regenerate is None:
+            break
+        try:
+            candidate = regenerate()
+            if inspect.isawaitable(candidate):
+                candidate = await candidate
+        except Exception as exc:  # 重生成失败不应拖垮主流程
+            logger.warning("讲解重生成回调异常，停止重试：%s", exc)
+            break
+        if not candidate or not candidate.strip():
+            break
+        current_text = candidate
+        try:
+            quality = await _evaluate()
+        except ArkError as exc:
+            logger.warning("重生成后评测失败，沿用当前讲解：%s", exc)
+            return current_text, _empty_quality(error=str(exc))
+        if quality.parsed_ok and quality.passes(threshold):
+            return current_text, quality
+
+    return current_text, quality
+
+
 __all__ = [
     "RUBRIC_DIMENSIONS",
     "DIMENSION_KEYS",
     "parse_quality",
     "evaluate_explanation",
+    "evaluate_explanation_async",
     "ensure_explanation_quality",
+    "ensure_explanation_quality_async",
     "ExplanationQuality",
 ]

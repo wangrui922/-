@@ -34,6 +34,7 @@ import {
   type RevealResult,
   type SubmitResult,
 } from '@/api/practice'
+import { loadDashboard } from '@/stores/profile'
 import type { GuideMessage } from '@/types/guide'
 import type { RelaxationStep } from '@/types/practice'
 
@@ -629,6 +630,8 @@ export async function finishPractice(): Promise<void> {
     practiceState.result = data
     practiceState.phase = 'result'
     practiceState.guide.open = false
+    // 练习完成后异步刷新画像数据（掌握度/雷达图/错因/推荐）
+    void loadDashboard({ force: true })
   } catch (error) {
     practiceState.finishError = toMessage(error, '结算失败了，再点一次试试')
   } finally {

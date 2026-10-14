@@ -382,6 +382,34 @@ def login_by_code(session: Session, phone: str, code: str) -> Dict[str, Any]:
     return payload
 
 
+def login_admin(session: Session, phone: str, pin: str) -> Dict[str, Any]:
+    """管理员登录（手机号 + 个人密码）。
+
+    仅放行 ``role=admin`` 的账号；校验 ``access_pin_hash`` 密码摘要，
+    与激活码账号共用同一套密码字段，避免新增表结构。
+
+    Returns:
+        与 ``login_by_code`` 同构的令牌载荷（含 ``user`` 摘要）。
+    """
+    normalized_phone = (phone or "").strip()
+    if not sms.is_valid_phone(normalized_phone):
+        raise ApiError(CODE_BAD_REQUEST, "手机号格式不正确")
+
+    user = get_user_by_phone(session, normalized_phone)
+    if user is None or user.role != "admin":
+        raise ApiError(CODE_UNAUTHORIZED, "管理员账号或密码错误")
+    if user.status == USER_STATUS_FROZEN:
+        raise ApiError(CODE_FORBIDDEN, "账号已被冻结，请联系管理员")
+    if not user.access_pin_hash or not verify_password(pin, user.access_pin_hash):
+        raise ApiError(CODE_UNAUTHORIZED, "管理员账号或密码错误")
+
+    user.last_login_at = utcnow()
+    session.flush()
+    payload = build_token_payload(user, None)
+    payload["user"] = build_user_brief(user, None)
+    return payload
+
+
 def refresh_tokens(session: Session, refresh_token: str) -> Dict[str, Any]:
     """用 refresh token 换一对新令牌。
 
@@ -443,9 +471,9 @@ def send_login_code(phone: str) -> Dict[str, Any]:
     except NotImplementedError as exc:
         raise ApiError(CODE_SERVER_ERROR, "短信验证码服务尚未接入") from exc
 
-    # dev 环境回带随机验证码，前端自动填充
+    # mock 模式下回传验证码，方便测试（真实通道上线后移除）
     dev_code: Optional[str] = None
-    if settings.is_dev and sent:
+    if settings.sms_provider == "mock" and sent:
         dev_code = sms.get_last_sent_code(normalized_phone)
 
     return {
@@ -524,6 +552,7 @@ __all__ = [
     "DEFAULT_GRADE",
     "DEFAULT_STAGE",
     "login_by_code",
+    "login_admin",
     "refresh_tokens",
     "send_login_code",
     "verify_login_code",

@@ -13,9 +13,10 @@ WORKDIR /app
 # install python deps first (cached layer)
 COPY requirements.txt .
 RUN pip install -r requirements.txt
-# gunicorn + uvicorn worker: enables --max-requests to recycle workers and
-# cure the "uvicorn memory gets dirty after 24h" issue we hit on bare uvicorn.
+# gunicorn + uvicorn worker: enables --max-requests to recycle workers
 RUN pip install "gunicorn==23.0.*" "uvicorn[standard]==0.32.*"
+# Celery + Redis (async task queue)
+RUN pip install "celery[redis]==5.4.*" "redis==5.0.*"
 
 # copy app source
 COPY . .

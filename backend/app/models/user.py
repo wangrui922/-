@@ -26,7 +26,9 @@ from app.models.base import GUID, Base, SoftDeleteMixin, TimestampMixin, uuid_pk
 
 if TYPE_CHECKING:  # 仅类型检查期引用，运行期不产生循环导入
     from app.models.ai import AiSession
+    from app.models.gamification import GameSession, Leaderboard, StudentBadge, StudentPoint
     from app.models.learning import Attempt, LearningTask, Mistake, StudentProfile
+    from app.models.subscription import Subscription
 
 # 角色 / 状态枚举（用 CHECK 约束落库，避免 PG 专属 ENUM 类型）
 ROLE_VALUES = ("student", "parent", "admin")
@@ -69,6 +71,11 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         back_populates="user",
         uselist=False,
         cascade="all, delete-orphan",
+    )
+    subscriptions: Mapped[List["Subscription"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="Subscription.created_at.desc()",
     )
 
     __table_args__ = (
@@ -113,6 +120,19 @@ class Student(Base, TimestampMixin):
     attempts: Mapped[List["Attempt"]] = relationship(back_populates="student", cascade="all, delete-orphan")
     tasks: Mapped[List["LearningTask"]] = relationship(back_populates="student", cascade="all, delete-orphan")
     sessions: Mapped[List["AiSession"]] = relationship(back_populates="student", cascade="all, delete-orphan")
+    # 方向六 · 游戏化学习
+    game_sessions: Mapped[list["GameSession"]] = relationship(
+        back_populates="student", cascade="all, delete-orphan"
+    )
+    points: Mapped[Optional["StudentPoint"]] = relationship(
+        back_populates="student", uselist=False, cascade="all, delete-orphan"
+    )
+    badges: Mapped[list["StudentBadge"]] = relationship(
+        back_populates="student", cascade="all, delete-orphan"
+    )
+    leaderboard_entries: Mapped[list["Leaderboard"]] = relationship(
+        back_populates="student", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint(f"grade >= {GRADE_MIN} AND grade <= {GRADE_MAX}", name="ck_students_grade"),

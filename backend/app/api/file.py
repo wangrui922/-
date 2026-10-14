@@ -20,10 +20,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
-from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
-from app.ai.ark_client import ArkError, ark_respond
+from app.ai.ark_client import ArkError, ark_respond, ark_respond_async
 from app.ai.prompts import ocr as ocr_prompt
 from app.core.config import settings
 from app.core.deps import CurrentUser, get_current_user
@@ -124,6 +123,23 @@ def _run_ocr(raw: bytes) -> str:
         return ""
 
 
+async def _run_ocr_async(raw: bytes) -> str:
+    """``_run_ocr`` 的异步版：await ``ark_respond_async``，不阻塞事件循环。
+
+    语义与同步版完全一致（失败降级为空串）。同步版保留供离线测试与脚本直接调用。
+    """
+    image_b64 = base64.b64encode(raw).decode("ascii")
+    try:
+        return await ark_respond_async(
+            messages=[{"role": "user", "content": "请按规则转写这张图片里的数学题。"}],
+            system=ocr_prompt.PROMPT,
+            image_b64=image_b64,
+        )
+    except ArkError as exc:
+        logger.warning("上传附带 OCR 失败，降级为空串：%s", exc)
+        return ""
+
+
 @router.post("/file/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -151,7 +167,7 @@ async def upload_file(
 
     data: Dict[str, Any] = {"key": key, "url": f"/api/file/{key}"}
     if ocr == 1:
-        data["ocrText"] = await run_in_threadpool(_run_ocr, raw)
+        data["ocrText"] = await _run_ocr_async(raw)
     return ok(data)
 
 

@@ -1,4 +1,4 @@
-"""内容域模型：``knowledge_points``、``questions``、``answers``。
+"""内容域模型：``knowledge_points``、``questions``、``answers``、``knowledge_relations``。
 
 字段以 docs/v4-db-api.md §A.2 为准。
 所有 UUID 主键/外键统一用 ``base.GUID``，JSON 用 ``base.JSONType``，跨方言一致。
@@ -20,10 +20,11 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import GUID, Base, JSONType, utcnow, uuid_pk
+from app.models.base import GUID, Base, JSONType, TimestampMixin, utcnow, uuid_pk
 
 if TYPE_CHECKING:  # 仅类型检查期引用，运行期不产生循环导入
     from app.models.ai import AiSession
@@ -90,8 +91,14 @@ def grades_of_band(band: str) -> range:
     return range(lo, hi + 1)
 
 
-class KnowledgePoint(Base):
-    """知识点（自引用树，支持多级归类）。"""
+class KnowledgePoint(TimestampMixin, Base):
+    """知识点（自引用树，支持多级归类）。
+
+    V6.5（KG-001）新增学习元数据列：``subject`` / ``grade`` / ``semester`` /
+    ``chapter`` / ``difficulty`` / ``importance`` / ``status``，用于
+    Student-DNA、Mastery、Priority 与难度引擎按学段/知识点定位学习状态；
+    存量行由 migration 014 回填默认值。
+    """
 
     __tablename__ = "knowledge_points"
 
@@ -104,9 +111,52 @@ class KnowledgePoint(Base):
         index=True,
         comment="父知识点(自引用)",
     )
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="描述")
-    code: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, unique=True, comment="编码(唯一)")
-    sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="排序权重")
+    description: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="描述"
+    )
+    code: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True, unique=True, comment="编码(唯一)"
+    )
+    sort: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="排序权重"
+    )
+    subject: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="math",
+        server_default="math",
+        comment="学科",
+    )
+    grade: Mapped[Optional[int]] = mapped_column(
+        SmallInteger, nullable=True, comment="适用年级(小学3=3 … 初三=9)"
+    )
+    semester: Mapped[Optional[str]] = mapped_column(
+        String(8), nullable=True, comment="学期：上/下"
+    )
+    chapter: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, comment="所属章节"
+    )
+    difficulty: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=3,
+        server_default="3",
+        comment="难度档位 1/3/5",
+    )
+    importance: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=3,
+        server_default="3",
+        comment="重要程度 1-5",
+    )
+    status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="active",
+        server_default="active",
+        comment="状态 active/archived",
+    )
 
     parent: Mapped[Optional["KnowledgePoint"]] = relationship(
         back_populates="children",
@@ -127,6 +177,87 @@ class KnowledgePoint(Base):
     )
 
 
+#: 知识点关系边类型（KG-002 · 规划 Sprint 1）：
+#:
+#: * ``prerequisite`` —— 前置关系：source 是 target 的前置知识（先学 source 再学 target）；
+#: * ``related``     —— 相关知识：两知识点相关（跨章节关联、对比、互证）；
+#: * ``next``        —— 学习顺序：source 学完后自然衔接 target（教材推进路径）。
+#:
+#: ⚠️ 数据库层带 CHECK 约束（见 ``KnowledgeRelation.__table_args__``），
+#: 新增类型必须同步迁移 DDL（PG/SQLite 两份 015）。
+KNOWLEDGE_RELATION_VALUES = ("prerequisite", "related", "next")
+
+
+class KnowledgeRelation(TimestampMixin, Base):
+    """知识点关系边表（KG-002 · 知识树的关系维度）。
+
+    与 ``knowledge_points`` 的自引用 ``parent_id``（归类树）正交：
+    归类树描述「知识点归属」，关系边描述「学习依赖/关联/顺序」，
+    两者各自独立，共同构成 V6.5 知识树（见 docs/sprint1-kg.md 设计约定）。
+
+    约束（与 migration 015 双方言 DDL 一致）：
+        * ``source_id`` / ``target_id`` 外键指向 ``knowledge_points.id``；
+        * ``relation_type`` 只能取 :data:`KNOWLEDGE_RELATION_VALUES` 之一；
+        * ``source_id <> target_id``（禁止自环）；
+        * ``(source_id, target_id, relation_type)`` 唯一（同一类型不重复建边）。
+
+    主键派生（幂等 merge 用，见 ``scripts/seed_kp_relations_v65.py``）：
+        ``rel_uuid(source_code, relation_type, target_code)
+         = uuid5(NS_QUESTION_BANK, "rel:" + source_code + ":" + relation_type + ":" + target_code)``
+        与 ``kp_uuid`` 共用 ``NS_QUESTION_BANK`` 命名空间，前缀不同避免碰撞。
+    """
+
+    __tablename__ = "knowledge_relations"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("knowledge_points.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="源知识点（需先掌握/关联起点/顺序起点）",
+    )
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("knowledge_points.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="目标知识点",
+    )
+    relation_type: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        comment="关系类型 prerequisite/related/next",
+    )
+
+    #: 指向两端知识点的只读关系（级联删除由数据库 FK 负责）
+    source: Mapped["KnowledgePoint"] = relationship(
+        foreign_keys=[source_id],
+    )
+    target: Mapped["KnowledgePoint"] = relationship(
+        foreign_keys=[target_id],
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "relation_type IN ('prerequisite','related','next')",
+            name="ck_knowledge_relations_type",
+        ),
+        CheckConstraint(
+            "source_id <> target_id",
+            name="ck_knowledge_relations_no_self_loop",
+        ),
+        UniqueConstraint(
+            "source_id",
+            "target_id",
+            "relation_type",
+            name="uq_knowledge_relations_edge",
+        ),
+        Index("idx_knowledge_relations_target_type", "target_id", "relation_type"),
+        {"comment": "知识点关系边表"},
+    )
+
+
 class Question(Base):
     """题目（关联知识点，可有标准答案）。"""
 
@@ -134,15 +265,23 @@ class Question(Base):
 
     id: Mapped[uuid.UUID] = uuid_pk()
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="题干")
-    image_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, comment="配图地址")
-    subject: Mapped[str] = mapped_column(String(16), nullable=False, default=SUBJECT_DEFAULT, comment="学科")
+    image_url: Mapped[Optional[str]] = mapped_column(
+        String(512), nullable=True, comment="配图地址"
+    )
+    subject: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=SUBJECT_DEFAULT, comment="学科"
+    )
     # ⚠️ U1 年级语义（老板拍板，禁止改动）：``grade`` 存的是**升入年级**。
     #    青岛版衔接卷：一升二=2、二升三=3、三升四=4、四升五=5、五升六=6；
     #    苏教版下册卷：4下=4、5下=5、6下=6。
     #    册内的「温故（复习上学期）」与「预习（新课衔接）」用 ``section`` 区分，
     #    **不拆年级**。任何地方都严禁做 ``grade - 1`` 之类的换算。
-    grade: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True, comment="适用年级(升入年级) 1-12")
-    difficulty: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True, comment="难度 1/3/5")
+    grade: Mapped[Optional[int]] = mapped_column(
+        SmallInteger, nullable=True, comment="适用年级(升入年级) 1-12"
+    )
+    difficulty: Mapped[Optional[int]] = mapped_column(
+        SmallInteger, nullable=True, comment="难度 1/3/5"
+    )
     kp_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         GUID(),
         ForeignKey("knowledge_points.id", ondelete="SET NULL"),
@@ -153,7 +292,9 @@ class Question(Base):
     type_: Mapped[Optional[str]] = mapped_column(
         "type", String(16), nullable=True, comment="选择/填空/应用/计算/图形/判断"
     )
-    options: Mapped[Any] = mapped_column(JSONType(), nullable=True, comment="选择题选项(JSON)")
+    options: Mapped[Any] = mapped_column(
+        JSONType(), nullable=True, comment="选择题选项(JSON)"
+    )
     status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
@@ -190,7 +331,10 @@ class Question(Base):
     #: 存量 docx 题回填 ``green``；AI 生成归档题(``source_doc='ai_gen'``)回填 ``red``；
     #: 本库批量生成题(``scripts/generate_math_bank.py``)标 ``yellow``。
     source_tag: Mapped[Optional[str]] = mapped_column(
-        String(8), nullable=True, default="green", server_default="green",
+        String(8),
+        nullable=True,
+        default="green",
+        server_default="green",
         comment="溯源标记 green/yellow/red",
     )
     #: 是否可随产品对外发布（T07 · 版权护栏）。
@@ -199,8 +343,21 @@ class Question(Base):
     #: 使其不进入任何对外发布/导出池（仅内部校验、讲解质量评测可用）。
     #: 例：云南中考真题(用户声明可公开)=True；下载站模拟卷(内部金标准)=False。
     ship_ready: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default="1",
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
         comment="是否可对外发布；真实卷内部金标准置0",
+    )
+    # ------------------------------------------------------------ 方向六 · 生活场景题库
+    scenario_type: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True, comment="场景类型：shopping/cake/time/distance"
+    )
+    scenario_template: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="题目模板（含占位符）"
+    )
+    scenario_params: Mapped[Any] = mapped_column(
+        JSONType(), nullable=True, comment="JSON：模板参数范围"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, comment="创建时间(UTC)"
@@ -212,9 +369,15 @@ class Question(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
-    mistakes: Mapped[List["Mistake"]] = relationship(back_populates="question", cascade="all, delete-orphan")
-    attempts: Mapped[List["Attempt"]] = relationship(back_populates="question", cascade="all, delete-orphan")
-    ai_sessions: Mapped[List["AiSession"]] = relationship(back_populates="question", cascade="all, delete-orphan")
+    mistakes: Mapped[List["Mistake"]] = relationship(
+        back_populates="question", cascade="all, delete-orphan"
+    )
+    attempts: Mapped[List["Attempt"]] = relationship(
+        back_populates="question", cascade="all, delete-orphan"
+    )
+    ai_sessions: Mapped[List["AiSession"]] = relationship(
+        back_populates="question", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint("difficulty IN (1,3,5)", name="ck_questions_difficulty"),
@@ -222,6 +385,7 @@ class Question(Base):
         Index("idx_questions_status_grade", "status", "grade"),
         Index("idx_questions_source_doc", "source_doc"),
         Index("idx_questions_edition_grade", "edition", "grade"),
+        Index("idx_questions_scenario", "scenario_type"),
         {"comment": "题目表"},
     )
 
@@ -239,7 +403,9 @@ class Answer(Base):
         unique=True,
         comment="所属题目(1:1)",
     )
-    correct_answer: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="正确答案")
+    correct_answer: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="正确答案"
+    )
     analysis: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="解析")
     distractor_analysis: Mapped[Any] = mapped_column(
         JSONType(), nullable=False, default=dict, comment="干扰项分析(JSON)"
@@ -252,8 +418,10 @@ class Answer(Base):
 
 __all__ = [
     "KnowledgePoint",
+    "KnowledgeRelation",
     "Question",
     "Answer",
+    "KNOWLEDGE_RELATION_VALUES",
     "QUESTION_TYPE_VALUES",
     "DIFFICULTY_VALUES",
     "SUBJECT_DEFAULT",

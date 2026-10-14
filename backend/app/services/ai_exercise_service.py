@@ -384,6 +384,36 @@ def _ask_guide_model(
         logger.warning("AI 练习引导调用方舟失败 %s: %s", context, exc)
         raise ApiError(CODE_SERVER_ERROR, "老师这会儿有点忙，稍后再点一次试试") from exc
 
+    return _parse_guide_outcome(raw, context=context)
+
+
+async def _ask_guide_model_async(
+    *, stem: str, work: str, mode: str, context: str, image_b64: Optional[str] = None
+) -> Dict[str, Any]:
+    """``_ask_guide_model`` 的异步版：await ``ark_client.ark_respond_async``。
+
+    Args、Returns、Raises 与 ``_ask_guide_model`` 完全一致。
+    """
+    prompt = practice_guide.PROMPT.replace("{{QUESTION}}", stem).replace(
+        "{{WORK}}", work or EMPTY_WORK_PLACEHOLDER
+    )
+    suffix = _mode_instruction(mode)
+    if suffix:
+        prompt = f"{prompt}\n\n{suffix}"
+
+    try:
+        raw = await ark_client.ark_respond_async(
+            messages=[{"role": "user", "content": prompt}], image_b64=image_b64
+        )
+    except ark_client.ArkError as exc:
+        logger.warning("AI 练习引导调用方舟失败 %s: %s", context, exc)
+        raise ApiError(CODE_SERVER_ERROR, "老师这会儿有点忙，稍后再点一次试试") from exc
+
+    return _parse_guide_outcome(raw, context=context)
+
+
+def _parse_guide_outcome(raw: str, *, context: str) -> Dict[str, Any]:
+    """``_ask_guide_model`` 的回复解析（同步 / 异步共用）。"""
     reply = _clean(raw)
     ask_final_confirm = False
     verdict = "pending"
@@ -495,6 +525,78 @@ def guide_exercise(
     logger.info("exercise-guide %s mode=%s", context, active_mode)
 
     outcome = _ask_guide_model(
+        stem=question.content or "",
+        work=text,
+        mode=active_mode,
+        context=context,
+        image_b64=work_image_b64,
+    )
+
+    reply = outcome["reply"]
+    if active_mode in UNGUARDED_MODES:
+        # 讲解/评判模式：孩子要的就是结果，泄题闸门在这里必须让路
+        reply = reply or GUIDE_FALLBACK_REPLY
+    else:
+        reply = sanitize_guide_reply(
+            reply,
+            q_type=question.type_,
+            options=question.options,
+            correct_answer=answer.correct_answer if answer else None,
+            context=context,
+        )
+
+    guide_record = {
+        "question_id": str(question.id),
+        "work": text,
+        "teacher_reply": reply,
+        "verdict": outcome["verdict"],
+        "error_type": outcome["error_type"],
+        "work_image_url": _file_url(work_image_key),
+    }
+    db.add(
+        AiMessage(
+            session_id=session.id,
+            role="system",
+            content=f"{EXERCISE_GUIDE_PREFIX}{json.dumps(guide_record, ensure_ascii=False)}",
+        )
+    )
+    db.commit()
+
+    return {
+        "question_id": str(question.id),
+        "reply": reply,
+        "ask_final_confirm": bool(outcome["ask_final_confirm"]),
+        "verdict": outcome["verdict"],
+        "error_type": outcome["error_type"],
+        "mode": active_mode,
+        "prompt_version": practice_guide.VERSION,
+    }
+
+
+async def guide_exercise_async(
+    db: Session,
+    *,
+    student_id: Any,
+    session_id: Any,
+    question_id: Any,
+    work: Optional[str] = None,
+    work_image_b64: Optional[str] = None,
+    work_image_key: Optional[str] = None,
+    mode: Optional[str] = None,
+) -> Dict[str, Any]:
+    """``guide_exercise`` 的异步版：await ``_ask_guide_model_async``。
+
+    Args、Returns、Raises 与 ``guide_exercise`` 完全一致（DB 写操作仍是同步调用）。
+    """
+    session = _load_ai_session(db, student_id=student_id, session_id=session_id)
+    question, answer = _load_ai_question(db, session=session, question_id=question_id)
+
+    text = _clean(work)
+    active_mode = detect_mode(text=text, state=session.session_state, override=mode)
+    context = f"session={session.id} question={question.id}"
+    logger.info("exercise-guide %s mode=%s", context, active_mode)
+
+    outcome = await _ask_guide_model_async(
         stem=question.content or "",
         work=text,
         mode=active_mode,
@@ -771,6 +873,141 @@ def judge_and_record(
     }
 
 
+async def judge_and_record_async(
+    db: Session,
+    *,
+    student_id: Any,
+    session_id: Any,
+    question_id: Any,
+    answer: Optional[str] = None,
+    work: Optional[str] = None,
+    work_image_b64: Optional[str] = None,
+    work_image_keys: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """``judge_and_record`` 的异步版：await ``_ask_guide_model_async``。
+
+    Args、Returns、Raises 与 ``judge_and_record`` 完全一致（DB 写操作仍是同步调用）。
+    """
+    session = _load_ai_session(db, student_id=student_id, session_id=session_id)
+    question, std_answer = _load_ai_question(db, session=session, question_id=question_id)
+
+    sid = to_uuid(student_id, "student_id")
+    submitted = _clean(answer)
+    process = _clean(work)
+    context = f"session={session.id} question={question.id}"
+
+    # ---- 信号①：文本 / 数值归一化比对 -------------------------------------
+    text_match = _answers_match(submitted, std_answer.correct_answer if std_answer else None)
+
+    # ---- 信号②：模型 verdict（JUDGE 模式，明确要它判对错）------------------
+    combined_work = "\n".join(filter(None, [process, f"我的最终答案是：{submitted}" if submitted else ""]))
+    outcome = await _ask_guide_model_async(
+        stem=question.content or "",
+        work=combined_work,
+        mode=MODE_JUDGE,
+        context=context,
+        image_b64=work_image_b64,
+    )
+    verdict = outcome["verdict"]
+
+    # ---- 裁决 A3：冲突时以模型为准；模型 pending 时退回文本比对 -------------
+    if verdict == "correct":
+        correct = True
+    elif verdict == "wrong":
+        correct = False
+    else:
+        correct = bool(text_match) if text_match is not None else False
+
+    if text_match is not None and verdict in ("correct", "wrong") and bool(text_match) != correct:
+        logger.info(
+            "AI 练习判定冲突（以模型为准）%s text_match=%s verdict=%s",
+            context,
+            text_match,
+            verdict,
+        )
+
+    verdict_text = outcome["reply"] or (DEFAULT_CORRECT_TEXT if correct else DEFAULT_WRONG_TEXT)
+
+    judge_record = {
+        "question_id": str(question.id),
+        "work": process,
+        "answer": submitted,
+        "correct": correct,
+        "error_type": None if correct else (outcome["error_type"] or _safe_error_code(verdict_text)),
+    }
+    db.add(
+        AiMessage(
+            session_id=session.id,
+            role="system",
+            content=f"{EXERCISE_JUDGE_PREFIX}{json.dumps(judge_record, ensure_ascii=False)}",
+        )
+    )
+    db.commit()
+
+    if correct:
+        return {
+            "question_id": str(question.id),
+            "correct": True,
+            "verdict_text": verdict_text,
+            "error_type": None,
+            "mistake_id": None,
+            "mastery_refreshed": False,
+        }
+
+    # ---- 判错即时入本（幂等，record_mistake 内部 commit）--------------------
+    error_type = str(judge_record["error_type"])
+    detail_bits: List[str] = []
+    if submitted:
+        detail_bits.append(f"作答「{submitted}」")
+    std_text = _clean(std_answer.correct_answer) if std_answer else ""
+    if std_text:
+        detail_bits.append(f"标准答案「{std_text}」")
+    error_reason = MISTAKE_REASON_PREFIX
+    if detail_bits:
+        error_reason = f"{MISTAKE_REASON_PREFIX}：{'；'.join(detail_bits)}"
+
+    mistake = learning_service.record_mistake(
+        db,
+        student_id=sid,
+        question_id=question.id,
+        error_type=error_type,
+        error_reason=error_reason,
+        work_image_urls=[
+            f"/api/file/{key}"
+            for key in (work_image_keys or [])
+            if key and "/" not in key and "\\" not in key and key not in {".", ".."}
+        ],
+    )
+
+    # ---- 掌握度缓存失效：只对可归因（kp_id 非空）的题做，失败不拖垮主流程 -----
+    mastery_refreshed = False
+    if question.kp_id is not None:
+        try:
+            profile_service.invalidate_cache_for_question(
+                db,
+                student_id=sid,
+                question_id=question.id,
+            )
+            db.commit()
+            mastery_refreshed = True
+        except Exception:  # noqa: BLE001 - 对齐 practice_service:819
+            logger.warning("AI 练习判错刷新画像缓存失败 %s", context, exc_info=True)
+            db.rollback()
+
+    logger.info(
+        "AI 练习判错入本 %s error_type=%s mistake=%s", context, error_type, mistake.id
+    )
+
+    return {
+        "question_id": str(question.id),
+        "correct": False,
+        "verdict_text": verdict_text,
+        "error_type": error_type,
+        "mistake_id": str(mistake.id),
+        "mastery_refreshed": mastery_refreshed,
+    }
+
+
 def generate_summary(
     db: Session,
     *,
@@ -854,6 +1091,94 @@ def generate_summary(
     return {"summary": summary_text, "cached": False, "prompt_version": summary_prompt.VERSION}
 
 
+async def generate_summary_async(
+    db: Session,
+    *,
+    student_id: Any,
+    session_id: Any,
+) -> Dict[str, Any]:
+    """``generate_summary`` 的异步版：await ``ark_client.ark_respond_async``。
+
+    Args、Returns、Raises 与 ``generate_summary`` 完全一致（DB 写操作仍是同步调用）。
+    """
+    session = _load_ai_session(db, student_id=student_id, session_id=session_id)
+    if session.summary_text:
+        return {"summary": session.summary_text, "cached": True, "prompt_version": summary_prompt.VERSION}
+
+    messages = list(
+        db.execute(
+            select(AiMessage)
+            .where(AiMessage.session_id == session.id)
+            .order_by(AiMessage.created_at.asc())
+        ).scalars()
+    )
+    exercise_ids = _latest_exercise_question_ids(messages)
+    judged: Dict[str, Dict[str, Any]] = {}
+    guided: Dict[str, List[Dict[str, Any]]] = {}
+    for message in messages:
+        if message.content.startswith(EXERCISE_GUIDE_PREFIX):
+            try:
+                item = json.loads(message.content[len(EXERCISE_GUIDE_PREFIX):])
+            except (TypeError, ValueError):
+                continue
+            qid = str(item.get("question_id") or "")
+            if qid:
+                guided.setdefault(qid, []).append(item)
+            continue
+        if not message.content.startswith(EXERCISE_JUDGE_PREFIX):
+            continue
+        try:
+            item = json.loads(message.content[len(EXERCISE_JUDGE_PREFIX):])
+        except (TypeError, ValueError):
+            continue
+        qid = str(item.get("question_id") or "")
+        if qid:
+            judged[qid] = item
+
+    if len(exercise_ids) < 2 or not all(str(qid) in judged for qid in exercise_ids):
+        raise ApiError(CODE_BAD_REQUEST, "先完成两道相似题，老师再帮你做小结")
+
+    current_ids = {str(qid) for qid in exercise_ids}
+    transcript = "\n".join(
+        f"{message.role}：{message.content}"
+        for message in messages
+        if not message.content.startswith(
+            (EXERCISE_PREFIX, EXERCISE_GUIDE_PREFIX, EXERCISE_JUDGE_PREFIX)
+        )
+    )
+    exercise_notes = "\n".join(
+        f"练习题 {qid}：逐步引导 "
+        f"{json.dumps(guided.get(qid, []), ensure_ascii=False)}；"
+        f"最终作答过程 {item.get('work') or '未写文字过程'}；"
+        f"最终答案 {item.get('answer') or '未填写'}；"
+        f"结果 {'正确' if item.get('correct') else '需要继续练习'}；"
+        f"错因 {item.get('error_type') or '无'}"
+        for qid, item in judged.items()
+        if qid in current_ids
+    )
+    prompt = (
+        "以下内容只供你内部判断，不要复述原始对话。\n"
+        f"原题辅导记录：\n{transcript}\n\n两道相似题记录：\n{exercise_notes}"
+    )
+    try:
+        summary_text = (
+            await ark_client.ark_respond_async(
+                messages=[{"role": "user", "content": prompt}],
+                system=summary_prompt.PROMPT,
+            )
+        ).strip()
+    except ark_client.ArkError as exc:
+        logger.warning("AI 学习小结生成失败 session=%s: %s", session.id, exc)
+        raise ApiError(CODE_SERVER_ERROR, "老师的小结暂时没写好，稍后再试一次") from exc
+
+    session.summary_text = summary_text
+    session.session_state = "summarizing"
+    session.state_updated_at = datetime.now(timezone.utc)
+    db.add(AiMessage(session_id=session.id, role="assistant", content=summary_text))
+    db.commit()
+    return {"summary": summary_text, "cached": False, "prompt_version": summary_prompt.VERSION}
+
+
 # ============================================================ T1 薄弱画像
 def get_weak_profile(
     db: Session,
@@ -902,7 +1227,10 @@ __all__ = [
     "MISTAKE_REASON_PREFIX",
     "persist_exercises",
     "guide_exercise",
+    "guide_exercise_async",
     "judge_and_record",
+    "judge_and_record_async",
     "generate_summary",
+    "generate_summary_async",
     "get_weak_profile",
 ]

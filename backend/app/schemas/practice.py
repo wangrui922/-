@@ -35,6 +35,10 @@ class DrawRequest(PracticeBase):
     section: Optional[str] = Field(None, max_length=32, description="册内分区：温故/预习/提优/摸底/专项/自测")
     kp_id: Optional[str] = Field(None, description="指定知识点 ID")
     difficulty: Optional[int] = Field(None, description="难度 1/3/5")
+    adaptive: Optional[bool] = Field(
+        None,
+        description="自适应难度（#4）：true 时忽略 difficulty，按学生画像推荐主难度约 70% + 相邻难度约 30% 抽题",
+    )
     count: Optional[int] = Field(10, ge=1, le=30, description="题量，默认 10，上限 30")
 
 
@@ -156,6 +160,11 @@ class DrawResponse(PracticeBase):
     relaxed_to_level: int = Field(1, ge=1, le=6, description="实际放宽到的档位（1-3 / 6 兜底）")
     relaxation_steps: List[RelaxationStepOut] = Field(
         default_factory=list, description="逐档尝试记录，按尝试顺序追加"
+    )
+    # ---- #4 自适应难度（draw_adaptive）----
+    adaptive_used: bool = Field(False, description="本次是否走自适应难度抽题")
+    adaptive_difficulty: Optional[int] = Field(
+        None, description="自适应抽题的主难度 1/3/5（未开启时为 null）"
     )
 
 
