@@ -29,6 +29,7 @@ import logging
 import re
 import unicodedata
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Set
 
 from sqlalchemy import func, select
@@ -43,8 +44,8 @@ from app.ai.intent import (
     UNGUARDED_MODES,
     detect_mode,
 )
-from app.ai.orchestrator import EXERCISE_PREFIX
-from app.ai.prompts import practice_guide
+from app.ai.orchestrator import EXERCISE_GUIDE_PREFIX, EXERCISE_JUDGE_PREFIX, EXERCISE_PREFIX
+from app.ai.prompts import practice_guide, summary as summary_prompt
 from app.core.error_categories import (
     ERROR_CALC,
     ERROR_CATEGORIES,
@@ -291,6 +292,39 @@ def _session_question_ids(db: Session, session_id: uuid.UUID) -> Set[uuid.UUID]:
     return ids
 
 
+def _latest_exercise_question_ids(messages: Sequence[AiMessage]) -> List[uuid.UUID]:
+    """返回会话最近一次生成的练习题，供本轮完成状态和小结使用。"""
+    for message in reversed(messages):
+        text = message.content or ""
+        if not text.startswith(EXERCISE_PREFIX):
+            continue
+        try:
+            payload = json.loads(text[len(EXERCISE_PREFIX) :])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, list):
+            continue
+        ids: List[uuid.UUID] = []
+        for meta in payload:
+            if not isinstance(meta, dict):
+                continue
+            try:
+                ids.append(uuid.UUID(str(meta.get("question_id"))))
+            except (TypeError, ValueError):
+                continue
+        if ids:
+            return ids
+    return []
+
+
+def _file_url(image_key: Optional[str]) -> Optional[str]:
+    """把可信上传 key 转成站内图片地址，拒绝路径片段。"""
+    key = (image_key or "").strip()
+    if not key or "/" in key or "\\" in key or key in {".", ".."}:
+        return None
+    return f"/api/file/{key}"
+
+
 def _load_ai_question(
     db: Session,
     *,
@@ -316,7 +350,9 @@ def _load_ai_question(
 
 
 # ============================================================ 模型调用
-def _ask_guide_model(*, stem: str, work: str, mode: str, context: str) -> Dict[str, Any]:
+def _ask_guide_model(
+    *, stem: str, work: str, mode: str, context: str, image_b64: Optional[str] = None
+) -> Dict[str, Any]:
     """用 ``practice_guide`` 提示词问一次方舟，返回解析后的四元组字段。
 
     Args:
@@ -341,7 +377,9 @@ def _ask_guide_model(*, stem: str, work: str, mode: str, context: str) -> Dict[s
         prompt = f"{prompt}\n\n{suffix}"
 
     try:
-        raw = ark_client.ark_respond(messages=[{"role": "user", "content": prompt}])
+        raw = ark_client.ark_respond(
+            messages=[{"role": "user", "content": prompt}], image_b64=image_b64
+        )
     except ark_client.ArkError as exc:
         logger.warning("AI 练习引导调用方舟失败 %s: %s", context, exc)
         raise ApiError(CODE_SERVER_ERROR, "老师这会儿有点忙，稍后再点一次试试") from exc
@@ -420,6 +458,8 @@ def guide_exercise(
     session_id: Any,
     question_id: Any,
     work: Optional[str] = None,
+    work_image_b64: Optional[str] = None,
+    work_image_key: Optional[str] = None,
     mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     """AI 练习题的对话式逐步引导（对齐 ``practice_service.guide_question``）。
@@ -432,7 +472,7 @@ def guide_exercise(
        孩子明确请你讲/请你判，这时候把回复丢掉换兜底话术才是真正的「死板」。
 
     Args:
-        db: 数据库会话（本函数只读，不写不提交）。
+        db: 数据库会话；每轮学生过程和老师反馈都会写入本次会话。
         student_id: 学生 ID。
         session_id: AI 辅导会话 ID。
         question_id: 练习题 ID。
@@ -459,6 +499,7 @@ def guide_exercise(
         work=text,
         mode=active_mode,
         context=context,
+        image_b64=work_image_b64,
     )
 
     reply = outcome["reply"]
@@ -473,6 +514,23 @@ def guide_exercise(
             correct_answer=answer.correct_answer if answer else None,
             context=context,
         )
+
+    guide_record = {
+        "question_id": str(question.id),
+        "work": text,
+        "teacher_reply": reply,
+        "verdict": outcome["verdict"],
+        "error_type": outcome["error_type"],
+        "work_image_url": _file_url(work_image_key),
+    }
+    db.add(
+        AiMessage(
+            session_id=session.id,
+            role="system",
+            content=f"{EXERCISE_GUIDE_PREFIX}{json.dumps(guide_record, ensure_ascii=False)}",
+        )
+    )
+    db.commit()
 
     return {
         "question_id": str(question.id),
@@ -564,6 +622,8 @@ def judge_and_record(
     question_id: Any,
     answer: Optional[str] = None,
     work: Optional[str] = None,
+    work_image_b64: Optional[str] = None,
+    work_image_keys: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """学生提交最终答案：判对错 + **判错即时入本**（D3-b）。
 
@@ -609,6 +669,7 @@ def judge_and_record(
         work=combined_work,
         mode=MODE_JUDGE,
         context=context,
+        image_b64=work_image_b64,
     )
     verdict = outcome["verdict"]
 
@@ -630,6 +691,22 @@ def judge_and_record(
 
     verdict_text = outcome["reply"] or (DEFAULT_CORRECT_TEXT if correct else DEFAULT_WRONG_TEXT)
 
+    judge_record = {
+        "question_id": str(question.id),
+        "work": process,
+        "answer": submitted,
+        "correct": correct,
+        "error_type": None if correct else (outcome["error_type"] or _safe_error_code(verdict_text)),
+    }
+    db.add(
+        AiMessage(
+            session_id=session.id,
+            role="system",
+            content=f"{EXERCISE_JUDGE_PREFIX}{json.dumps(judge_record, ensure_ascii=False)}",
+        )
+    )
+    db.commit()
+
     if correct:
         return {
             "question_id": str(question.id),
@@ -641,7 +718,7 @@ def judge_and_record(
         }
 
     # ---- 判错即时入本（幂等，record_mistake 内部 commit）--------------------
-    error_type = outcome["error_type"] or _safe_error_code(verdict_text)
+    error_type = str(judge_record["error_type"])
     detail_bits: List[str] = []
     if submitted:
         detail_bits.append(f"作答「{submitted}」")
@@ -658,6 +735,11 @@ def judge_and_record(
         question_id=question.id,
         error_type=error_type,
         error_reason=error_reason,
+        work_image_urls=[
+            f"/api/file/{key}"
+            for key in (work_image_keys or [])
+            if key and "/" not in key and "\\" not in key and key not in {".", ".."}
+        ],
     )
 
     # ---- 掌握度缓存失效：只对可归因（kp_id 非空）的题做，失败不拖垮主流程 -----
@@ -687,6 +769,89 @@ def judge_and_record(
         "mistake_id": str(mistake.id),
         "mastery_refreshed": mastery_refreshed,
     }
+
+
+def generate_summary(
+    db: Session,
+    *,
+    student_id: Any,
+    session_id: Any,
+) -> Dict[str, Any]:
+    """两道相似题都完成最终判定后，生成并缓存本次结构化学习小结。"""
+    session = _load_ai_session(db, student_id=student_id, session_id=session_id)
+    if session.summary_text:
+        return {"summary": session.summary_text, "cached": True, "prompt_version": summary_prompt.VERSION}
+
+    messages = list(
+        db.execute(
+            select(AiMessage)
+            .where(AiMessage.session_id == session.id)
+            .order_by(AiMessage.created_at.asc())
+        ).scalars()
+    )
+    exercise_ids = _latest_exercise_question_ids(messages)
+    judged: Dict[str, Dict[str, Any]] = {}
+    guided: Dict[str, List[Dict[str, Any]]] = {}
+    for message in messages:
+        if message.content.startswith(EXERCISE_GUIDE_PREFIX):
+            try:
+                item = json.loads(message.content[len(EXERCISE_GUIDE_PREFIX):])
+            except (TypeError, ValueError):
+                continue
+            qid = str(item.get("question_id") or "")
+            if qid:
+                guided.setdefault(qid, []).append(item)
+            continue
+        if not message.content.startswith(EXERCISE_JUDGE_PREFIX):
+            continue
+        try:
+            item = json.loads(message.content[len(EXERCISE_JUDGE_PREFIX):])
+        except (TypeError, ValueError):
+            continue
+        qid = str(item.get("question_id") or "")
+        if qid:
+            judged[qid] = item
+
+    if len(exercise_ids) < 2 or not all(str(qid) in judged for qid in exercise_ids):
+        raise ApiError(CODE_BAD_REQUEST, "先完成两道相似题，老师再帮你做小结")
+
+    current_ids = {str(qid) for qid in exercise_ids}
+    transcript = "\n".join(
+        f"{message.role}：{message.content}"
+        for message in messages
+        if not message.content.startswith(
+            (EXERCISE_PREFIX, EXERCISE_GUIDE_PREFIX, EXERCISE_JUDGE_PREFIX)
+        )
+    )
+    exercise_notes = "\n".join(
+        f"练习题 {qid}：逐步引导 "
+        f"{json.dumps(guided.get(qid, []), ensure_ascii=False)}；"
+        f"最终作答过程 {item.get('work') or '未写文字过程'}；"
+        f"最终答案 {item.get('answer') or '未填写'}；"
+        f"结果 {'正确' if item.get('correct') else '需要继续练习'}；"
+        f"错因 {item.get('error_type') or '无'}"
+        for qid, item in judged.items()
+        if qid in current_ids
+    )
+    prompt = (
+        "以下内容只供你内部判断，不要复述原始对话。\n"
+        f"原题辅导记录：\n{transcript}\n\n两道相似题记录：\n{exercise_notes}"
+    )
+    try:
+        summary_text = ark_client.ark_respond(
+            messages=[{"role": "user", "content": prompt}],
+            system=summary_prompt.PROMPT,
+        ).strip()
+    except ark_client.ArkError as exc:
+        logger.warning("AI 学习小结生成失败 session=%s: %s", session.id, exc)
+        raise ApiError(CODE_SERVER_ERROR, "老师的小结暂时没写好，稍后再试一次") from exc
+
+    session.summary_text = summary_text
+    session.session_state = "summarizing"
+    session.state_updated_at = datetime.now(timezone.utc)
+    db.add(AiMessage(session_id=session.id, role="assistant", content=summary_text))
+    db.commit()
+    return {"summary": summary_text, "cached": False, "prompt_version": summary_prompt.VERSION}
 
 
 # ============================================================ T1 薄弱画像
@@ -738,5 +903,6 @@ __all__ = [
     "persist_exercises",
     "guide_exercise",
     "judge_and_record",
+    "generate_summary",
     "get_weak_profile",
 ]

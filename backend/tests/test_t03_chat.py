@@ -210,7 +210,10 @@ def test_generate_exercise(client, monkeypatch):
     assert [item["role"] for item in exercises] == ["fix", "transfer"], exercises
     # 出题时会回捞开场落库的分析 JSON，知识点/难度应与之一致
     assert all(item["knowledge"] == ark.knowledge for item in exercises), exercises
-    assert all(item["difficulty"] == ark.difficulty for item in exercises), exercises
+    expected_harder = next(
+        (level for level in (1, 3, 5) if level > ark.difficulty), ark.difficulty
+    )
+    assert [item["difficulty"] for item in exercises] == [ark.difficulty, expected_harder], exercises
     assert ark.count("exercise") == 1, ark.kinds()
 
 

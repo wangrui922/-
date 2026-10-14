@@ -3199,7 +3199,7 @@
         "C": "有20个苹果，每5个装一袋，可以装几袋？"
       },
       "type": "选择",
-      "status": "active"
+      "status": "archived"
     },
     {
       "bankId": "x2-045",
@@ -3419,7 +3419,7 @@
         "C": "35"
       },
       "type": "选择",
-      "status": "active"
+      "status": "archived"
     },
     {
       "bankId": "x2-057",
@@ -9432,7 +9432,7 @@
         "D": "乘法结合律"
       },
       "type": "选择",
-      "status": "active"
+      "status": "archived"
     },
     {
       "bankId": "x4-052",
@@ -11790,7 +11790,7 @@
         "D": "613"
       },
       "type": "选择",
-      "status": "active"
+      "status": "archived"
     },
     {
       "bankId": "x5-002",
@@ -11881,7 +11881,7 @@
         "D": "1"
       },
       "type": "选择",
-      "status": "active"
+      "status": "archived"
     },
     {
       "bankId": "x5-006",
@@ -12253,7 +12253,7 @@
       "stage": "小学",
       "gradeLabel": "五年级",
       "grade": 5,
-      "content": "古希腊学者认为：如果一个数恰好等于它的所有因数（本身除外）相加之和，那么这个数就是“完全数”。例如6有4个因数1，2，3，6，除本身6以外，还有1，2，3三个因数。6123=++，所以6是“完全数”。下面的数中是“完全数”的是（",
+      "content": "古希腊学者认为：如果一个数恰好等于它的所有因数（本身除外）相加之和，那么这个数就是“完全数”。例如，6 有 4 个因数：1、2、3、6。除本身 6 以外，1 + 2 + 3 = 6，所以 6 是“完全数”。下面的数中是“完全数”的是（ ）。",
       "answer": "选D。D．28",
       "knowledge": "计算",
       "rawKnowledge": "计算",
@@ -12617,7 +12617,7 @@
       "stage": "小学",
       "gradeLabel": "五年级",
       "grade": 5,
-      "content": "若11114nnn＝++（n为非0自然数），则n＝（",
+      "content": "若 1/n + 1/n + 1/n = 1/4（n 为非 0 自然数），则 n =（ ）。",
       "answer": "选C。C．12",
       "knowledge": "综合",
       "rawKnowledge": "综合",
@@ -15639,7 +15639,7 @@
       "stage": "小学",
       "gradeLabel": "六年级",
       "grade": 6,
-      "content": "当a是小于1且大于0的数时，3a5()3a5",
+      "content": "当 a 是大于 0 且小于 1 的数时，a × 3/5（ ）a ÷ 3/5。",
       "answer": "选B。B．＜",
       "knowledge": "综合",
       "rawKnowledge": "综合",
@@ -15678,7 +15678,7 @@
         "D": "d"
       },
       "type": "选择",
-      "status": "active"
+      "status": "archived"
     },
     {
       "bankId": "x6-012",
@@ -15746,7 +15746,7 @@
         "D": "31102x"
       },
       "type": "选择",
-      "status": "active"
+      "status": "archived"
     },
     {
       "bankId": "x6-015",

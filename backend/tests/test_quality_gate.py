@@ -162,3 +162,27 @@ def test_multiple_reasons_accumulated():
     # 至少命中『过长』与『讲解』
     assert any("过长" in r for r in reasons)
     assert any("讲解" in r or "答案" in r for r in reasons)
+
+
+# ----------------------------------------------------------------- 公式压扁污染
+def test_flattened_formula_private_use_glyphs_are_flagged():
+    """Word/PDF 私用区公式符号进入题干时必须转人工复核。"""
+    verdict, reasons = classify_question("当 0<a<1 时，3a5（ ）3a5")
+    assert verdict == VERDICT_REVIEW
+    assert any("公式" in reason for reason in reasons)
+
+
+def test_flattened_formula_operator_run_is_flagged():
+    """``＝++`` 这类运算符倒序是公式结构丢失，不得进入练习池。"""
+    verdict, reasons = classify_question("若11114nnn＝++（n为非0自然数），则n＝（ ）")
+    assert verdict == VERDICT_REVIEW
+    assert any("公式" in reason for reason in reasons)
+
+
+def test_readable_plain_text_fraction_is_not_flagged():
+    """修复后的斜杠分数保持可读，不能被新规则误伤。"""
+    verdict, reasons = classify_question(
+        "若 1/n + 1/n + 1/n = 1/4（n 为非 0 自然数），则 n =（ ）。"
+    )
+    assert verdict == VERDICT_CLEAN
+    assert not any("公式" in reason for reason in reasons)

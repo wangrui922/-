@@ -17,6 +17,8 @@ from app.models.learning import Attempt, LearningTask, Mistake, ReviewSchedule, 
 from app.models.ai import AiMessage, AiSession
 from app.models.student_mastery import StudentMastery
 from app.models.weekly_report import WeeklyReport
+from app.models.activation import ActivationCode
+from app.models.subscription import Order, Subscription
 
 #: 声明式元数据（供建表 / 迁移使用）
 metadata = Base.metadata
@@ -27,6 +29,7 @@ __all__ = [
     # 账号域
     "User",
     "Student",
+    "ActivationCode",
     "ParentChild",
     # 内容域
     "KnowledgePoint",
@@ -45,4 +48,7 @@ __all__ = [
     # AI 域
     "AiSession",
     "AiMessage",
+    # 订阅与收费域（M2）
+    "Subscription",
+    "Order",
 ]

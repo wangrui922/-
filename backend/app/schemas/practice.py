@@ -29,7 +29,7 @@ class DrawRequest(PracticeBase):
     全部字段可选：不传任何筛选条件时，从全部可归因 L1 安全池里随机抽 10 道。
     """
 
-    grade: Optional[int] = Field(None, ge=1, le=9, description="年级（升入年级口径）")
+    grade: Optional[int] = Field(None, ge=1, le=12, description="年级 1-12（升入年级口径）")
     grade_band: Optional[str] = Field(None, max_length=8, description="学段：小学/初中/高中（按年级区间过滤，与 grade 叠加为交集）")
     edition: Optional[str] = Field(None, max_length=16, description="教材版本：青岛版/苏教版")
     section: Optional[str] = Field(None, max_length=32, description="册内分区：温故/预习/提优/摸底/专项/自测")

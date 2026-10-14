@@ -377,6 +377,63 @@ class TestDeepLinkGuideHappyPath:
         _assert_contract(result, scene)
         assert result["ask_final_confirm"] is True
 
+    def test_student_says_unknown_gets_key_hint_instead_of_repeating_question(
+        self, iso_db: Session, scene: DeepLinkScene, monkeypatch
+    ) -> None:
+        """学生明确卡住后，老师必须换成题目相关的关键提示，不能重复上一问。"""
+        class SequentialArk:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.prompts: List[str] = []
+
+            def __call__(self, *, messages, system=None, image_b64=None, timeout=60.0):
+                self.calls += 1
+                self.prompts.append(messages[0]["content"])
+                return '{"reply":"你觉得先算什么？","askFinalConfirm":false}'
+
+        ark = SequentialArk()
+        monkeypatch.setattr(practice_service.ark_client, "ark_respond", ark)
+
+        first = practice_service.guide_question(
+            iso_db,
+            student_id=scene.student_id,
+            session_id=scene.session_id,
+            question_id=scene.question_id,
+            work="我想先算总价",
+        )
+        second = practice_service.guide_question(
+            iso_db,
+            student_id=scene.student_id,
+            session_id=scene.session_id,
+            question_id=scene.question_id,
+            work="不知道",
+        )
+        third = practice_service.guide_question(
+            iso_db,
+            student_id=scene.student_id,
+            session_id=scene.session_id,
+            question_id=scene.question_id,
+            work="还是不知道",
+        )
+        fourth = practice_service.guide_question(
+            iso_db,
+            student_id=scene.student_id,
+            session_id=scene.session_id,
+            question_id=scene.question_id,
+            work="我真的不知道",
+        )
+
+        assert first["reply"] == "你觉得先算什么？"
+        assert second["reply"] != first["reply"]
+        assert "关键条件" in second["reply"] or "3支笔" in second["reply"]
+        assert third["reply"] != second["reply"]
+        assert "总量" in third["reply"] or "一部分" in third["reply"]
+        assert fourth["reply"] != third["reply"]
+        assert "小判断" in fourth["reply"]
+        assert "不知道" in ark.prompts[1]
+        assert "你觉得先算什么？" in ark.prompts[1]
+        assert ark.calls == 4
+
 
 class TestDeepLinkLeakGuard:
     """用例 2：泄题闸门（代码层兜底，C11/C12）。"""

@@ -42,6 +42,7 @@ class ChatCreate(BaseSchema):
     image: Optional[str] = None
     text: Optional[str] = None
     client_event_id: Optional[str] = None
+    image_key: Optional[str] = None
 
 
 class ChatMessage(BaseSchema):
@@ -104,6 +105,7 @@ async def create_chat(
         student_id=student_id,
         image_b64=image_b64,
         text=text,
+        image_key=body.image_key,
         db=db,
     )
     return ok(result)

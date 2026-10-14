@@ -26,7 +26,7 @@ from app.core.response import (
 )
 from app.core.security import ROLE_STUDENT
 from app.models import Student, StudentProfile, User
-from app.models.user import GRADE_MAX, GRADE_MIN
+from app.models.user import GRADE_MAX, GRADE_MIN, stage_for_grade
 from app.schemas.student import ProfileSummary, StudentProfileIn, StudentProfileOut
 from app.services.auth_service import ensure_student_profile
 
@@ -142,7 +142,7 @@ def update_profile(session: Session, current: CurrentUser, data: StudentProfileI
         if data.grade < GRADE_MIN or data.grade > GRADE_MAX:
             raise ApiError(CODE_BAD_REQUEST, f"年级必须在 {GRADE_MIN}-{GRADE_MAX} 之间")
         student.grade = data.grade
-        student.stage = "primary"
+        student.stage = stage_for_grade(data.grade)
 
     if data.daily_target is not None:
         if data.daily_target < DAILY_TARGET_MIN or data.daily_target > DAILY_TARGET_MAX:

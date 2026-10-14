@@ -7,7 +7,7 @@
  * 前端这里不做任何「顺便展示答案」的旁路。
  *
  * 接口很慢（走大模型，超时 90s），所以：
- *   - loading 期间发送按钮禁用 + 文案变「老师正在想…」；
+ *   - loading 期间发送按钮禁用，并明确提示正在认真看题；
  *   - loading 期间不允许关抽屉误操作丢上下文（关闭按钮仍可用，对话会保留）。
  *
  * `askFinalConfirm` 为 true 时，老师在问「这是你的最终答案吗」，
@@ -62,7 +62,24 @@ const emit = defineEmits<{
   (e: 'send', work: string): void
   /** 第二个参数是点击瞬间输入框里还没发出去的草稿（可能为空串） */
   (e: 'quick', action: QuickAction, draft: string): void
+  (e: 'send-image', file: File, dataUrl: string): void
 }>()
+
+const imageInput = ref<HTMLInputElement | null>(null)
+
+async function handleImageChange(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || props.loading) return
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('图片读取失败'))
+    reader.readAsDataURL(file)
+  }).catch(() => '')
+  if (dataUrl) emit('send-image', file, dataUrl)
+}
 
 // ===== 语音：老师消息朗读 + 小朋友用说话来作答 =====
 /** 麦克风：说话实时填进输入框，说完整段自动发给老师。 */
@@ -271,6 +288,12 @@ function handleQuickAction(action: QuickAction): void {
                 : 'bg-slate-100 text-slate-800'
             "
           >
+            <img
+              v-if="msg.image"
+              :src="msg.image"
+              alt="学生手写过程"
+              class="mb-2 max-h-48 w-full rounded-xl object-contain"
+            />
             <span>{{ formatMath(msg.text) }}</span>
             <button
               v-if="msg.role === 'teacher' && ttsSupported"
@@ -285,7 +308,7 @@ function handleQuickAction(action: QuickAction): void {
 
         <div v-if="loading" class="flex justify-start">
           <div class="rounded-2xl bg-slate-100 px-4 py-3 text-base text-slate-500">
-            老师正在想…（这一步有点慢，稍等一下）
+            老师正在认真看题，请别重复点击
           </div>
         </div>
 
@@ -339,6 +362,23 @@ function handleQuickAction(action: QuickAction): void {
         />
 
         <div class="flex items-center gap-2">
+          <input
+            ref="imageInput"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            class="hidden"
+            @change="handleImageChange"
+          />
+          <button
+            type="button"
+            class="btn-ghost h-14 shrink-0 px-3"
+            :disabled="loading"
+            title="拍下手写解题过程"
+            @click="imageInput?.click()"
+          >
+            📷 拍过程
+          </button>
           <button
             v-if="sttSupported"
             type="button"

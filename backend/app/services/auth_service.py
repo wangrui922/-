@@ -18,7 +18,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
+import secrets
 import uuid
 from typing import Any, Dict, Optional, Tuple
 
@@ -49,9 +52,11 @@ from app.core.security import (
     VALID_ROLES,
     create_access_token,
     create_refresh_token,
+    hash_password,
     verify_token,
+    verify_password,
 )
-from app.models import Student, StudentProfile, User
+from app.models import ActivationCode, Student, StudentProfile, User
 from app.models.base import utcnow
 from app.services import sms
 
@@ -64,6 +69,10 @@ DEFAULT_STAGE: str = "primary"
 #: 账号状态
 USER_STATUS_ACTIVE: str = "active"
 USER_STATUS_FROZEN: str = "frozen"
+ACTIVATION_CODE_PREFIX: str = "YY"
+ACTIVATION_CODE_GROUPS: int = 4
+ACTIVATION_CODE_GROUP_SIZE: int = 4
+ACTIVATION_ALPHABET: str = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 # ==================================================================== 验证码
@@ -219,7 +228,7 @@ def build_user_brief(user: User, student: Optional[Student]) -> Dict[str, Any]:
     return {
         "userId": str(user.id),
         "studentId": str(student.id) if student is not None else None,
-        "phone": user.phone,
+        "phone": None if user.phone.startswith("invite-") else user.phone,
         "nickname": user.nickname,
         "avatarUrl": user.avatar_url,
         "role": user.role,
@@ -229,6 +238,118 @@ def build_user_brief(user: User, student: Optional[Student]) -> Dict[str, Any]:
 
 
 # ==================================================================== 用例
+def normalize_activation_code(code: str) -> str:
+    """统一激活码格式，兼容学生输入空格或省略横线。"""
+    compact = re.sub(r"[^A-Z0-9]", "", (code or "").upper())
+    expected_length = len(ACTIVATION_CODE_PREFIX) + ACTIVATION_CODE_GROUPS * ACTIVATION_CODE_GROUP_SIZE
+    if len(compact) != expected_length or not compact.startswith(ACTIVATION_CODE_PREFIX):
+        raise ApiError(CODE_BAD_REQUEST, "激活码格式不正确，请检查后再试")
+    return "-".join(
+        [compact[: len(ACTIVATION_CODE_PREFIX)]]
+        + [
+            compact[offset : offset + ACTIVATION_CODE_GROUP_SIZE]
+            for offset in range(len(ACTIVATION_CODE_PREFIX), expected_length, ACTIVATION_CODE_GROUP_SIZE)
+        ]
+    )
+
+
+def _activation_digest(code: str) -> str:
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def _validate_activation_pin(pin: str) -> str:
+    normalized = (pin or "").strip()
+    if not re.fullmatch(r"\d{6}", normalized):
+        raise ApiError(CODE_BAD_REQUEST, "个人密码请设置为 6 位数字")
+    return normalized
+
+
+def _new_invite_login_identifier() -> str:
+    """为无手机号的邀请制学生创建内部标识，不向客户端回显。"""
+    return f"invite-{secrets.token_hex(6)}"
+
+
+def _find_activation_code(session: Session, code: str) -> ActivationCode:
+    normalized = normalize_activation_code(code)
+    activation = session.execute(
+        select(ActivationCode).where(ActivationCode.code_digest == _activation_digest(normalized))
+    ).scalar_one_or_none()
+    if activation is None or activation.revoked_at is not None:
+        raise ApiError(CODE_UNAUTHORIZED, "激活码不正确或已失效")
+    if activation.expires_at is not None and activation.expires_at < utcnow():
+        raise ApiError(CODE_UNAUTHORIZED, "激活码已过期，请联系老师")
+    return activation
+
+
+def _register_invite_student(session: Session, nickname: str, pin: str) -> tuple[User, Student]:
+    name = (nickname or "").strip()
+    if not name:
+        raise ApiError(CODE_BAD_REQUEST, "第一次使用，请先写下你的称呼")
+    user = User(
+        phone=_new_invite_login_identifier(),
+        nickname=name,
+        access_pin_hash=hash_password(pin),
+        role=ROLE_STUDENT,
+        status=USER_STATUS_ACTIVE,
+    )
+    session.add(user)
+    session.flush()
+    student = Student(user_id=user.id, grade=DEFAULT_GRADE, stage=DEFAULT_STAGE)
+    session.add(student)
+    session.flush()
+    ensure_student_profile(session, student)
+    return user, student
+
+
+def enter_by_activation_code(session: Session, code: str, pin: str, nickname: Optional[str] = None) -> Dict[str, Any]:
+    """首次激活建号；已绑定激活码则用个人密码登录同一学生账号。"""
+    activation = _find_activation_code(session, code)
+    normalized_pin = _validate_activation_pin(pin)
+    is_new = activation.user_id is None
+
+    if is_new:
+        user, student = _register_invite_student(session, nickname or "", normalized_pin)
+        activation.user_id = user.id
+        activation.activated_at = utcnow()
+    else:
+        user = session.get(User, activation.user_id)
+        if user is None or user.deleted_at is not None:
+            raise ApiError(CODE_UNAUTHORIZED, "激活码关联的账号不存在，请联系老师")
+        if user.status == USER_STATUS_FROZEN:
+            raise ApiError(CODE_FORBIDDEN, "账号已被冻结，请联系老师")
+        if not user.access_pin_hash or not verify_password(normalized_pin, user.access_pin_hash):
+            raise ApiError(CODE_UNAUTHORIZED, "个人密码不正确，请再试一次")
+        student = get_student_by_user_id(session, user.id)
+        if student is None:
+            raise ApiError(CODE_SERVER_ERROR, "学生档案不完整，请联系老师")
+
+    user.last_login_at = utcnow()
+    session.flush()
+    result = build_token_payload(user, student)
+    result["isNewUser"] = is_new
+    result["user"] = build_user_brief(user, student)
+    return result
+
+
+def generate_activation_codes(session: Session, count: int, label: Optional[str] = None) -> list[str]:
+    """为邀请制试运营生成未绑定激活码，调用方负责把明文交给学生。"""
+    if count < 1 or count > 200:
+        raise ValueError("count must be between 1 and 200")
+    generated: list[str] = []
+    while len(generated) < count:
+        groups = ["".join(secrets.choice(ACTIVATION_ALPHABET) for _ in range(ACTIVATION_CODE_GROUP_SIZE)) for _ in range(ACTIVATION_CODE_GROUPS)]
+        code = f"{ACTIVATION_CODE_PREFIX}-" + "-".join(groups)
+        exists = session.execute(
+            select(ActivationCode.id).where(ActivationCode.code_digest == _activation_digest(code))
+        ).scalar_one_or_none()
+        if exists is not None:
+            continue
+        session.add(ActivationCode(code_digest=_activation_digest(code), label=(label or "").strip() or None))
+        generated.append(code)
+    session.flush()
+    return generated
+
+
 def login_by_code(session: Session, phone: str, code: str) -> Dict[str, Any]:
     """手机号 + 验证码登录（首次登录自动注册）。
 

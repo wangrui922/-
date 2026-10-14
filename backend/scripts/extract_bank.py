@@ -38,6 +38,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -72,6 +73,18 @@ DIFFICULTY_MAP: Dict[str, int] = {"易": 1, "中": 3, "难": 5}
 
 #: 学段 → 题目状态（老板拍板：V4.1 只做小学，初中题归档留存）
 STAGE_STATUS: Dict[str, str] = {"小学": "active", "初中": "archived"}
+
+#: 旧 Word/PDF 公式对象被压扁后留下的不可解释字形和运算符顺序。
+#: 抽题时直接归档，避免坏题先进入种子再靠人工发现。
+_PRIVATE_USE_RE = re.compile(r"[\ue000-\uf8ff]")
+_FLATTENED_OPERATOR_RE = re.compile(
+    r"(?:[=＝]\s*[+＋]{2,}|[+＋]{2,}\s*[=＝]|[+＋]{3,})"
+)
+
+
+def _has_flattened_formula(content: str) -> bool:
+    """判断题干是否带有明确的公式结构损坏特征。"""
+    return bool(_PRIVATE_USE_RE.search(content) or _FLATTENED_OPERATOR_RE.search(content))
 
 #: 知识点清单（code 唯一、name 与 tags.knowledge 逐字对齐）
 KNOWLEDGE_POINTS: List[Dict[str, Any]] = [
@@ -427,12 +440,13 @@ def flatten_bank(bank: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, 
                     duplicated.append(bank_id)
                     continue
 
+                content = str(item.get("q") or "").strip()
                 record: Dict[str, Any] = {
                     "bankId": bank_id,
                     "stage": stage,
                     "gradeLabel": grade_label,
                     "grade": grade_num,
-                    "content": str(item.get("q") or "").strip(),
+                    "content": content,
                     "answer": str(item.get("a") or "").strip(),
                     "knowledge": kp_name,
                     "rawKnowledge": knowledge,
@@ -443,7 +457,11 @@ def flatten_bank(bank: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, 
                     "ability": str(tags.get("ability") or "").strip() or None,
                     "options": options,
                     "type": _infer_question_type(kp_name, options),
-                    "status": STAGE_STATUS.get(stage, "archived"),
+                    "status": (
+                        "archived"
+                        if _has_flattened_formula(content)
+                        else STAGE_STATUS.get(stage, "archived")
+                    ),
                 }
                 questions.append(record)
 

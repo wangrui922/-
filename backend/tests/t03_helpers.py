@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 
 from app.ai.prompts import exercise as exercise_prompt
 from app.ai.prompts import ocr as ocr_prompt
+from app.ai.prompts import summary as summary_prompt
 from app.models.ai import AiMessage, AiSession
 
 #: ``ark_respond`` 的全部引用点，一个都不能漏
@@ -74,12 +75,16 @@ class FakeArk:
         difficulty: int = 3,
         qtype: str = "计算",
         ocr_text: str = "解方程：2x + 3 = 7",
+        correct_answer: str = "x = 2",
+        solution: str = "先移项得 2x = 4，再两边同除以 2。",
         exercises: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         self.knowledge = knowledge
         self.difficulty = difficulty
         self.qtype = qtype
         self.ocr_text = ocr_text
+        self.correct_answer = correct_answer
+        self.solution = solution
         self.exercises = DEFAULT_EXERCISES if exercises is None else exercises
         self.calls: List[Dict[str, Any]] = []
 
@@ -114,6 +119,8 @@ class FakeArk:
             return "ocr"
         if system == exercise_prompt.PROMPT:
             return "exercise"
+        if system == summary_prompt.PROMPT:
+            return "summary"
         content = self._last_content(messages)
         if '"knowledge"' in content:
             return "analyze"
@@ -126,9 +133,17 @@ class FakeArk:
             return self.ocr_text
         if kind == "exercise":
             return json.dumps(self.exercises, ensure_ascii=False)
+        if kind == "summary":
+            return "【今天学习】\n题型：分数应用题\n老师先看：先找总量和分率关系。\n关键条件：题目中的总数和两个分率。\n解题推进：先求第一种量，再按关系求第二种量。\n最容易错：把‘少’看成直接相减。\n下次这样做：先圈出数量关系，再写每一步。\n理解情况：基本掌握。"
         if kind == "analyze":
             payload = json.dumps(
-                {"knowledge": self.knowledge, "difficulty": self.difficulty, "type": self.qtype},
+                {
+                    "knowledge": self.knowledge,
+                    "difficulty": self.difficulty,
+                    "type": self.qtype,
+                    "correct_answer": self.correct_answer,
+                    "solution": self.solution,
+                },
                 ensure_ascii=False,
             )
             # 故意套上代码块围栏，顺带验证 _json_utils 的脏格式兜底

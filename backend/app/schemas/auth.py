@@ -21,6 +21,14 @@ class LoginIn(BaseSchema):
     code: str = Field(..., min_length=1, max_length=10, description="验证码")
 
 
+class ActivationEnterIn(BaseSchema):
+    """激活码首次开通或后续登录。"""
+
+    code: str = Field(..., min_length=8, max_length=40, description="激活码")
+    nickname: Optional[str] = Field(default=None, max_length=50, description="学生称呼，首次激活必填")
+    pin: str = Field(..., min_length=6, max_length=6, description="6位个人密码")
+
+
 class SendCodeIn(BaseSchema):
     """``POST /api/auth/code`` 入参。"""
 
@@ -60,12 +68,12 @@ class UserBrief(BaseSchema):
 
     user_id: str = Field(..., description="用户 ID")
     student_id: Optional[str] = Field(default=None, description="学生 ID")
-    phone: str = Field(..., description="手机号")
+    phone: Optional[str] = Field(default=None, description="手机号")
     nickname: Optional[str] = Field(default=None, description="昵称")
     avatar_url: Optional[str] = Field(default=None, description="头像")
     role: str = Field(..., description="student/parent/admin")
-    grade: Optional[int] = Field(default=None, description="年级 1-6")
-    stage: Optional[str] = Field(default=None, description="primary/junior")
+    grade: Optional[int] = Field(default=None, description="年级 1-12")
+    stage: Optional[str] = Field(default=None, description="primary/junior/senior")
 
 
 class TokenOut(BaseSchema):
@@ -94,6 +102,7 @@ class SendCodeOut(BaseSchema):
 
 __all__ = [
     "LoginIn",
+    "ActivationEnterIn",
     "SendCodeIn",
     "RefreshIn",
     "UserBrief",

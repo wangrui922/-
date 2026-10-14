@@ -141,7 +141,7 @@ class Question(Base):
     #    苏教版下册卷：4下=4、5下=5、6下=6。
     #    册内的「温故（复习上学期）」与「预习（新课衔接）」用 ``section`` 区分，
     #    **不拆年级**。任何地方都严禁做 ``grade - 1`` 之类的换算。
-    grade: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True, comment="适用年级(升入年级) 1-6")
+    grade: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True, comment="适用年级(升入年级) 1-12")
     difficulty: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True, comment="难度 1/3/5")
     kp_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         GUID(),

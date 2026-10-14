@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -34,6 +35,14 @@ from app.core.config import settings
 from app.core.response import ApiError, CODE_BAD_REQUEST
 from app.db import SessionLocal  # noqa: F401  (只读脚本按需自建会话，写操作一律用传入的 db)
 from app.models.ai import AiMessage, AiSession
+from app.models.content import (
+    QUESTION_STATUS_ARCHIVED,
+    SUBJECT_DEFAULT,
+    Answer,
+    KnowledgePoint,
+    Question,
+)
+from app.models.learning import Mistake
 
 logger = logging.getLogger("app.ai.orchestrator")
 
@@ -46,11 +55,114 @@ ANALYSIS_PREFIX: str = "分析："
 #:
 #:     练习题：[{"question_id": "...", "role": "fix", "tag": "..."}]
 EXERCISE_PREFIX: str = "练习题："
+EXERCISE_GUIDE_PREFIX: str = "练习引导："
+EXERCISE_JUDGE_PREFIX: str = "练习判定："
 
 #: 分析结论解析不出时的兜底
 DEFAULT_KP: str = "综合"
 DEFAULT_DIFFICULTY: int = 3
 DEFAULT_ERROR_TYPE: str = "概念混淆"
+PHOTO_SOURCE_DOC: str = "ai_wrong"
+STUDENT_QUESTION_SOURCE_DOC: str = "student_asked"
+
+
+def _file_url(image_key: Optional[str]) -> Optional[str]:
+    """把上传接口返回的纯文件 key 转为可回看的站内地址。"""
+    key = (image_key or "").strip()
+    if not key or "/" in key or "\\" in key or key in {".", ".."}:
+        return None
+    return f"/api/file/{key}"
+
+
+def _question_fingerprint(raw: Any) -> str:
+    """轻量归一化题干，用于试运营规模下的重复题识别。"""
+    text = unicodedata.normalize("NFKC", str(raw or "")).strip().lower()
+    return "".join(text.split())
+
+
+def _find_student_question(db: Session, content: str) -> Optional[Question]:
+    """在学生咨询候选题中查找同题，兼容早期 ``ai_wrong`` 标记。"""
+    fingerprint = _question_fingerprint(content)
+    if not fingerprint:
+        return None
+    rows = db.execute(
+        select(Question)
+        .where(Question.source_doc.in_((STUDENT_QUESTION_SOURCE_DOC, PHOTO_SOURCE_DOC)))
+        .order_by(Question.created_at.asc())
+    ).scalars()
+    return next((row for row in rows if _question_fingerprint(row.content) == fingerprint), None)
+
+
+def _archive_student_question(
+    *,
+    student_id: uuid.UUID,
+    analysis: Dict[str, Any],
+    image_url: Optional[str],
+    db: Session,
+) -> Question:
+    """把咨询原题沉淀为去重的待复核题，并为当前学生建立错题记录。"""
+    content = str(analysis.get("question_text") or "").strip()
+    question_row = _find_student_question(db, content)
+    knowledge = str(analysis.get("knowledge") or "").strip()
+    kp_id = db.execute(
+        select(KnowledgePoint.id).where(KnowledgePoint.name == knowledge).limit(1)
+    ).scalar_one_or_none() if knowledge else None
+
+    if question_row is None:
+        question_row = Question(
+            content=content,
+            image_url=image_url,
+            subject=SUBJECT_DEFAULT,
+            difficulty=int(analysis.get("difficulty") or DEFAULT_DIFFICULTY),
+            type_=str(analysis.get("type") or "").strip() or None,
+            kp_id=kp_id,
+            status=QUESTION_STATUS_ARCHIVED,
+            source_doc=STUDENT_QUESTION_SOURCE_DOC,
+            kp_verified=False,
+            source_tag="red",
+            ship_ready=False,
+        )
+        db.add(question_row)
+        db.flush()
+    else:
+        question_row.source_doc = STUDENT_QUESTION_SOURCE_DOC
+        question_row.status = QUESTION_STATUS_ARCHIVED
+        question_row.source_tag = "red"
+        question_row.ship_ready = False
+        question_row.kp_verified = False
+        question_row.image_url = question_row.image_url or image_url
+        question_row.kp_id = question_row.kp_id or kp_id
+        question_row.type_ = question_row.type_ or str(analysis.get("type") or "").strip() or None
+
+    answer_row = db.execute(
+        select(Answer).where(Answer.question_id == question_row.id)
+    ).scalar_one_or_none()
+    if answer_row is None:
+        answer_row = Answer(question_id=question_row.id)
+        db.add(answer_row)
+    answer_row.correct_answer = answer_row.correct_answer or str(
+        analysis.get("correct_answer") or ""
+    ).strip() or None
+    answer_row.analysis = answer_row.analysis or str(analysis.get("solution") or "").strip() or None
+
+    existing_mistake = db.execute(
+        select(Mistake.id).where(
+            Mistake.student_id == student_id,
+            Mistake.question_id == question_row.id,
+        ).limit(1)
+    ).scalar_one_or_none()
+    if existing_mistake is None:
+        db.add(
+            Mistake(
+                student_id=student_id,
+                question_id=question_row.id,
+                kp_id=question_row.kp_id,
+                error_reason="咨询求助题",
+                solved=False,
+                work_image_urls=[],
+            )
+        )
+    return question_row
 
 
 def _to_uuid(raw: Any, field: str) -> uuid.UUID:
@@ -92,6 +204,7 @@ def start_session(
     student_id: Any,
     image_b64: Optional[str],
     text: Optional[str],
+    image_key: Optional[str] = None,
     db: Session,
 ) -> Dict[str, Any]:
     """开启一次 AI 辅导：读题分析 + 首轮引导，并落库会话与两条 assistant 消息。
@@ -114,7 +227,21 @@ def start_session(
 
     analysis = question.analyze_question(text=text, image_b64=image_b64)
 
-    session = AiSession(student_id=sid, question_id=None, status="active")
+    source_image_url = _file_url(image_key)
+    source_question = _archive_student_question(
+        student_id=sid,
+        analysis=analysis,
+        image_url=source_image_url,
+        db=db,
+    )
+    source_question_id = source_question.id
+    public_analysis = {
+        key: value
+        for key, value in analysis.items()
+        if key not in {"correct_answer", "solution"}
+    }
+
+    session = AiSession(student_id=sid, question_id=source_question_id, status="active")
     session.session_state = SESSION_STATE_INTRO  # T04B 状态机：开场
     db.add(session)
     db.flush()  # 拿到 session.id，供两条消息挂载
@@ -134,7 +261,7 @@ def start_session(
         AiMessage(
             session_id=session.id,
             role="assistant",
-            content=f"{ANALYSIS_PREFIX}{json.dumps(analysis, ensure_ascii=False)}",
+            content=f"{ANALYSIS_PREFIX}{json.dumps(public_analysis, ensure_ascii=False)}",
         )
     )
     db.add(AiMessage(session_id=session.id, role="assistant", content=first_question))
@@ -146,7 +273,7 @@ def start_session(
 
     return {
         "session_id": str(session.id),
-        "analysis": analysis,
+        "analysis": public_analysis,
         "first_question": first_question,
     }
 
@@ -383,6 +510,7 @@ def generate_exercise(*, session_id: Any, db: Session) -> Dict[str, Any]:
 
     # T04B 状态机：已出题进入练习阶段
     session.session_state = SESSION_STATE_PRACTICING
+    session.summary_text = None
     session.state_updated_at = datetime.now(timezone.utc)
     db.commit()
     # weak_tags / weak_source 随响应回带，供前端渲染薄弱点横幅（snake_case 透传）
@@ -399,4 +527,6 @@ __all__ = [
     "generate_exercise",
     "ANALYSIS_PREFIX",
     "EXERCISE_PREFIX",
+    "EXERCISE_GUIDE_PREFIX",
+    "EXERCISE_JUDGE_PREFIX",
 ]

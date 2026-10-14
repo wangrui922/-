@@ -60,6 +60,9 @@ class Mistake(Base):
     error_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="错误原因")
     # T04 新增：学生标记「已掌握」时可附一句自述心得，与 error_reason（AI 写的错因）分开存
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="攻克备注(学生自述)")
+    work_image_urls: Mapped[Any] = mapped_column(
+        JSONType(), nullable=True, default=list, comment="学生手写过程图片地址(JSON)"
+    )
     solved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, comment="是否已攻克")
     solved_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="攻克时间(UTC)"

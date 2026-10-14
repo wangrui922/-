@@ -93,7 +93,7 @@ export interface PoolInfo {
 export interface DeepLinkInfo {
   kp_id: string
   kp_name: string
-  /** 年级 1~9，深链同时带 grade 收窄抽题范围（P0-3 止血） */
+  /** 年级 1~12，深链同时带 grade 收窄抽题范围（P0-3 止血） */
   grade?: number
   /** 深链来源，用于顶部来源提示文案区分 */
   source?: 'mistakes' | 'profile'

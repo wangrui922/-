@@ -14,6 +14,7 @@ import type { TutorMode } from '@/api/chat'
 export interface GuideMessage {
   role: 'student' | 'teacher'
   text: string
+  image?: string
 }
 
 /**

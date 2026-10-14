@@ -17,7 +17,7 @@ from app.core.response import ApiError, CODE_BAD_REQUEST
 #: 难度档位（与 questions.difficulty 的 CHECK 约束一致）
 DIFFICULTY_LEVELS = (1, 3, 5)
 
-#: 允许的题型（覆盖小学到初中的常见题型）
+#: 允许的题型（覆盖小学、初中、高中的常见题型）
 QUESTION_TYPES = ("计算", "应用", "几何", "函数", "证明")
 
 #: 分析失败时的兜底值
@@ -26,10 +26,12 @@ DEFAULT_DIFFICULTY: int = 3
 DEFAULT_TYPE: str = "计算"
 
 _ANALYZE_INSTRUCTION: str = (
-    "请分析以下题目的知识点/难度/题型，只输出JSON，不要任何解释、前后缀或代码块标记。\n"
-    '格式严格为：{"knowledge":"知识点名称","difficulty":3,"type":"计算"}\n'
+    "请分析并完整解答以下题目，只输出JSON，不要任何解释、前后缀或代码块标记。\n"
+    '格式严格为：{"knowledge":"知识点名称","difficulty":3,"type":"计算",'
+    '"correct_answer":"标准答案","solution":"完整但简洁的解题过程"}\n'
     "其中 difficulty 只能取 1(易)/3(中)/5(难) 三个整数之一；"
-    "type 只能取 计算/应用/几何/函数/证明 之一；knowledge 用不超过 12 个字的知识点名。\n\n"
+    "type 只能取 计算/应用/几何/函数/证明 之一；knowledge 用不超过 12 个字的知识点名；"
+    "correct_answer 必须包含最终答案和必要单位；solution 要覆盖关键推理步骤。\n\n"
     "题目：\n"
 )
 
@@ -85,7 +87,7 @@ def analyze_question(*, text: Optional[str], image_b64: Optional[str]) -> Dict[s
         image_b64: 题目照片 base64 或 data URL，可为空；非空时先做 OCR 并与 ``text`` 合并。
 
     Returns:
-        ``{"knowledge": str, "difficulty": int, "type": str, "question_text": str}``。
+        ``{"knowledge", "difficulty", "type", "question_text", "correct_answer", "solution"}``。
         ``question_text`` 是合并后的完整题面，供编排层写入会话上下文。
 
     Raises:
@@ -123,6 +125,8 @@ def analyze_question(*, text: Optional[str], image_b64: Optional[str]) -> Dict[s
         "difficulty": _normalize_difficulty(data.get("difficulty")),
         "type": _normalize_type(data.get("type")),
         "question_text": question_text,
+        "correct_answer": str(data.get("correct_answer") or "").strip(),
+        "solution": str(data.get("solution") or "").strip(),
     }
 
 

@@ -160,6 +160,16 @@ function questionLabel(questionId: string): string {
   return short ? `题目 #${short}` : '题目 #未知'
 }
 
+function imageSrc(path: string): string {
+  if (!path) return ''
+  const apiBase = import.meta.env.VITE_API_BASE || '/api'
+  if (/^https?:\/\//.test(path)) return path
+  if (path.startsWith('/api/') && apiBase !== '/api') {
+    return `${apiBase.replace(/\/api\/?$/, '')}${path}`
+  }
+  return path
+}
+
 /**
  * 去练习：跳练习页的筛选态，**不带**任何深链参数。
  *
@@ -321,7 +331,31 @@ onMounted(() => {
             </div>
 
             <p class="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800">
-              {{ item.errorReason || 'AI 老师还没写下错因，去练一练它会补上。' }}
+              {{ item.questionText || item.errorReason || '题目内容暂时不可用。' }}
+            </p>
+
+            <img
+              v-if="item.originalImageUrl"
+              :src="imageSrc(item.originalImageUrl)"
+              alt="原题照片"
+              class="max-h-56 w-full rounded-xl bg-slate-50 object-contain"
+            />
+
+            <div v-if="item.workImageUrls?.length" class="space-y-2">
+              <p class="text-xs font-medium text-slate-500">当时的手写过程</p>
+              <div class="flex gap-2 overflow-x-auto">
+                <img
+                  v-for="url in item.workImageUrls"
+                  :key="url"
+                  :src="imageSrc(url)"
+                  alt="学生手写过程"
+                  class="h-28 w-28 shrink-0 rounded-xl bg-slate-50 object-contain"
+                />
+              </div>
+            </div>
+
+            <p v-if="item.errorReason" class="text-sm leading-relaxed text-amber-700">
+              {{ item.errorReason }}
             </p>
 
             <p class="text-xs text-slate-400">

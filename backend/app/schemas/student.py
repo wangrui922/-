@@ -1,6 +1,6 @@
 """学生档案出入参 Schema（camelCase alias，见 schemas/common.BaseSchema）。
 
-年级越界（0 / 7）的判定放在 service 层显式抛 ``ApiError(400)``，
+年级越界（0 / 13）的判定放在 service 层显式抛 ``ApiError(400)``，
 这里不加 ``ge/le`` 约束，保证错误提示语可控且 ``code`` 恒为 400。
 """
 
@@ -33,8 +33,8 @@ class StudentProfileOut(BaseSchema):
     nickname: Optional[str] = Field(default=None, description="昵称")
     avatar_url: Optional[str] = Field(default=None, description="头像")
     real_name: Optional[str] = Field(default=None, description="真实姓名")
-    grade: int = Field(..., description="年级 1-6")
-    stage: str = Field(..., description="primary/junior")
+    grade: int = Field(..., description="年级 1-12")
+    stage: str = Field(..., description="primary/junior/senior")
     goal: Optional[str] = Field(default=None, description="学习目标")
     daily_target: int = Field(default=5, description="每日目标题量")
     streak_days: int = Field(default=0, description="连续打卡天数")
@@ -45,7 +45,7 @@ class StudentProfileOut(BaseSchema):
 class StudentProfileIn(BaseSchema):
     """``PUT /api/student/profile`` 入参（全部可选，只更新传了的字段）。"""
 
-    grade: Optional[int] = Field(default=None, description="年级 1-6，越界返 400")
+    grade: Optional[int] = Field(default=None, description="年级 1-12，越界返 400")
     goal: Optional[str] = Field(default=None, max_length=500, description="学习目标")
     real_name: Optional[str] = Field(default=None, max_length=50, description="真实姓名")
     nickname: Optional[str] = Field(default=None, max_length=50, description="昵称")

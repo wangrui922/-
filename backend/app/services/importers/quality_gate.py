@@ -78,6 +78,16 @@ _PLACEHOLDER_SHAPE_RE = re.compile(r"[□○]")
 #: token 切分：按「非汉字且非数字」的连续片段切开
 _TOKEN_SPLIT_RE = re.compile(r"[^\u4e00-\u9fff0-9]+")
 
+#: Word/PDF 公式对象丢失结构后常残留 Unicode 私用区字形（如 ````、````）。
+#: 这些字符没有稳定语义，浏览器显示出来也不能还原原公式。
+_PRIVATE_USE_RE = re.compile(r"[\ue000-\uf8ff]")
+
+#: 公式被扁平抽取后，运算符会被堆到末尾（如 ``11114nnn＝++``）。
+#: 正常连续加号最多一个；两个及以上连续加号与等号相邻可视为结构损坏。
+_FLATTENED_OPERATOR_RE = re.compile(
+    r"(?:[=＝]\s*[+＋]{2,}|[+＋]{2,}\s*[=＝]|[+＋]{3,})"
+)
+
 
 # ==================================================================== 选择题完整性卡口（P0/P1）
 #: 商业落地要求：选择题选项必须正好 A/B/C/D 四键。
@@ -325,6 +335,21 @@ def count_question_markers(content: Optional[str]) -> int:
     return len(_QUESTION_MARKER_RE.findall(content or ""))
 
 
+def flattened_formula_reasons(content: Optional[str]) -> List[str]:
+    """返回题干中的公式压扁污染原因；空列表表示未命中。
+
+    这里只拦截有明确技术特征的坏数据，不根据数字长短猜测数学含义，避免把
+    身份证号、科学记数法等正常题目误杀。
+    """
+    text = content or ""
+    reasons: List[str] = []
+    if _PRIVATE_USE_RE.search(text):
+        reasons.append("公式含无法解析的旧版排版符号")
+    if _FLATTENED_OPERATOR_RE.search(text):
+        reasons.append("公式运算符顺序损坏")
+    return reasons
+
+
 def classify_question(
     content: str,
     answer: Optional[str] = None,
@@ -373,6 +398,8 @@ def classify_question(
     if markers >= MAX_QUESTION_MARKERS:
         reasons.append(f"题干含多个题号疑似粘连（{markers}个）")
 
+    reasons.extend(flattened_formula_reasons(text))
+
     # 选择题硬性卡口（P1 入库卡口）：与批处理轨共用同一口径（不传答案，纯 key 判定）。
     # 命中即 ``review``，绝不自动改写 options。
     if q_type == "选择" and options is not None:
@@ -416,6 +443,7 @@ __all__ = [
     "tokenize",
     "duplicate_ratio",
     "count_question_markers",
+    "flattened_formula_reasons",
     "classify_question",
     "is_clean",
 ]

@@ -125,3 +125,28 @@ def test_grade_band_overlaps_with_grade(client):
     # 初中 + 8年级：交集命中 → 抽得到（可能有多个 grade=8 的题，全部须为 8）
     grades = _grades_of(client, headers, grade_band="初中", grade=8, count=10)
     assert grades and all(g == 8 for g in grades)
+
+
+def test_explicit_high_school_grade_is_accepted(client):
+    """高中 10-12 年级既能按学段筛，也能按具体年级筛。"""
+    headers, _ = login(client)
+    kp = _make_kp("高中具体年级测试知识点")
+    for grade in (10, 11, 12):
+        _make_question(grade=grade, kp_id=kp)
+
+    for grade in (10, 11, 12):
+        grades = _grades_of(
+            client,
+            headers,
+            grade_band="高中",
+            grade=grade,
+            count=10,
+        )
+        assert grades and all(value == grade for value in grades)
+
+    rejected = client.post(
+        "/api/practice/session",
+        json={"grade_band": "高中", "grade": 13, "count": 10},
+        headers=headers,
+    )
+    assert rejected.status_code == 400

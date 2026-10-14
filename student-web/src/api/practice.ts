@@ -66,7 +66,7 @@ export const JUDGE_ANSWER_FALSE = '×'
 
 /** 抽题筛选条件，全部可选；不传则从全部 L1 安全池随机抽。 */
 export interface DrawParams {
-  /** 年级 1~9（升入年级口径） */
+  /** 年级 1~12（升入年级口径） */
   grade?: number
   /** 学段：小学 / 初中 / 高中（按年级区间过滤，与 grade 叠加为交集） */
   grade_band?: string

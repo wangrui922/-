@@ -11,6 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";  -- 兼容老版本 gen_random_uuid()
 CREATE TABLE users (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     phone         VARCHAR(20) NOT NULL UNIQUE,
+    access_pin_hash VARCHAR(255),
     nickname      VARCHAR(50),
     avatar_url    TEXT,
     role          VARCHAR(16) NOT NULL DEFAULT 'student'
@@ -29,9 +30,9 @@ CREATE TABLE students (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id       UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     real_name     VARCHAR(50),
-    grade         SMALLINT NOT NULL DEFAULT 4 CHECK (grade >= 1 AND grade <= 6),
+    grade         SMALLINT NOT NULL DEFAULT 4 CHECK (grade >= 1 AND grade <= 12),
     stage         VARCHAR(16) NOT NULL DEFAULT 'primary'
-                    CHECK (stage IN ('primary','junior')),
+                    CHECK (stage IN ('primary','junior','senior')),
     goal          TEXT,
     daily_target  SMALLINT NOT NULL DEFAULT 5 CHECK (daily_target > 0 AND daily_target <= 50),
     streak_days   INTEGER NOT NULL DEFAULT 0,
@@ -141,3 +142,16 @@ CREATE TABLE learning_tasks (
     finished_at  TIMESTAMPTZ
 );
 CREATE INDEX idx_learning_tasks_student ON learning_tasks (student_id);
+
+CREATE TABLE activation_codes (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code_digest   VARCHAR(64) NOT NULL UNIQUE,
+    label         VARCHAR(50),
+    user_id       UUID UNIQUE REFERENCES users(id) ON DELETE SET NULL,
+    activated_at  TIMESTAMPTZ,
+    expires_at    TIMESTAMPTZ,
+    revoked_at    TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_activation_codes_active ON activation_codes (revoked_at, expires_at);

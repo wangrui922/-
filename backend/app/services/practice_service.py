@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 import uuid
 from datetime import timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -73,6 +74,16 @@ from app.services.learning_service import clamp_duration, to_uuid
 
 logger = logging.getLogger("app.services.practice")
 
+# 题干明确依赖配图时，缺少图片的题目无法让学生作答，不能进入练习池。
+IMAGE_REQUIRED_RE = re.compile(
+    r"如图所示|如图|如下图|下图|图中所示|图中是|图中|看图|读图|右图|左图|上图|涂色部分|示意图|图示"
+)
+
+
+def _requires_question_image(content: Optional[str]) -> bool:
+    """判断题干是否明确要求学生参考图片。"""
+    return bool(IMAGE_REQUIRED_RE.search(content or ""))
+
 # ------------------------------------------------------------------ 常量
 #: 练习会话在 ``learning_tasks`` 里的 task_type。
 #:
@@ -105,6 +116,12 @@ WEAK_POINT_LIMIT: int = 5
 
 #: 引导语兜底话术：模型回复涉嫌泄题（或为空）时改说这句，绝不把答案递出去
 GUIDE_FALLBACK_REPLY: str = "我们一步步来：先说说这道题告诉了我们什么条件？"
+
+# 学生明确卡住时，不再把这句话当成普通回答继续追问同一个问题。
+_STUCK_TEXT_RE = re.compile(
+    r"(?:不知道|不记得|想不出来|不会|没思路|没头绪|看不懂|卡住了|不会做|不会算|不会解)"
+)
+GUIDE_HISTORY_KEY = "guide_history"
 
 #: 抽题 fallback 档位的人话标签（设计 §1.5）。
 #: 第 4/5 档本期不实现（Q8 拍板），但保留字典给未来 P2 阶段用。
@@ -185,7 +202,7 @@ def _candidate_rows(
        ``judge_engine.SUPPORTED_TYPES`` 内 + 标准答案非空，外加调用方的
        年级/版本/分区/知识点/难度/回避集等业务筛选；
     2. **Python 复核**：取回后逐行过 ``is_l1_safe()``，踢掉复合多小问
-       （铁律 C2）与「选择题却没有可用选项」的脏题。
+       （铁律 C2）、「选择题却没有可用选项」的脏题，以及题干要求看图但图片缺失的题。
 
     为什么复核放 Python 层：``options`` 是 JSON 列、复合题判据要正则数
     ``(n)`` 编号，这两件事用 SQL 表达在 PostgreSQL / SQLite 双方言下都不可靠
@@ -216,6 +233,8 @@ def _candidate_rows(
             Question.kp_verified,
             Question.type_,
             Question.options,
+            Question.content,
+            Question.image_url,
             Answer.correct_answer,
         )
         .join(Answer, Answer.question_id == Question.id)
@@ -251,7 +270,9 @@ def _candidate_rows(
         stmt = stmt.where(Question.id.notin_(list(exclude_ids)))
 
     rows: List[Tuple[uuid.UUID, Optional[uuid.UUID], bool]] = []
-    for qid, question_kp_id, kp_verified, type_, options, correct_answer in db.execute(stmt).all():
+    for qid, question_kp_id, kp_verified, type_, options, content, image_url, correct_answer in db.execute(stmt).all():
+        if _requires_question_image(content) and not (image_url or "").strip():
+            continue
         if not judge_engine.is_l1_safe(type_, options, correct_answer):
             continue
         rows.append((qid, question_kp_id, bool(kp_verified)))
@@ -403,6 +424,69 @@ def _patch_item(
     db.commit()
     db.refresh(task)
     return _normalize_items(task.items)
+
+
+def _is_stuck_text(work: Optional[str]) -> bool:
+    """识别学生明确求助的短句，避免把「不知道」误当成普通步骤。"""
+    return bool(_STUCK_TEXT_RE.search(_clean(work)))
+
+
+def _recent_guide_history(item: Optional[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """读取题目快照中最近的引导轮次，防止老师重复自己的问题。"""
+    if not item or not isinstance(item.get(GUIDE_HISTORY_KEY), list):
+        return []
+    history: List[Dict[str, str]] = []
+    for turn in item[GUIDE_HISTORY_KEY][-6:]:
+        if not isinstance(turn, dict):
+            continue
+        work = _clean(turn.get("work"))
+        reply = _clean(turn.get("reply"))
+        if work or reply:
+            history.append({"work": work, "reply": reply})
+    return history
+
+
+def _question_numbers(stem: str) -> List[str]:
+    """提取题干里的少量数字，帮助兜底提示仍然贴着当前题目。"""
+    return re.findall(r"(?:\d+(?:\.\d+)?|[一二三四五六七八九十百千万]+)", stem or "")[:4]
+
+
+def _stuck_hint_reply(question: Question, stuck_round: int) -> str:
+    """模型重复或无法接住时，按卡住次数递进给一个最小台阶。"""
+    stem = _clean(question.content)
+    if len(stem) > 180:
+        stem = stem[:177] + "..."
+    numbers = _question_numbers(stem)
+    number_hint = f"题目里先出现了 {numbers[0]}" if numbers else "题目里的第一个条件"
+    if stuck_round <= 1:
+        return (
+            f"没关系，老师先把题目里的关键条件抓出来：{stem}。"
+            "我们先不急着算，你只告诉我：题目最后要求我们求什么？"
+        )
+    if stuck_round == 2:
+        return (
+            f"没关系，我们把题目再拆小一点。{number_hint}，你觉得它表示的是总量、"
+            "其中一部分，还是一次变化？先说这一个判断就好。"
+        )
+    return (
+        f"我们先只做一个小判断：回到题目里的“{number_hint}”，它在题目中是用来说明"
+        "谁的数量或大小的？你先把对应的对象说出来，后面老师陪你接着走。"
+    )
+
+
+def _save_guide_turn(
+    db: Session,
+    task: LearningTask,
+    question_id: uuid.UUID,
+    *,
+    work: Optional[str],
+    reply: str,
+) -> None:
+    """把引导轮次写入当前题目快照，供下一轮避开重复。"""
+    item = _find_item(_normalize_items(task.items), question_id)
+    history = _recent_guide_history(item)
+    history.append({"work": _clean(work), "reply": _clean(reply)})
+    _patch_item(db, task, question_id, {GUIDE_HISTORY_KEY: history[-6:]})
 
 
 def _load_question(db: Session, question_id: uuid.UUID) -> Tuple[Question, Optional[Answer]]:
@@ -1206,15 +1290,32 @@ def guide_question(
         raise ApiError(CODE_BAD_REQUEST, "这道题不在本次练习中")
 
     question, answer = _load_question(db, qid)
+    item = _find_item(_normalize_items(task.items), qid)
+    guide_history = _recent_guide_history(item)
+    stuck = _is_stuck_text(work)
 
     stem = question.content or ""
     options = judge_engine.normalize_options(question.options)
     if options:
         stem = stem + "\n" + "\n".join(f"{item.key}. {item.text}" for item in options)
 
+    history_text = "\n".join(
+        f"第 {index} 轮：学生：{turn['work'] or '（未写过程）'}；老师：{turn['reply']}"
+        for index, turn in enumerate(guide_history, start=1)
+    ) or "（这是第一轮，还没有之前的问答）"
     prompt = practice_guide.PROMPT.replace("{{QUESTION}}", stem).replace(
         "{{WORK}}", _clean(work) or "（孩子还没写下过程，只是点开了求助）"
     )
+    prompt += (
+        "\n\n【本题之前的引导记录】\n"
+        f"{history_text}\n"
+        "请先看清之前老师已经问过什么。绝对不要原样重复之前的问题。"
+    )
+    if stuck:
+        prompt += (
+            "\n孩子这次明确表示不会/不知道。先接住他，再从这道题的数字、单位、图形或"
+            "已知条件里给一个具体小线索，最后只问一个更小的问题；不要继续问上一轮同一个问题。"
+        )
 
     try:
         raw = ark_client.ark_respond(messages=[{"role": "user", "content": prompt}])
@@ -1239,6 +1340,18 @@ def guide_question(
         correct_answer=answer.correct_answer if answer else None,
         context=f"session={task.id} question={qid}",
     )
+
+    previous_replies = {turn["reply"] for turn in guide_history if turn.get("reply")}
+    if (stuck and reply in previous_replies) or reply in previous_replies:
+        logger.warning(
+            "练习引导检测到重复回复，已切换为题目关键条件提示 session=%s question=%s",
+            task.id,
+            qid,
+        )
+        stuck_round = sum(1 for turn in guide_history if _is_stuck_text(turn.get("work"))) + 1
+        reply = _stuck_hint_reply(question, stuck_round)
+
+    _save_guide_turn(db, task, qid, work=work, reply=reply)
 
     return {
         "question_id": str(qid),

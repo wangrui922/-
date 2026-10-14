@@ -36,6 +36,7 @@ from app.api import (
     profile,
     report,
     student,
+    subscription,
     tts,
 )
 
@@ -65,6 +66,9 @@ api_router.include_router(practice.router)
 
 # ---- 云端语音合成（TTS）：读题 / 讲题更甜的嗓音 ------------------------------
 api_router.include_router(tts.router)
+
+# ---- 订阅与收费（M2）：套餐 / 订单 / 权益 / mock 支付 ------------------------
+api_router.include_router(subscription.router)
 
 
 __all__ = ["api_router"]

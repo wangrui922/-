@@ -64,6 +64,7 @@ def make_bank_question(
     grade: int = 3,
     edition: Optional[str] = None,
     section: Optional[str] = None,
+    image_url: Optional[str] = None,
     difficulty: Optional[int] = 3,
     status: str = "active",
     with_answer: bool = True,
@@ -102,6 +103,7 @@ def make_bank_question(
             kp_verified=kp_verified,
             edition=edition,
             section=section,
+            image_url=image_url,
             status=status,
         )
         db.add(question)
@@ -308,6 +310,26 @@ class TestDraw:
         ids = [q["question_id"] for q in data["questions"]]
         assert ids == [good]
         assert data["pool_size"] == 1
+
+    def test_draw_excludes_image_dependent_question_without_image(self, client, new_phone) -> None:
+        """题干明确要求看图时，缺图题不能进入学生练习池。"""
+        headers, _ = login(client, new_phone())
+        kp_id = _make_kp("抽题-缺图")
+        make_bank_question(
+            kp_id=kp_id,
+            grade=4,
+            content='下面小数中，（ ）的“2”与如图中涂色部分表示的数大小相等',
+            image_url=None,
+        )
+        visible = make_bank_question(
+            kp_id=kp_id,
+            grade=4,
+            content="这道题不需要图片，直接比较小数位值。",
+        )
+
+        data = _draw(client, headers, grade=4, count=10)
+
+        assert [item["question_id"] for item in data["questions"]] == [visible]
 
     def test_draw_auto_relaxes_and_discloses_unmapped(self, client, new_phone) -> None:
         """筛选条件只能命中新题时自动放开，并披露 unmapped_count（C6）。"""

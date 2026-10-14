@@ -76,6 +76,9 @@ class AiSession(Base):
         default=utcnow,
         comment="状态最后更新时间(UTC)",
     )
+    summary_text: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="本次辅导完成后的学习小结"
+    )
 
     student: Mapped["Student"] = relationship(back_populates="sessions")
     question: Mapped[Optional["Question"]] = relationship(back_populates="ai_sessions")

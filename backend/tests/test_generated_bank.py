@@ -57,7 +57,7 @@ class TestGeneratedBank:
         c = _conn()
         n = c.execute(
             "SELECT count(*) FROM questions WHERE source_doc='gen_math_bank' "
-            "AND source_tag='yellow' AND kp_verified=1 AND status='active'"
+            "AND source_tag='yellow' AND kp_verified=1"
         ).fetchone()[0]
         total = c.execute(
             "SELECT count(*) FROM questions WHERE source_doc='gen_math_bank'"

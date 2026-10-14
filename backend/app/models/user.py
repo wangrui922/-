@@ -31,11 +31,20 @@ if TYPE_CHECKING:  # 仅类型检查期引用，运行期不产生循环导入
 # 角色 / 状态枚举（用 CHECK 约束落库，避免 PG 专属 ENUM 类型）
 ROLE_VALUES = ("student", "parent", "admin")
 USER_STATUS_VALUES = ("active", "frozen")
-STAGE_VALUES = ("primary", "junior")
+STAGE_VALUES = ("primary", "junior", "senior")
 
-#: V4.1 学段范围：全小学 1-6（老板拍板）
+#: 产品覆盖小学、初中、高中 1-12 年级。
 GRADE_MIN = 1
-GRADE_MAX = 6
+GRADE_MAX = 12
+
+
+def stage_for_grade(grade: int) -> str:
+    """把 1-12 年级映射为学生档案使用的英文 学段值。"""
+    if grade <= 6:
+        return "primary"
+    if grade <= 9:
+        return "junior"
+    return "senior"
 
 
 class User(Base, TimestampMixin, SoftDeleteMixin):
@@ -44,7 +53,10 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    phone: Mapped[str] = mapped_column(String(20), nullable=False, unique=True, comment="登录唯一标识")
+    phone: Mapped[str] = mapped_column(String(20), nullable=False, unique=True, comment="手机号或内部登录标识")
+    access_pin_hash: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="激活码账号的6位个人密码摘要"
+    )
     nickname: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, comment="昵称")
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="头像地址")
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="student", comment="student/parent/admin")
@@ -82,8 +94,10 @@ class Student(Base, TimestampMixin):
         comment="所属账号(1:1)",
     )
     real_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, comment="真实姓名")
-    grade: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=4, comment="年级 1-6")
-    stage: Mapped[str] = mapped_column(String(16), nullable=False, default="primary", comment="primary/junior")
+    grade: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=4, comment="年级 1-12")
+    stage: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="primary", comment="primary/junior/senior"
+    )
     goal: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="学习目标")
     daily_target: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=5, comment="每日目标题量")
     streak_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="连续打卡天数")
@@ -102,7 +116,7 @@ class Student(Base, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint(f"grade >= {GRADE_MIN} AND grade <= {GRADE_MAX}", name="ck_students_grade"),
-        CheckConstraint("stage IN ('primary','junior')", name="ck_students_stage"),
+        CheckConstraint("stage IN ('primary','junior','senior')", name="ck_students_stage"),
         CheckConstraint("daily_target > 0 AND daily_target <= 50", name="ck_students_daily_target"),
         Index("idx_students_user_id", "user_id"),
         Index("idx_students_grade", "grade"),
@@ -110,4 +124,13 @@ class Student(Base, TimestampMixin):
     )
 
 
-__all__ = ["User", "Student", "ROLE_VALUES", "USER_STATUS_VALUES", "STAGE_VALUES", "GRADE_MIN", "GRADE_MAX"]
+__all__ = [
+    "User",
+    "Student",
+    "ROLE_VALUES",
+    "USER_STATUS_VALUES",
+    "STAGE_VALUES",
+    "GRADE_MIN",
+    "GRADE_MAX",
+    "stage_for_grade",
+]

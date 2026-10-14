@@ -177,6 +177,143 @@ def test_generate_exercise_question_id_resolves_to_archived_row(client, monkeypa
         assert row.source_doc != "", row.source_doc
 
 
+def test_generate_exercise_uses_same_then_slightly_harder_difficulty(
+    client, monkeypatch, new_phone
+):
+    """两道相似题固定为原题同难度、下一档略难，不采信模型随意给的等级。"""
+    patch_ark(
+        monkeypatch,
+        FakeArk(
+            difficulty=3,
+            exercises=[
+                {
+                    "q": "同考点基础题",
+                    "a": "1",
+                    "difficulty": 1,
+                    "role": "fix",
+                    "tag": "同难度练习",
+                },
+                {
+                    "q": "同考点迁移题",
+                    "a": "2",
+                    "difficulty": 1,
+                    "role": "transfer",
+                    "tag": "略难迁移",
+                },
+            ],
+        ),
+    )
+    headers, _ = _auth(client, new_phone())
+
+    exercises = _gen_exercises(client, headers, _start_session(client, headers))
+
+    assert [item["difficulty"] for item in exercises] == [3, 5], exercises
+
+
+def test_judge_requires_explicit_final_answer_confirmation(client, monkeypatch, new_phone):
+    """没有回答“确定是最终答案”时，任何中间步骤都不能直接进入最终判题。"""
+    ark = patch_ark(monkeypatch, VerdictFakeArk(verdict="wrong", error_type="CALC"))
+    headers, _ = _auth(client, new_phone())
+    session_id = _start_session(client, headers)
+    qid = str(_gen_exercises(client, headers, session_id)[0]["question_id"])
+
+    response = client.post(
+        "/api/exercise/judge",
+        headers=headers,
+        json={"sessionId": session_id, "questionId": qid, "answer": "2x=4"},
+    )
+
+    assert response.status_code == 400, response.text
+    assert ark.count("tutor") == 1, "未确认时不应调用最终判题模型"
+
+
+def test_summary_requires_both_exercises_and_is_idempotent(client, monkeypatch, new_phone):
+    """两道练习都最终判定后才生成小结，重复请求复用已保存的小结。"""
+    ark = patch_ark(monkeypatch, VerdictFakeArk(verdict="correct"))
+    headers, _ = _auth(client, new_phone())
+    session_id = _start_session(client, headers)
+    exercises = _gen_exercises(client, headers, session_id)
+
+    early = client.post(
+        "/api/exercise/summary",
+        headers=headers,
+        json={"sessionId": session_id},
+    )
+    assert early.status_code == 400, early.text
+
+    guided = client.post(
+        "/api/exercise/guide",
+        headers=headers,
+        json={
+            "sessionId": session_id,
+            "questionId": exercises[0]["question_id"],
+            "work": "第一步我先找出题目里的数量关系",
+        },
+    )
+    assert guided.status_code == 200, guided.text
+
+    for item in exercises:
+        judged = client.post(
+            "/api/exercise/judge",
+            headers=headers,
+            json={
+                "sessionId": session_id,
+                "questionId": item["question_id"],
+                "answer": item["a"],
+                "work": "我写出了完整过程，这是最终答案。",
+                "finalConfirmed": True,
+            },
+        )
+        assert judged.status_code == 200, judged.text
+
+    first = assert_ok(
+        client.post("/api/exercise/summary", headers=headers, json={"sessionId": session_id})
+    )
+    second = assert_ok(
+        client.post("/api/exercise/summary", headers=headers, json={"sessionId": session_id})
+    )
+    assert first["summary"].startswith("【今天学习】"), first
+    assert second["summary"] == first["summary"], second
+    assert ark.count("summary") == 1, ark.kinds()
+    summary_call = next(call for call in ark.calls if call["kind"] == "summary")
+    assert "第一步我先找出题目里的数量关系" in summary_call["messages"][0]["content"]
+
+
+def test_new_exercise_batch_clears_old_summary(client, monkeypatch, new_phone):
+    """重新生成一组练习后，不得继续返回上一组已经缓存的小结。"""
+    ark = patch_ark(monkeypatch, VerdictFakeArk(verdict="correct"))
+    headers, _ = _auth(client, new_phone())
+    session_id = _start_session(client, headers)
+    first_batch = _gen_exercises(client, headers, session_id)
+
+    for item in first_batch:
+        response = client.post(
+            "/api/exercise/judge",
+            headers=headers,
+            json={
+                "sessionId": session_id,
+                "questionId": item["question_id"],
+                "answer": item["a"],
+                "finalConfirmed": True,
+            },
+        )
+        assert response.status_code == 200, response.text
+
+    first_summary = client.post(
+        "/api/exercise/summary", headers=headers, json={"sessionId": session_id}
+    )
+    assert first_summary.status_code == 200, first_summary.text
+    assert ark.count("summary") == 1
+
+    _gen_exercises(client, headers, session_id)
+    second_summary = client.post(
+        "/api/exercise/summary", headers=headers, json={"sessionId": session_id}
+    )
+
+    assert second_summary.status_code == 400, second_summary.text
+    assert ark.count("summary") == 1, "新一组题未完成时不应生成或返回小结"
+
+
 # ==================================================================== T7 判错入本
 def test_judge_wrong_records_mistake_with_valid_error_type(client, monkeypatch, new_phone):
     """T7：judge 判错 → 错题本查得到，且 errorType 属五类机器码之一。"""
@@ -192,7 +329,12 @@ def test_judge_wrong_records_mistake_with_valid_error_type(client, monkeypatch, 
         client.post(
             "/api/exercise/judge",
             headers=headers,
-            json={"sessionId": session_id, "questionId": qid, "answer": "x = 99"},
+            json={
+                "sessionId": session_id,
+                "questionId": qid,
+                "answer": "x = 99",
+                "finalConfirmed": True,
+            },
         )
     )
     assert judge["correct"] is False, judge
@@ -224,7 +366,12 @@ def test_judge_wrong_covers_all_five_error_categories(
         client.post(
             "/api/exercise/judge",
             headers=headers,
-            json={"sessionId": session_id, "questionId": qid, "answer": "x = 99"},
+            json={
+                "sessionId": session_id,
+                "questionId": qid,
+                "answer": "x = 99",
+                "finalConfirmed": True,
+            },
         )
     )
 
@@ -248,7 +395,12 @@ def test_judge_idempotent_same_question_no_duplicate(client, monkeypatch, new_ph
         client.post(
             "/api/exercise/judge",
             headers=headers,
-            json={"sessionId": session_id, "questionId": qid, "answer": "x = 99"},
+            json={
+                "sessionId": session_id,
+                "questionId": qid,
+                "answer": "x = 99",
+                "finalConfirmed": True,
+            },
         )
     )
     first_mid = first["mistake_id"]
@@ -259,7 +411,12 @@ def test_judge_idempotent_same_question_no_duplicate(client, monkeypatch, new_ph
         client.post(
             "/api/exercise/judge",
             headers=headers,
-            json={"sessionId": session_id, "questionId": qid, "answer": "x = 99"},
+            json={
+                "sessionId": session_id,
+                "questionId": qid,
+                "answer": "x = 99",
+                "finalConfirmed": True,
+            },
         )
     )
     # 必须复用同一条未攻克记录
@@ -287,7 +444,12 @@ def test_judge_correct_does_not_record_mistake(client, monkeypatch, new_phone):
         client.post(
             "/api/exercise/judge",
             headers=headers,
-            json={"sessionId": session_id, "questionId": qid, "answer": correct_answer},
+            json={
+                "sessionId": session_id,
+                "questionId": qid,
+                "answer": correct_answer,
+                "finalConfirmed": True,
+            },
         )
     )
     assert judge["correct"] is True, judge
@@ -311,7 +473,12 @@ def test_judge_rejects_unknown_session(client, monkeypatch, new_phone):
     resp = client.post(
         "/api/exercise/judge",
         headers=headers,
-        json={"sessionId": str(uuid.uuid4()), "questionId": qid, "answer": "x = 99"},
+        json={
+            "sessionId": str(uuid.uuid4()),
+            "questionId": qid,
+            "answer": "x = 99",
+            "finalConfirmed": True,
+        },
     )
     # 会话不存在 → 404（见 ai_exercise_service._load_ai_session）
     assert resp.status_code == 404, resp.text

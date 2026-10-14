@@ -23,8 +23,8 @@ class ChildBrief(BaseSchema):
     student_id: str = Field(..., description="学生 ID")
     nickname: Optional[str] = Field(default=None, description="昵称")
     real_name: Optional[str] = Field(default=None, description="真实姓名")
-    grade: Optional[int] = Field(default=None, description="年级 1-6")
-    stage: Optional[str] = Field(default=None, description="primary/junior")
+    grade: Optional[int] = Field(default=None, description="年级 1-12")
+    stage: Optional[str] = Field(default=None, description="primary/junior/senior")
     relation: Optional[str] = Field(default=None, description="绑定关系")
 
 

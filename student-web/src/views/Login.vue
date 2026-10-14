@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 登录页：手机号 + 验证码。
+ * 登录页：邀请制激活码优先，手机号验证码作为备用入口。
  *
  * 视觉升级（卡通插画精简版）：
  *  - 中心大幅 Q 版 3D 小玥老师欢迎图（tutor-welcome.png）
@@ -8,8 +8,9 @@
  *  - 梦幻渐变背景 + 玻璃拟态表单
  *
  * 契约（backend/app/api/auth.py）：
- *   POST /api/auth/code   { phone }        -> { sent, devCode }
- *   POST /api/auth/login  { phone, code }  -> { access, refresh, ... }
+ *   POST /api/auth/activation/activate { code, nickname, pin } -> { access, refresh, ... }
+ *   POST /api/auth/code                 { phone }               -> { sent, devCode }
+ *   POST /api/auth/login                { phone, code }         -> { access, refresh, ... }
  */
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -21,7 +22,7 @@ import tutorWelcome from '@/assets/tutor-welcome.png'
 interface UserBrief {
   userId: string
   studentId: string | null
-  phone: string
+  phone: string | null
   nickname: string | null
   role: string
 }
@@ -47,15 +48,31 @@ const route = useRoute()
 
 const phone = ref<string>('')
 const code = ref<string>('')
+const activationCode = ref<string>('')
+const nickname = ref<string>('')
+const pin = ref<string>('')
+const mode = ref<'activation' | 'phone'>('activation')
 const loading = ref<boolean>(false)
 const sending = ref<boolean>(false)
 const errorMsg = ref<string>('')
 const tipMsg = ref<string>('')
 
 const phoneValid = computed<boolean>(() => /^1[3-9]\d{9}$/.test(phone.value.trim()))
-const canSubmit = computed<boolean>(
+const phoneCanSubmit = computed<boolean>(
   () => phoneValid.value && code.value.trim().length > 0 && !loading.value,
 )
+const activationCodeValid = computed<boolean>(() => /^YY(?:-[A-Z0-9]{4}){4}$/.test(activationCode.value))
+const activationCanSubmit = computed<boolean>(
+  () => activationCodeValid.value && /^\d{6}$/.test(pin.value) && !loading.value,
+)
+
+function formatActivationCode(): void {
+  const compact = activationCode.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 18)
+  const prefix = compact.slice(0, 2)
+  const groups = Array.from({ length: 4 }, (_, index) => compact.slice(2 + index * 4, 6 + index * 4))
+    .filter(Boolean)
+  activationCode.value = [prefix, ...groups].filter(Boolean).join('-')
+}
 
 async function handleSendCode(): Promise<void> {
   if (!phoneValid.value || sending.value) return
@@ -77,8 +94,21 @@ async function handleSendCode(): Promise<void> {
   }
 }
 
-async function handleLogin(): Promise<void> {
-  if (!canSubmit.value) return
+async function finishLogin(data: LoginResult): Promise<void> {
+  const token = data.access || data.accessToken || ''
+  if (!token) throw new Error('登录返回缺少令牌')
+
+  login(token, {
+    refresh: data.refresh || data.refreshToken,
+    studentId: data.user?.studentId ?? undefined,
+  })
+
+  const redirect = route.query.redirect
+  await router.replace(typeof redirect === 'string' && redirect ? redirect : '/dashboard')
+}
+
+async function handlePhoneLogin(): Promise<void> {
+  if (!phoneCanSubmit.value) return
   loading.value = true
   errorMsg.value = ''
   try {
@@ -86,21 +116,38 @@ async function handleLogin(): Promise<void> {
       phone: phone.value.trim(),
       code: code.value.trim(),
     })
-    const token = data.access || data.accessToken || ''
-    if (!token) throw new Error('登录返回缺少令牌')
-
-    login(token, {
-      refresh: data.refresh || data.refreshToken,
-      studentId: data.user?.studentId ?? undefined,
-    })
-
-    const redirect = route.query.redirect
-    await router.replace(typeof redirect === 'string' && redirect ? redirect : '/dashboard')
+    await finishLogin(data)
   } catch (error) {
     errorMsg.value = toMessage(error, '登录失败，请重试')
   } finally {
     loading.value = false
   }
+}
+
+async function handleActivationLogin(): Promise<void> {
+  if (!activationCanSubmit.value) return
+  loading.value = true
+  errorMsg.value = ''
+  try {
+    const data = await post<LoginResult>('/auth/activation/activate', {
+      code: activationCode.value,
+      nickname: nickname.value.trim() || undefined,
+      pin: pin.value,
+    })
+    await finishLogin(data)
+  } catch (error) {
+    errorMsg.value = toMessage(error, '暂时进不去，请检查激活码和个人密码')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handleSubmit(): Promise<void> {
+  if (mode.value === 'activation') {
+    await handleActivationLogin()
+    return
+  }
+  await handlePhoneLogin()
 }
 </script>
 
@@ -160,8 +207,76 @@ async function handleLogin(): Promise<void> {
         <p class="mt-2 text-sm font-medium text-ink-soft">不直接给答案，陪你一步步想明白 ✨</p>
       </header>
 
-      <form class="space-y-4" @submit.prevent="handleLogin">
-        <div>
+      <form class="space-y-4" @submit.prevent="handleSubmit">
+        <div class="grid grid-cols-2 rounded-xl bg-white/60 p-1 shadow-card" role="tablist" aria-label="登录方式">
+          <button
+            type="button"
+            class="h-10 rounded-lg text-sm font-bold transition"
+            :class="mode === 'activation' ? 'bg-brand-500 text-white shadow-sm' : 'text-ink-soft'"
+            role="tab"
+            :aria-selected="mode === 'activation'"
+            @click="mode = 'activation'"
+          >
+            激活码进入
+          </button>
+          <button
+            type="button"
+            class="h-10 rounded-lg text-sm font-bold transition"
+            :class="mode === 'phone' ? 'bg-brand-500 text-white shadow-sm' : 'text-ink-soft'"
+            role="tab"
+            :aria-selected="mode === 'phone'"
+            @click="mode = 'phone'"
+          >
+            手机号登录
+          </button>
+        </div>
+
+        <template v-if="mode === 'activation'">
+          <div>
+            <label class="mb-1.5 block text-sm font-semibold text-ink-soft" for="activation-code">激活码</label>
+            <input
+              id="activation-code"
+              v-model="activationCode"
+              type="text"
+              inputmode="text"
+              autocapitalize="characters"
+              autocomplete="off"
+              maxlength="22"
+              placeholder="YY-ABCD-EFGH-IJKL-MNOP"
+              class="h-12 w-full rounded-2xl border border-white/70 bg-white/80 px-4 font-mono text-base font-bold tracking-wide text-ink shadow-card outline-none backdrop-blur transition focus:border-brand-400 focus:bg-white"
+              @input="formatActivationCode"
+            />
+          </div>
+
+          <div>
+            <label class="mb-1.5 block text-sm font-semibold text-ink-soft" for="nickname">怎么称呼你</label>
+            <input
+              id="nickname"
+              v-model="nickname"
+              type="text"
+              maxlength="50"
+              placeholder="第一次用时填写，以后不用再填"
+              class="h-12 w-full rounded-2xl border border-white/70 bg-white/80 px-4 text-base font-medium text-ink shadow-card outline-none backdrop-blur transition focus:border-brand-400 focus:bg-white"
+            />
+          </div>
+
+          <div>
+            <label class="mb-1.5 block text-sm font-semibold text-ink-soft" for="activation-pin">6 位个人密码</label>
+            <input
+              id="activation-pin"
+              v-model="pin"
+              type="password"
+              inputmode="numeric"
+              autocomplete="current-password"
+              maxlength="6"
+              placeholder="第一次设置，以后用它回来"
+              class="h-12 w-full rounded-2xl border border-white/70 bg-white/80 px-4 text-base font-medium text-ink shadow-card outline-none backdrop-blur transition focus:border-brand-400 focus:bg-white"
+            />
+          </div>
+        </template>
+
+        <template v-else>
+          <div>
           <label class="mb-1.5 block text-sm font-semibold text-ink-soft" for="phone">手机号</label>
           <input
             id="phone"
@@ -172,9 +287,9 @@ async function handleLogin(): Promise<void> {
             placeholder="请输入 11 位手机号"
             class="h-12 w-full rounded-2xl border border-white/70 bg-white/80 px-4 text-base font-medium text-ink shadow-card outline-none backdrop-blur transition focus:border-brand-400 focus:bg-white"
           />
-        </div>
+          </div>
 
-        <div>
+          <div>
           <label class="mb-1.5 block text-sm font-semibold text-ink-soft" for="code">验证码</label>
           <div class="flex gap-2">
             <input
@@ -195,7 +310,8 @@ async function handleLogin(): Promise<void> {
               {{ sending ? '发送中' : '获取验证码' }}
             </button>
           </div>
-        </div>
+          </div>
+        </template>
 
         <p v-if="tipMsg" class="rounded-2xl bg-white/70 px-4 py-2 text-center text-sm font-semibold text-brand-600 shadow-card backdrop-blur">
           🎁 {{ tipMsg }}
@@ -204,13 +320,13 @@ async function handleLogin(): Promise<void> {
           {{ errorMsg }}
         </p>
 
-        <button type="submit" class="btn-primary h-12 w-full text-base" :disabled="!canSubmit">
-          {{ loading ? '登录中…' : '开始学习 →' }}
+        <button type="submit" class="btn-primary h-12 w-full text-base" :disabled="mode === 'activation' ? !activationCanSubmit : !phoneCanSubmit">
+          {{ loading ? '进入中…' : '进入学习 →' }}
         </button>
       </form>
 
       <p class="mt-6 text-center text-xs font-medium text-ink-faint">
-        未注册的手机号将自动创建专属账号
+        激活码仅限受邀同学使用，请妥善保管个人密码
       </p>
     </div>
   </div>

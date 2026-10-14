@@ -342,7 +342,10 @@ def test_to_item_all_fields_present(client, monkeypatch):
         "solvedAt",
         "createdAt",
         "kpId",
-        "kpName",
-        "grade",
-    }
+            "kpName",
+            "grade",
+            "questionText",
+            "originalImageUrl",
+            "workImageUrls",
+        }
     assert set(item.keys()) == expected_keys, f"出参键不匹配: {set(item.keys())}"

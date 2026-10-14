@@ -4,10 +4,9 @@
  * 设计定位（#68 学段 UI）：
  *   - 这是「题库过滤」的粗粒度开关，持久化在浏览器 localStorage，
  *     与登录态（auth.ts）相互独立——换账号、退出登录都不会清掉学段偏好。
- *   - 后端 `Student.grade` 仍是 1-6 + stage(primary/junior) 的遗留约束，
- *     不能塞 7-12；所以学段**不写学生档案**，只在抽题时翻译成年级区间
- *     （grade_band）下发给 `POST /api/practice/session`，由后端按
- *     `Question.grade` 的区间做 SQL 过滤。
+ *   - 学段在抽题时翻译成年级区间（grade_band）下发给
+ *     `POST /api/practice/session`，由后端按 `Question.grade` 做 SQL 过滤。
+ *     学生档案与练习接口统一支持 1-12 年级。
  *   - 默认 `null`（= 不限/全部学段）：不传 grade_band，行为与历史完全一致。
  *
  * 导入点对齐 auth.ts：模块级 `reactive` + 显式读写 localStorage，组件直接读

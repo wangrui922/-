@@ -44,6 +44,7 @@ from app.models import (  # noqa: E402,F401
     content,
     learning,
     student_mastery,
+    activation,
     user,
     weekly_report,
 )

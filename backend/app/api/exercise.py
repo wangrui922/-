@@ -16,15 +16,16 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends
 from fastapi.concurrency import run_in_threadpool
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app.ai import orchestrator
 from app.core.deps import CurrentUser, get_current_user
-from app.core.response import ok
+from app.core.response import ApiError, CODE_BAD_REQUEST, ok
 from app.db import get_db
 from app.schemas.common import BaseSchema
 from app.services import ai_exercise_service
@@ -59,6 +60,8 @@ class ExerciseGuide(BaseSchema):
     question_id: str
     work: Optional[str] = None
     mode: Optional[str] = None
+    work_image: Optional[str] = None
+    work_image_key: Optional[str] = None
 
 
 class ExerciseJudge(BaseSchema):
@@ -75,6 +78,25 @@ class ExerciseJudge(BaseSchema):
     question_id: str
     answer: Optional[str] = None
     work: Optional[str] = None
+    work_image: Optional[str] = None
+    work_image_key: Optional[str] = None
+    work_image_keys: List[str] = Field(default_factory=list)
+    final_confirmed: bool = False
+
+
+class ExerciseSummary(BaseSchema):
+    """``POST /api/exercise/summary`` 请求体。"""
+
+    session_id: str
+
+
+def _strip_data_url(raw: Optional[str]) -> Optional[str]:
+    value = (raw or "").strip()
+    if not value:
+        return None
+    if value.startswith("data:"):
+        _, _, value = value.partition(",")
+    return value.strip() or None
 
 
 @router.post("/exercise/gen")
@@ -133,6 +155,8 @@ async def guide_exercise(
         session_id=to_uuid(body.session_id, "sessionId"),
         question_id=to_uuid(body.question_id, "questionId"),
         work=body.work,
+        work_image_b64=_strip_data_url(body.work_image),
+        work_image_key=body.work_image_key,
         mode=body.mode,
     )
     return ok(result)
@@ -155,6 +179,8 @@ async def judge_exercise(
             500 方舟调用失败。
     """
     require_student_id(current.sid)
+    if not body.final_confirmed:
+        raise ApiError(CODE_BAD_REQUEST, "先确认这道题已经答完，再请老师判断最终答案")
 
     result = await run_in_threadpool(
         ai_exercise_service.judge_and_record,
@@ -164,8 +190,30 @@ async def judge_exercise(
         question_id=to_uuid(body.question_id, "questionId"),
         answer=body.answer,
         work=body.work,
+        work_image_b64=_strip_data_url(body.work_image),
+        work_image_keys=list(dict.fromkeys([
+            *(body.work_image_keys or []),
+            *([body.work_image_key] if body.work_image_key else []),
+        ])),
     )
     return ok(result)
 
 
-__all__ = ["router", "ExerciseGen", "ExerciseGuide", "ExerciseJudge"]
+@router.post("/exercise/summary")
+async def summarize_exercise(
+    body: ExerciseSummary = Body(...),
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """两道相似题都最终判定后生成一次学习小结。"""
+    require_student_id(current.sid)
+    result = await run_in_threadpool(
+        ai_exercise_service.generate_summary,
+        db,
+        student_id=current.sid,
+        session_id=to_uuid(body.session_id, "sessionId"),
+    )
+    return ok(result)
+
+
+__all__ = ["router", "ExerciseGen", "ExerciseGuide", "ExerciseJudge", "ExerciseSummary"]

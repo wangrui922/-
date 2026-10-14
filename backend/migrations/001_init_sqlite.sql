@@ -8,6 +8,7 @@
 CREATE TABLE users (
     id            CHAR(36) PRIMARY KEY,
     phone         VARCHAR(20) NOT NULL UNIQUE,
+    access_pin_hash VARCHAR(255),
     nickname      VARCHAR(50),
     avatar_url    TEXT,
     role          VARCHAR(16) NOT NULL DEFAULT 'student'
@@ -26,9 +27,9 @@ CREATE TABLE students (
     id            CHAR(36) PRIMARY KEY,
     user_id       CHAR(36) NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     real_name     VARCHAR(50),
-    grade         INTEGER NOT NULL DEFAULT 4 CHECK (grade >= 1 AND grade <= 6),
+    grade         INTEGER NOT NULL DEFAULT 4 CHECK (grade >= 1 AND grade <= 12),
     stage         VARCHAR(16) NOT NULL DEFAULT 'primary'
-                    CHECK (stage IN ('primary','junior')),
+                    CHECK (stage IN ('primary','junior','senior')),
     goal          TEXT,
     daily_target  INTEGER NOT NULL DEFAULT 5 CHECK (daily_target > 0 AND daily_target <= 50),
     streak_days   INTEGER NOT NULL DEFAULT 0,
@@ -135,3 +136,16 @@ CREATE TABLE learning_tasks (
     finished_at  TEXT
 );
 CREATE INDEX idx_learning_tasks_student ON learning_tasks (student_id);
+
+CREATE TABLE activation_codes (
+    id            CHAR(36) PRIMARY KEY,
+    code_digest   VARCHAR(64) NOT NULL UNIQUE,
+    label         VARCHAR(50),
+    user_id       CHAR(36) UNIQUE REFERENCES users(id) ON DELETE SET NULL,
+    activated_at  TEXT,
+    expires_at    TEXT,
+    revoked_at    TEXT,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+CREATE INDEX idx_activation_codes_active ON activation_codes (revoked_at, expires_at);

@@ -72,6 +72,14 @@ def _as_items(parsed: Any) -> List[Dict[str, Any]]:
     return []
 
 
+def _target_difficulty(base: int, index: int) -> int:
+    """第一题保持原题难度，第二题提升到下一档；最高档保持 5。"""
+    if index == 0:
+        return base
+    harder = [level for level in DIFFICULTY_LEVELS if level > base]
+    return harder[0] if harder else base
+
+
 def _normalize_item(raw: Dict[str, Any], *, index: int, kp: str, difficulty: int) -> Dict[str, Any]:
     """把模型给的单题收敛成统一结构。"""
     return {
@@ -79,10 +87,10 @@ def _normalize_item(raw: Dict[str, Any], *, index: int, kp: str, difficulty: int
         "a": str(raw.get("a") or "").strip(),
         "type": _normalize_type(raw.get("type")),
         "knowledge": str(raw.get("knowledge") or kp).strip() or kp,
-        "difficulty": _normalize_difficulty(raw.get("difficulty"), difficulty),
+        "difficulty": _target_difficulty(difficulty, index),
         "role": str(raw.get("role") or "").strip() or ROLE_VALUES[min(index, len(ROLE_VALUES) - 1)],
         "tag": str(raw.get("tag") or "").strip(),
-    }
+}
 
 
 def gen_exercises(*, error_type: str, kp: str, difficulty: int, context: str = "") -> List[Dict[str, Any]]:

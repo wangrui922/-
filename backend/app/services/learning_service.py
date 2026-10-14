@@ -138,6 +138,7 @@ def record_mistake(
     question_id: Any,
     error_type: Optional[str] = None,
     error_reason: Optional[str] = None,
+    work_image_urls: Optional[List[str]] = None,
 ) -> Mistake:
     """记录一道错题（幂等）。
 
@@ -174,7 +175,14 @@ def record_mistake(
         .scalars()
         .first()
     )
+    clean_images = list(dict.fromkeys(url for url in (work_image_urls or []) if url))
     if existing is not None:
+        if clean_images:
+            existing.work_image_urls = list(
+                dict.fromkeys([*(existing.work_image_urls or []), *clean_images])
+            )
+            db.commit()
+            db.refresh(existing)
         return existing
 
     # ★ 快照：建档时从 Question.kp_id 拷贝（可能为 None）
@@ -188,6 +196,7 @@ def record_mistake(
         question_id=qid,
         error_type=error_type,
         error_reason=error_reason,
+        work_image_urls=clean_images,
         solved=False,
         kp_id=question_kp_id,
     )

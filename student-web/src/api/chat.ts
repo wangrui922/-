@@ -148,6 +148,9 @@ export interface MistakeItem {
   kpName: string | null
   /** 题目年级（通过 Mistake.question.grade 取，深链时收窄抽题范围用） */
   grade: number | null
+  questionText: string
+  originalImageUrl: string | null
+  workImageUrls: string[]
 }
 
 /** GET /api/mistake/list 结果。 */
@@ -332,11 +335,13 @@ function normalizeStartChat(raw: RawStartChat): StartChatResult {
  */
 export async function startChat(payload: {
   image?: string
+  imageKey?: string
   text?: string
   clientEventId?: string
 }): Promise<StartChatResult> {
   const raw = await post<RawStartChat>('/chat', {
     image: payload.image || null,
+    imageKey: payload.imageKey || null,
     text: payload.text || null,
     clientEventId: payload.clientEventId,
   })
@@ -392,12 +397,16 @@ export async function guideExercise(payload: {
   questionId: string
   work?: string
   mode?: TutorMode
+  workImage?: string
+  workImageKey?: string
 }): Promise<GuideExerciseResult> {
   const raw = await post<RawGuideExercise>('/exercise/guide', {
     sessionId: payload.sessionId,
     questionId: payload.questionId,
     work: payload.work ?? '',
     mode: payload.mode,
+    workImage: payload.workImage || null,
+    workImageKey: payload.workImageKey || null,
   })
   return normalizeGuideExercise(raw)
 }
@@ -411,14 +420,36 @@ export async function judgeExercise(payload: {
   questionId: string
   answer: string
   work?: string
+  workImage?: string
+  workImageKey?: string
+  workImageKeys?: string[]
+  finalConfirmed: true
 }): Promise<JudgeExerciseResult> {
   const raw = await post<RawJudgeExercise>('/exercise/judge', {
     sessionId: payload.sessionId,
     questionId: payload.questionId,
     answer: payload.answer,
     work: payload.work ?? '',
+    workImage: payload.workImage || null,
+    workImageKey: payload.workImageKey || null,
+    workImageKeys: payload.workImageKeys || [],
+    finalConfirmed: payload.finalConfirmed,
   })
   return normalizeJudgeExercise(raw)
+}
+
+/** 两道相似题都完成后生成本次辅导小结，后端会缓存结果。 */
+export async function summarizeExercise(sessionId: string): Promise<{
+  summary: string
+  cached: boolean
+}> {
+  const raw = await post<{ summary?: string; cached?: boolean }>('/exercise/summary', {
+    sessionId,
+  })
+  return {
+    summary: String(raw.summary ?? ''),
+    cached: Boolean(raw.cached),
+  }
 }
 
 /** 错题本列表，state 不传返回全部。 */

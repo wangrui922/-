@@ -2,6 +2,7 @@
 
     POST /api/auth/code     下发验证码（随机 6 位，5min 过期；dev 环境回带方便自测）
     POST /api/auth/login    手机号 + 验证码登录，首次登录自动建号
+    POST /api/auth/activation/activate  激活码首次开通 / 后续登录
     POST /api/auth/refresh  用 refresh 换新令牌
     GET  /api/auth/me       当前登录态自检（受保护，无 token 返 401）
 
@@ -21,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import CurrentUser, get_current_user
 from app.core.response import ApiError, CODE_BAD_REQUEST, ok
 from app.db import get_db
-from app.schemas.auth import LoginIn, RefreshIn, RegisterIn, SendCodeIn
+from app.schemas.auth import ActivationEnterIn, LoginIn, RefreshIn, RegisterIn, SendCodeIn
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -47,6 +48,16 @@ async def login(payload: LoginIn, db: Session = Depends(get_db)) -> dict:
     """
     data = auth_service.login_by_code(db, phone=payload.phone, code=payload.code)
     return ok(data)
+
+
+@router.post("/activation/activate")
+async def activation_login(payload: ActivationEnterIn, db: Session = Depends(get_db)) -> dict:
+    """用激活码进入学习。
+
+    首次输入有效码时创建学生账号并设置个人密码；之后同一串码配合个人密码可在
+    新手机或电脑重新登录。明文激活码不会写入数据库。
+    """
+    return ok(auth_service.enter_by_activation_code(db, payload.code, payload.pin, payload.nickname))
 
 
 @router.post("/register")

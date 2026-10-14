@@ -82,6 +82,9 @@ def _to_item(mistake: Mistake) -> Dict[str, Any]:
         "kpId": str(mistake.kp_id) if mistake.kp_id else None,
         "kpName": mistake.kp.name if mistake.kp else None,
         "grade": mistake.question.grade if mistake.question else None,
+        "questionText": mistake.question.content if mistake.question else "",
+        "originalImageUrl": mistake.question.image_url if mistake.question else None,
+        "workImageUrls": list(mistake.work_image_urls or []),
     }
 
 

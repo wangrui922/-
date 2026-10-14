@@ -254,7 +254,7 @@ def ark_respond(
     messages: List[Dict[str, Any]],
     system: Optional[str] = None,
     image_b64: Optional[str] = None,
-    timeout: float = DEFAULT_TIMEOUT,
+    timeout: Optional[float] = None,
 ) -> str:
     """调用方舟 Responses API，返回模型输出的纯文本。
 
@@ -262,7 +262,7 @@ def ark_respond(
         messages: 对话消息列表，元素形如 ``{"role": "user"|"assistant", "content": "文本"}``。
         system: 系统提示词（通常来自 ``app.ai.prompts.*`` 的 ``PROMPT``），可为空。
         image_b64: 图片 base64 或 data URL，非空时挂到最后一条 user 消息上，可为空。
-        timeout: 单次请求超时（秒），默认 60。
+        timeout: 单次请求超时（秒）；未传入时读取 ``ARK_TIMEOUT_SEC``，默认 60。
 
     Returns:
         模型输出文本（已 strip）。
@@ -279,6 +279,10 @@ def ark_respond(
     if not model:
         raise ArkError("ARK_MODEL 未配置")
 
+    effective_timeout = float(timeout if timeout is not None else (settings.ark_timeout_sec or DEFAULT_TIMEOUT))
+    if effective_timeout <= 0:
+        effective_timeout = DEFAULT_TIMEOUT
+
     payload: Dict[str, Any] = {
         "model": model,
         "input": _build_input(messages, system, image_b64),
@@ -293,7 +297,7 @@ def ark_respond(
 
     for attempt in range(1, total_attempts + 1):
         try:
-            with httpx.Client(timeout=timeout) as client:
+            with httpx.Client(timeout=effective_timeout) as client:
                 response = client.post(ARK_ENDPOINT, json=payload, headers=headers)
 
             if response.status_code >= 400:
@@ -311,8 +315,11 @@ def ark_respond(
                 return _extract_text(data)
 
         except httpx.TimeoutException as exc:
-            last_error = f"方舟请求超时（{timeout:.0f}s）：{exc}"
+            last_error = f"方舟请求超时（{effective_timeout:.0f}s）：{exc}"
             logger.warning("方舟调用超时（第 %s/%s 次）", attempt, total_attempts)
+            # 超时通常意味着上游已经处理了请求；再次发送会增加等待时间，
+            # 也可能造成同一轮老师回答被重复生成。短暂网络错误仍按原策略重试。
+            break
         except httpx.HTTPError as exc:
             last_error = f"方舟连接失败：{exc}"
             logger.warning("方舟连接失败（第 %s/%s 次）：%s", attempt, total_attempts, exc)

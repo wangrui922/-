@@ -24,7 +24,7 @@
  *   2. 同时调 POST /api/file/upload 把原图存一份（拿到 key/url 便于后续归档），
  *      上传失败不阻塞对话流程。
  */
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import {
   DEFAULT_TUTOR_MODE,
@@ -33,6 +33,7 @@ import {
   judgeExercise,
   sendMessage,
   startChat,
+  summarizeExercise,
   uploadFile,
   type Exercise,
   type TutorMode,
@@ -53,6 +54,7 @@ import GuideChatPanel from '@/components/guide/GuideChatPanel.vue'
 import QuestionCard from '@/components/QuestionCard.vue'
 import ImageQuestionCropper from '@/components/practice/ImageQuestionCropper.vue'
 import tutorAvatar from '@/assets/tutor-yueyue-v2.png'
+import { getStudentId } from '@/stores/auth'
 import type { GuideMessage, QuickAction } from '@/types/guide'
 
 interface ChatItem {
@@ -79,6 +81,9 @@ interface ExerciseThread {
   mistakeId: string | null
   /** 孩子最近一次写下的过程，判题时兜底当答案用 */
   lastWork: string
+  /** 最近一张手写过程图及本题全部已上传图片 key。 */
+  lastWorkImage: string
+  workImageKeys: string[]
 }
 
 /** 模式指示器的展示文案（后端 `app/ai/intent.py` 是 mode 的唯一真源，这里只做映射）。 */
@@ -110,11 +115,11 @@ const CHAT_QUICK_ACTIONS: readonly QuickAction[] = [
   { label: '看演示', text: '你先完整演示一遍给我看看', mode: 'DEMO' },
 ]
 
-/** 练习题面板的快捷按钮：比主对话多一个「判一下」，对应 /exercise/judge。 */
+/** “我做完了”只请老师检查完整性；老师确认后才会展示最终答案确认。 */
 const EXERCISE_QUICK_ACTIONS: readonly QuickAction[] = [
   { label: '不会做，给我讲', text: '我不会做，你给我讲一遍吧', mode: 'DEMO' },
   { label: '给点提示', text: '给点提示吧，我想再自己试试', mode: 'HINT' },
-  { label: '我做完了，帮我判', text: '我做完了，帮我看看对不对', mode: 'JUDGE' },
+  { label: '我做完了', text: '我做完了，请先看看我的过程是否完整', mode: 'GUIDE' },
 ]
 
 /** 「是的/对/没错…」这类确认词——老师问最终答案时命中即进判题。 */
@@ -134,6 +139,7 @@ const pendingImage = ref<string>('')
 const pendingFile = ref<File | null>(null)
 /** 拍照上传后后端顺带 OCR 出的题目文字（withOcr=true），展示给孩子核对/纠错。 */
 const ocrText = ref<string>('')
+const sourceImageKey = ref<string>('')
 const exercises = ref<Exercise[]>([])
 const threads = ref<ExerciseThread[]>([])
 
@@ -151,6 +157,11 @@ const nextMode = ref<TutorMode>(DEFAULT_TUTOR_MODE)
 const activeExerciseIdx = ref<number>(-1)
 const guideLoading = ref<boolean>(false)
 const guideError = ref<string>('')
+const summaryText = ref<string>('')
+const summaryLoading = ref<boolean>(false)
+const summaryError = ref<string>('')
+const AI_TEACHER_PROGRESS_KEY = 'aicoach.ai-teacher.progress'
+const AI_TEACHER_PROGRESS_MAX_AGE_MS = 2 * 60 * 60 * 1000
 
 const sending = ref<boolean>(false)
 const uploading = ref<boolean>(false)
@@ -164,7 +175,7 @@ const QUICK_ICON: Record<string, string> = {
   '不会做，给我讲': '📖',
   '给点提示': '💡',
   '看演示': '🎬',
-  '我做完了，帮我判': '✓',
+  '我做完了': '✓',
 }
 
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -258,6 +269,77 @@ function createThread(): ExerciseThread {
     errorType: null,
     mistakeId: null,
     lastWork: '',
+    lastWorkImage: '',
+    workImageKeys: [],
+  }
+}
+
+function saveAiTeacherProgress(): void {
+  if (!sessionId.value) return
+  const snapshot = {
+    studentId: getStudentId(),
+    savedAt: Date.now(),
+    sessionId: sessionId.value,
+    analysisText: analysisText.value,
+    ocrText: ocrText.value,
+    sourceImageKey: sourceImageKey.value,
+    messages: messages.value.map(({ image: _image, ...item }) => item),
+    exercises: exercises.value,
+    threads: threads.value.map((thread) => ({
+      ...thread,
+      messages: thread.messages.map(({ image: _image, ...item }) => item),
+      lastWorkImage: '',
+    })),
+    weakTags: weakTags.value,
+    weakSource: weakSource.value,
+    currentMode: currentMode.value,
+    nextMode: nextMode.value,
+    summaryText: summaryText.value,
+  }
+  try {
+    localStorage.setItem(AI_TEACHER_PROGRESS_KEY, JSON.stringify(snapshot))
+  } catch {
+    /* 隐私模式或配额不足时仍可正常使用，服务端记录不受影响 */
+  }
+}
+
+function restoreAiTeacherProgress(): void {
+  try {
+    const raw = localStorage.getItem(AI_TEACHER_PROGRESS_KEY)
+    if (!raw) return
+    const snapshot = JSON.parse(raw) as Record<string, unknown>
+    const savedAt = Number(snapshot.savedAt || 0)
+    if (
+      snapshot.studentId !== getStudentId() ||
+      !savedAt ||
+      Date.now() - savedAt > AI_TEACHER_PROGRESS_MAX_AGE_MS
+    ) {
+      localStorage.removeItem(AI_TEACHER_PROGRESS_KEY)
+      return
+    }
+    if (typeof snapshot.sessionId !== 'string' || !snapshot.sessionId) return
+    sessionId.value = snapshot.sessionId
+    analysisText.value = String(snapshot.analysisText ?? '')
+    ocrText.value = String(snapshot.ocrText ?? '')
+    sourceImageKey.value = String(snapshot.sourceImageKey ?? '')
+    messages.value = Array.isArray(snapshot.messages) ? (snapshot.messages as ChatItem[]) : []
+    seed = messages.value.reduce((maxId, item) => Math.max(maxId, Number(item.id) || 0), 0)
+    exercises.value = Array.isArray(snapshot.exercises) ? (snapshot.exercises as Exercise[]) : []
+    threads.value = Array.isArray(snapshot.threads)
+      ? (snapshot.threads as ExerciseThread[]).map((thread) => ({
+          ...createThread(),
+          ...thread,
+          messages: Array.isArray(thread.messages) ? thread.messages : [],
+          workImageKeys: Array.isArray(thread.workImageKeys) ? thread.workImageKeys : [],
+        }))
+      : []
+    weakTags.value = Array.isArray(snapshot.weakTags) ? (snapshot.weakTags as WeakTag[]) : []
+    weakSource.value = snapshot.weakSource === 'profile' ? 'profile' : 'fallback'
+    currentMode.value = (snapshot.currentMode as TutorMode) || DEFAULT_TUTOR_MODE
+    nextMode.value = (snapshot.nextMode as TutorMode) || DEFAULT_TUTOR_MODE
+    summaryText.value = String(snapshot.summaryText ?? '')
+  } catch {
+    localStorage.removeItem(AI_TEACHER_PROGRESS_KEY)
   }
 }
 
@@ -319,6 +401,7 @@ async function uploadOcr(file: File): Promise<void> {
   uploading.value = true
   try {
     const up = await uploadFile(file, true)
+    sourceImageKey.value = up.key
     ocrText.value = up.ocrText ?? ''
   } catch (error) {
     errorMsg.value = `${toMessage(error, '照片上传失败')}（不影响继续提问）`
@@ -353,6 +436,7 @@ function onCropCancel(): void {
 function clearImage(): void {
   imageDataUrl.value = ''
   imageName.value = ''
+  sourceImageKey.value = ''
 }
 
 /**
@@ -373,7 +457,11 @@ async function handleSend(mode?: TutorMode): Promise<void> {
       push('user', text || '（拍了一张题目照片）', image || undefined)
       inputText.value = ''
 
-      const result = await startChat({ image: image || undefined, text: text || undefined })
+      const result = await startChat({
+        image: image || undefined,
+        imageKey: sourceImageKey.value || undefined,
+        text: text || undefined,
+      })
       sessionId.value = result.sessionId
       analysisText.value = `这道题考：${result.analysis.knowledge} · ${result.analysis.type} · 难度 ${result.analysis.difficulty}`
       push('ai', analysisText.value)
@@ -467,7 +555,13 @@ function closeExercise(): void {
  * @param work 孩子这一轮写下的过程（可为空——空着就是纯请老师起个头）
  * @param mode 快捷按钮显式指定的模式，不传则由后端识别
  */
-async function runGuide(idx: number, work: string, mode?: TutorMode): Promise<void> {
+async function runGuide(
+  idx: number,
+  work: string,
+  mode?: TutorMode,
+  workImage?: string,
+  workImageKey?: string,
+): Promise<void> {
   const exercise = exercises.value[idx]
   const thread = threads.value[idx]
   if (!exercise || !thread || guideLoading.value) return
@@ -483,6 +577,13 @@ async function runGuide(idx: number, work: string, mode?: TutorMode): Promise<vo
     thread.messages.push({ role: 'student', text })
     thread.lastWork = text
   }
+  if (workImage) {
+    thread.messages.push({ role: 'student', text: '这是我的手写过程', image: workImage })
+    thread.lastWorkImage = workImage
+  }
+  if (workImageKey && !thread.workImageKeys.includes(workImageKey)) {
+    thread.workImageKeys.push(workImageKey)
+  }
 
   guideLoading.value = true
   guideError.value = ''
@@ -492,6 +593,8 @@ async function runGuide(idx: number, work: string, mode?: TutorMode): Promise<vo
       questionId,
       work: text,
       mode,
+      workImage,
+      workImageKey,
     })
     const tIdx = thread.messages.length
     thread.messages.push({ role: 'teacher', text: result.reply })
@@ -542,6 +645,9 @@ async function runJudge(idx: number, rawAnswer: string): Promise<void> {
       questionId,
       answer,
       work: thread.lastWork || answer,
+      workImage: thread.lastWorkImage || undefined,
+      workImageKeys: thread.workImageKeys,
+      finalConfirmed: true,
     })
     thread.verdict = result.correct ? 'correct' : 'wrong'
     thread.errorType = result.errorType
@@ -564,12 +670,29 @@ async function runJudge(idx: number, rawAnswer: string): Promise<void> {
       thread.messages.push({ role: 'teacher', text: '这道题我已经记进错题本了，过几天再来练一次。' })
       maybeSpeak(`guide-${mIdx}`, '这道题我已经记进错题本了，过几天再来练一次。')
     }
+    if (threads.value.length === 2 && threads.value.every((item) => item.status === 'done')) {
+      await generateLearningSummary()
+    }
   } catch (error) {
     // 判题失败要把状态放回去，否则状态条会一直卡在「评判中」
     thread.status = previousStatus
     guideError.value = toMessage(error, '判题失败，再试一次')
   } finally {
     guideLoading.value = false
+  }
+}
+
+async function generateLearningSummary(): Promise<void> {
+  if (!sessionId.value || summaryLoading.value || summaryText.value) return
+  summaryLoading.value = true
+  summaryError.value = ''
+  try {
+    const result = await summarizeExercise(sessionId.value)
+    summaryText.value = result.summary
+  } catch (error) {
+    summaryError.value = toMessage(error, '小结暂时没写好，稍后再试一次')
+  } finally {
+    summaryLoading.value = false
   }
 }
 
@@ -582,7 +705,7 @@ function stripConfirm(text: string): string {
 function handleGuideSend(work: string): void {
   const idx = activeExerciseIdx.value
   const thread = threads.value[idx]
-  if (!thread) return
+  if (!thread || guideLoading.value) return
 
   const text = work.trim()
   if (thread.askFinalConfirm && text && FINAL_CONFIRM_RE.test(text)) {
@@ -595,6 +718,23 @@ function handleGuideSend(work: string): void {
   void runGuide(idx, text)
 }
 
+async function handleGuideImage(file: File, dataUrl: string): Promise<void> {
+  const idx = activeExerciseIdx.value
+  if (idx < 0 || guideLoading.value) return
+  guideLoading.value = true
+  guideError.value = ''
+  summaryText.value = ''
+  summaryError.value = ''
+  try {
+    const uploaded = await uploadFile(file, false)
+    guideLoading.value = false
+    await runGuide(idx, '', undefined, dataUrl, uploaded.key)
+  } catch (error) {
+    guideError.value = toMessage(error, '手写过程上传失败，再拍一次试试')
+    guideLoading.value = false
+  }
+}
+
 /**
  * 面板的快捷按钮：JUDGE 走判题接口，其余走引导接口。
  *
@@ -604,15 +744,9 @@ function handleGuideSend(work: string): void {
 function handleGuideQuick(action: QuickAction, draft: string): void {
   const idx = activeExerciseIdx.value
   const thread = threads.value[idx]
-  if (!thread) return
+  if (!thread || guideLoading.value) return
 
   const typed = draft.trim()
-  if (action.mode === 'JUDGE') {
-    thread.messages.push({ role: 'student', text: typed || action.text })
-    if (typed) thread.lastWork = typed
-    void runJudge(idx, typed)
-    return
-  }
   // 孩子写了一半再点「给点提示」：把他写的和诉求一起发过去，老师才接得住
   void runGuide(idx, typed ? `${typed}\n${action.text}` : action.text, action.mode)
 }
@@ -632,7 +766,16 @@ function handleReset(): void {
   currentMode.value = DEFAULT_TUTOR_MODE
   nextMode.value = DEFAULT_TUTOR_MODE
   clearImage()
+  localStorage.removeItem(AI_TEACHER_PROGRESS_KEY)
 }
+
+watch(
+  [sessionId, analysisText, ocrText, sourceImageKey, messages, exercises, threads, weakTags, weakSource, currentMode, nextMode, summaryText],
+  saveAiTeacherProgress,
+  { deep: true },
+)
+
+restoreAiTeacherProgress()
 </script>
 
 <template>
@@ -749,6 +892,12 @@ function handleReset(): void {
             {{ item.questionId ? exerciseActionLabel(idx) : '这道题没存档成功，换两道试试' }}
           </button>
         </div>
+        <section v-if="summaryLoading || summaryText || summaryError" class="rounded-2xl border border-brand-100 bg-brand-50/70 p-4">
+          <h2 class="text-base font-bold text-slate-800">📚 今天的学习小结</h2>
+          <p v-if="summaryLoading" class="mt-2 text-sm text-slate-500">老师正在根据你的整个解题过程写小结…</p>
+          <p v-else-if="summaryText" class="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{{ summaryText }}</p>
+          <p v-else class="mt-2 text-sm text-red-500">{{ summaryError }}</p>
+        </section>
       </section>
 
       <p v-if="errorMsg" class="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-500">
@@ -859,6 +1008,7 @@ function handleReset(): void {
       @close="closeExercise"
       @send="handleGuideSend"
       @quick="handleGuideQuick"
+      @send-image="handleGuideImage"
     >
       <!-- 题目状态指示器：第 1/2 题 · 作答中 + 三态评判图标 -->
       <template #header-extra>
