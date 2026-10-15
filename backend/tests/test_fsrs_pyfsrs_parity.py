@@ -36,6 +36,8 @@ import pytest
 from app.services.fsrs_scheduler import (
     MODE_FSRS_PY,
     MODE_SM2,
+    STATE_LEARNING,
+    STATE_REVIEW,
     Card,
     FSRSScheduler,
     _pyfsrs_review_card,
@@ -450,3 +452,70 @@ class TestContractStability:
         """拿不到 student_id 时按全局开关裁决，不报错。"""
         assert FSRSScheduler().mode == resolve_scheduler_mode(None)
         assert FSRSScheduler().student_id is None
+
+
+# ================================================ sm2 兼容路径的手算 golden 真值
+class TestSm2CompatGolden:
+    """``SCHEDULER=sm2`` 兼容路径：**手算 golden**，不是「与 py-fsrs 互比」。
+
+    为什么必须写死（团队约定 N1）：
+        本文件其余用例（含 1000 次双跑）多是「两套内核互比」的对称断言。
+        对称断言只能证明两者**彼此一致**——若 SM-2 内核的公共分支被改坏
+        （间隔公式、EF 更新、lapse 重置），两套内核会**一起错**，互比照样绿，
+        回归被静默放行。这里把 SM-2 的排程结果按公式手算成常量钉死。
+
+    手算依据（``review_scheduler._sm2_review_core``）：
+        * 间隔：第 1 次成功=1 天，第 2 次=6 天，第 n≥3 次=round(上次间隔 × EF)，
+          且不小于 6；遗忘（quality<3）时归 1 天并把 reps 清零；
+        * EF' = EF + 0.1 - (5-q)×(0.08+(5-q)×0.02)；
+        * rating→quality：3→4、4→5、1→1；
+        * difficulty 列直接存 EF（不归一化）。
+    """
+
+    def test_good_chain_golden_intervals_and_ef(self, set_scheduler_mode):
+        """连续 Good/Good/Easy：间隔 1→6→16，EF 2.5→2.5→2.6。
+
+        推导：
+            ① q=4 → Δ=0.1-1×(0.08+0.02)=0 → EF=2.5；reps=1 → 1 天；
+            ② q=4 → Δ=0 → EF=2.5；reps=2 → 6 天；
+            ③ q=5 → Δ=0.1-0×(0.08+0)=0.1 → EF=2.6；reps=3 → round(6×2.6)=16。
+        """
+        set_scheduler_mode("sm2", ratio=0.0)
+        scheduler = FSRSScheduler(student_id="golden-good")
+        assert scheduler.mode == MODE_SM2
+
+        card, now = Card(id="g1"), START
+        for rating in (3, 3, 4):
+            card, _log = scheduler.review_card(card, rating, now)
+            now = now + timedelta(days=max(1, int(card.scheduled_days)))
+
+        assert card.scheduled_days == 16
+        assert card.stability == 16.0        # SM-2 内核：stability 列 = 间隔天数
+        assert card.difficulty == 2.6        # difficulty 列 = EF
+        assert card.reps == 3
+        assert card.lapses == 0
+        assert card.state == STATE_REVIEW
+
+    def test_lapse_chain_golden_resets(self, set_scheduler_mode):
+        """Good → Again（遗忘）→ Good：间隔重来 1 天，EF 逐次下调并累计 lapses。
+
+        推导：
+            ① q=4 → Δ=0 → EF=2.5；reps=1 → 1 天；
+            ② q=1 → Δ=0.1-4×(0.08+4×0.02)=0.1-0.64=-0.54 → EF=1.96；
+               遗忘 → reps=0、间隔=1、lapses=1、state=Relearning；
+            ③ q=4 → Δ=0 → EF=1.96；reps=1 → 1 天（重新起算，不是 6 天）。
+        """
+        set_scheduler_mode("sm2", ratio=0.0)
+        scheduler = FSRSScheduler(student_id="golden-lapse")
+
+        card, now = Card(id="g2"), START
+        for rating in (3, 1, 3):
+            card, _log = scheduler.review_card(card, rating, now)
+            now = now + timedelta(days=max(1, int(card.scheduled_days)))
+
+        assert card.scheduled_days == 1
+        assert card.stability == 1.0
+        assert card.difficulty == 1.96
+        assert card.reps == 1
+        assert card.lapses == 1
+        assert card.state == STATE_LEARNING

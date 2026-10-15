@@ -345,6 +345,44 @@ class TestJudgeL3Setting:
 
         assert Settings(judge_l3=raw).judge_l3_enabled is True
 
+    def test_off_path_golden_two_layer_verdicts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``judge_l3=off`` 的**手算 golden**：三条路径的判定结论逐值钉死。
+
+        为什么必须写死而不是「开/关两次调用互比」（团队约定 N1）：
+            对称互比只能证明「两条路径**彼此一致**」。若公共分支（L0 SymPy /
+            L1 规则引擎）被改坏，开与关会**一起错**，互比照样全绿 —— 这类回归
+            会被静默放行。这里把每条路径的 ``(is_correct, level)`` 按算法口径
+            手算成常量，公共分支一动就红。
+
+        Golden 推导（``judge_l3=off`` → 完全不进 L3，只剩 L0 → L1 两层）：
+            ① 计算题等价 ``1/2`` ≡ ``0.5``：L0 SymPy 判对 → ``level=0`` 判对；
+            ② 计算题带单位 ``5cm`` vs ``5``：L0 把 ``5cm`` 解成 ``5*c*m`` 判不等
+               → ``level=0`` **判错**（这条正是 L3 开启时会被救回的用例，
+               关掉后必须维持升级前的「判错」结论，不能反向变好）；
+            ③ 选择题标准答案 A、学生答 B：``选择`` 不在 L0 支持集合 → 落到 L1
+               规则引擎 → 键位 A≠B → ``level=1`` 判错；
+            ④ 计算题 ``50%`` vs ``0.5``：L0 解析不了百分号（判不出）→ L1 不支持
+               ``计算`` → ``level=4`` 兜底，兜底契约要求 ``is_correct`` 恒 False。
+        """
+        monkeypatch.setattr(sympy_judge, "_load_l3_config", lambda: (False, 500))
+
+        equivalent = sympy_judge.layered_judge(Q_TYPE_CALC, "", None, "1/2", "0.5")
+        assert (equivalent.is_correct, equivalent.level) == (
+            True,
+            sympy_judge.LEVEL_SYMPY,
+        )
+
+        with_unit = sympy_judge.layered_judge(Q_TYPE_CALC, "", None, "5cm", "5")
+        assert (with_unit.is_correct, with_unit.level) == (False, sympy_judge.LEVEL_SYMPY)
+
+        choice_wrong = sympy_judge.layered_judge(
+            "选择", "", {"A": "0.5", "B": "0.6"}, "A", "B"
+        )
+        assert (choice_wrong.is_correct, choice_wrong.level) == (False, LEVEL_RULE)
+
+        abstained = sympy_judge.layered_judge(Q_TYPE_CALC, "", None, "50%", "0.5")
+        assert (abstained.is_correct, abstained.level) == (False, LEVEL_FALLBACK)
+
 
 # ------------------------------------------------------------------ no-leak 铁律
 class TestL3NoLeak:
