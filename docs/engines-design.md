@@ -85,39 +85,48 @@ backend/app/engines/
 **载体：复用既有的 `system_config` 表**（`app.models.system_config.SystemConfig`），
 不新建表、不加迁移（既省掉 PG/SQLite 双份 SQL，也让运营能在后台改阈值）。
 
-**Key 规范**：一律 `adaptive.` 打头，段式命名，例如
+**Key 清单（31 项，与 `config.py::CONFIG_SPECS` 一一对应；缺省值以那里为准）**：
 
 ```
-adaptive.enabled                            # 总开关
-adaptive.difficulty.enabled                 # 难度引擎开关
-adaptive.difficulty.band_width              # 难度带半宽
-adaptive.difficulty.confidence_width_gain   # 置信度补宽系数
-adaptive.difficulty.inertia                 # 向当前难度回归的惯性
-adaptive.difficulty.cold_start_samples      # 冷启动样本阈值
-adaptive.difficulty.cold_start_width        # 冷启动探索带宽
-adaptive.difficulty.error_rate_penalty      # 错误率惩罚系数
-adaptive.difficulty.accuracy_target         # 期望近期正确率
-adaptive.difficulty.accuracy_gain           # 正确率偏离增益
-adaptive.difficulty.hint_high_offset        # 提示依赖 high 的偏置
-adaptive.difficulty.hint_low_offset         # 提示依赖 low 的偏置
-adaptive.difficulty.reason_shift            # 原因码位移阈值
-adaptive.difficulty.min / .max / .default   # 难度坐标边界与默认值
-adaptive.priority.weights                  # 四项权重（dict 或 JSON 字符串）
-adaptive.priority.gap_divisor              # 前置缺口条数归一化除数
-adaptive.priority.out_degree_divisor       # 图谱出度归一化除数
-adaptive.priority.recent_window            # 近期练习窗口（天）
-adaptive.priority.stale_after              # 陈旧阈值（天）
-adaptive.priority.top_n                    # 缺省返回条数
-adaptive.priority.wrong_rate_floor         # C1 触发门槛（近窗口错误率）
-adaptive.priority.wrong_boost              # C1 错题加分上限
-adaptive.priority.wrong_saturation         # C1 加满分所需错题数
-adaptive.priority.recent_attempts_cap      # C2 单点饱和阈值
-adaptive.priority.saturation_penalty       # C2 饱和抑制系数
-adaptive.generation.default_total          # total 缺省时的批次题数
-adaptive.generation.max_total              # 单批题数上限
-adaptive.generation.max_knowledge_points   # 单批覆盖知识点上限
-adaptive.generation.new_ratio              # 新题占比（决定策略标记）
+# ---- 总开关
+adaptive.enabled                            # bool    True
+# ---- 难度引擎
+adaptive.difficulty.enabled                 # bool    True
+adaptive.difficulty.min                     # float   1.0
+adaptive.difficulty.max                     # float   5.0
+adaptive.difficulty.default                 # float   3.0
+adaptive.difficulty.band_width              # float   0.5
+adaptive.difficulty.confidence_width_gain   # float   0.5
+adaptive.difficulty.inertia                 # float   0.3
+adaptive.difficulty.cold_start_samples      # int     3
+adaptive.difficulty.cold_start_width        # float   1.0
+adaptive.difficulty.error_rate_penalty      # float   0.8
+adaptive.difficulty.accuracy_target         # float   0.75
+adaptive.difficulty.accuracy_gain           # float   2.0
+adaptive.difficulty.hint_high_offset        # float   -0.4
+adaptive.difficulty.hint_low_offset         # float   0.2
+adaptive.difficulty.reason_shift            # float   0.5
+# ---- 优先级引擎
+adaptive.priority.weights                   # json    {"mastery":0.40,"confidence":0.25,"gap":0.20,"degree":0.15}
+adaptive.priority.gap_divisor               # float   3.0
+adaptive.priority.out_degree_divisor        # int     5
+adaptive.priority.recent_window             # int     7
+adaptive.priority.stale_after               # int     14
+adaptive.priority.top_n                     # int     5
+adaptive.priority.wrong_rate_floor          # float   0.5
+adaptive.priority.wrong_boost               # float   0.25   # 夹 [0,1]
+adaptive.priority.wrong_saturation          # float   3.0
+adaptive.priority.recent_attempts_cap       # int     10
+adaptive.priority.saturation_penalty        # float   0.85   # 夹 [0,1]，置 1.0 即关闭
+# ---- 出题编排引擎
+adaptive.generation.default_total           # int     5
+adaptive.generation.max_total               # int     20
+adaptive.generation.max_knowledge_points    # int     3
+adaptive.generation.new_ratio               # float   0.6
 ```
+
+> 对账方式（改配置或改文档时跑一遍，避免两边漂移）：
+> `python -c "from app.engines.config import CONFIG_SPECS; [print(s.key, s.kind, s.default) for s in CONFIG_SPECS]"`
 
 **新增阈值的三步**（不要偷懒跳过任何一步）：
 
@@ -199,7 +208,7 @@ rank_priorities(
     mastery_items,                 # 掌握度条目（dict / 对象均可）
     gaps=None,                     # detect_prerequisite_gaps() 的结果
     graph=None,                    # {kp_id: 出度} 或前置边序列
-    results=None,                  # T07 从 attempts 聚合的结果（本次仅留出入口）
+    results=None,                  # 近窗口作答聚合结果（驱动 R6b / R6c）
     *,
     adaptive_config=None,          # AdaptiveConfig（priority_* 阈值）
     now=None,                      # 时间基准，用于「陈旧 / 近期」判定
@@ -229,7 +238,10 @@ rank_priorities(
   `mastery_items` 为空（或 `None` / 脏容器）时返回 `[]`；
 * 引擎**不读系统时钟**：`now=None` 时直接跳过时间维度。
 
-### 6.2 缺省常量
+### 6.2 缺省常量与配置缺省值
+
+引擎侧常量（与 `config.py` 的同名缺省**必须同口径**，由
+`test_config_default_matches_engine_constant` 守卫）：
 
 ```text
 PRIORITY_WEIGHTS_DEFAULT = {"mastery":0.40,"confidence":0.25,"gap":0.20,"degree":0.15}
@@ -238,9 +250,21 @@ PRIORITY_STALE_AFTER=14   PRIORITY_LOW_MASTERY=0.5   PRIORITY_LOW_CONFIDENCE=0.5
 PRIORITY_TOP_N_DEFAULT=5
 ```
 
-权重可由 `adaptive.priority.weights` 覆盖，**dict 与 JSON 字符串两种载体都要能处理**，
-缺 key / 解析失败 / 类型不对一律回退缺省；除数被配置成 0 或负数时回退内置缺省
-（除零保护）。
+对应 `adaptive.priority.*` 的缺省值（运营改的是这些，缺省即上表行为）：
+
+| key | 缺省 | 说明 |
+| --- | --- | --- |
+| `priority.weights` | `{mastery:0.40, confidence:0.25, gap:0.20, degree:0.15}` | dict 与 JSON 字符串双载体，缺 key / 解析失败 / 类型不对一律回退 |
+| `priority.gap_divisor` | `3.0` | 配成 0 或负数 → 回退内置缺省（除零保护） |
+| `priority.out_degree_divisor` | `5` | 下限 1 |
+| `priority.recent_window` | `7` | 天 |
+| `priority.stale_after` | `14` | 天 |
+| `priority.top_n` | `5` | 下限 1 |
+| `priority.wrong_rate_floor` | `0.5` | 夹 `[0,1]` |
+| `priority.wrong_boost` | `0.25` | 夹 `[0,1]`；配太大（如 5.0）会把所有错题点拉平并列，故封顶 |
+| `priority.wrong_saturation` | `3.0` | 配成 0 → 回退内置缺省（除零保护） |
+| `priority.recent_attempts_cap` | `10` | 题 |
+| `priority.saturation_penalty` | `0.85` | 夹 `[0,1]`；置 `1.0` 关闭抑制，置 `0` 可当知识点人工屏蔽 |
 
 ### 6.3 排序规则与依据
 
@@ -251,7 +275,7 @@ PRIORITY_TOP_N_DEFAULT=5
 | R3 `confidence` | `(1-confidence)` 加权 | 置信度低说明结论不可靠，需先做题补样本 | 权重 `confidence` |
 | R4 `degree` | `min(degree, out_degree_divisor)/out_degree_divisor` 加权 | 枢纽基础点能解锁更多后续内容 | `priority.out_degree_divisor`、权重 `degree` |
 | R5 `stale` | `days > stale_after` 时加 `(days-stale_after)/stale_after` | 遗忘曲线：久不练的能力会回退 | `priority.stale_after` |
-| R6 `recent` | `days <= recent_window` 时乘 `(days+1)/(window+1)` 降权 | 用间隔练习代替同一知识点机械连刷 | `priority.recent_window` |
+| R6 `recent` | `days <= recent_window` **且未命中 R5** 时乘 `(days+1)/(window+1)` 降权 | 用间隔练习代替同一知识点机械连刷 | `priority.recent_window` |
 | R6b `C1 错题回炉` | 近窗口 `wrong>=1` 且 `wrong_rate>=floor` → **取消 R6 降权**（`RECENT:=1`），并加 `wrong_boost × min(1, wrong/wrong_saturation)` | 错题当天就该排得上（T15「错题当天回炉」的官方解法，不动 FSRS） | `priority.wrong_rate_floor`、`priority.wrong_boost`、`priority.wrong_saturation` |
 | R6c `C2 题量饱和` | 近窗口 `recent_attempts > cap` → 整体乘 `saturation_penalty` | 抑制同一知识点连刷 | `priority.recent_attempts_cap`、`priority.saturation_penalty` |
 | R7 | 同 ID 去重；同分按掌握度、等级、ID 稳定排序 | 避免重复配额并保证同输入同输出 | 无（结构性规则） |
@@ -262,7 +286,8 @@ BASE   = (1-mastery)      × w.mastery
        + gap_ratio        × w.gap
        + degree_ratio     × w.degree
 STALE  = days > stale_after ? (days-stale_after)/stale_after : 0
-RECENT = (recent_window>0 && days<=recent_window) ? (days+1)/(window+1) : 1
+RECENT = (未命中 STALE && recent_window>0 && days<=recent_window) ? (days+1)/(window+1) : 1
+# 错题数 wrong = floor(recent_attempts - recent_correct + 1e-9)（不用 round，避免银行家舍入）
 # C1 命中时 RECENT := 1.0
 SATURATION = recent_attempts > cap ? saturation_penalty : 1.0
 BOOST      = wrong>=1 && wrong_rate>=floor ? wrong_boost × min(1, wrong/wrong_saturation) : 0
