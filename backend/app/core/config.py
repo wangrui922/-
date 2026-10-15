@@ -105,7 +105,7 @@ class Settings(BaseSettings):
     def _normalize_judge_l3(cls, value: Any) -> str:
         """把开关归一成 ``"on"`` / ``"off"``，兼容 1/0/true/false/yes/no 写法。
 
-        未知写法一律按 ``"on"`` 处理（保持默认开），但不静默吞错——记录下来便于排查。
+        未识别的写法一律按 ``"on"`` 处理（与字段默认值保持一致，避免误关判题增强层）。
         """
         text = str(value).strip().lower()
         if text in {"off", "0", "false", "no", "n", "disabled", "关闭"}:
