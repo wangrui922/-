@@ -24,3 +24,41 @@ apscheduler
 orjson==3.10.*
 pytest==8.3.*
 pytest-asyncio==0.24.*
+
+
+# ---------------------------------------------------------------- 判题层
+# 符号计算：判题 L0 层（app/services/sympy_judge.py）**已在用**（函数内 lazy import），
+# 此前 requirements 里漏登记，等于线上裸奔——补锁避免 ImportError 直接让判题退化。
+# 降级策略：L0 内部 try/except 兜住 ImportError，未安装时判题回落到 L1 规则层，
+# 不会让应用启动失败（但会静默失去精确判分能力，所以必须装）。
+sympy==1.13.*
+
+# 数学等价判定：判题 L3 层，负责 1/2≡0.5、x+1≡1+x、\frac{1}{2}≡0.5、50%≡0.5
+# 这类「等价但字面不同」的答案（LaTeX 与纯文本双支持）。
+# ⚠️ 必须 >=0.9：0.6.x 在 Windows 上 100% 不可用——它的超时装饰器用
+# ``multiprocessing.Process(target=闭包内的局部函数)``，spawn 起步方式 pickle 不了，
+# 实测每一次 parse 都抛 AttributeError 并返回空列表（Linux 走 signal 分支不受影响）。
+# 0.9.0 起 ``parsing_timeout=None`` / ``timeout_seconds=None`` 可关掉库自带超时，
+# 改由本模块自己的 500ms 守护线程超时兜底（详见 docs/judge-l3-math-verify.md）。
+# 降级策略：**函数内 lazy import + 捕获 ImportError**，未安装时 L3 整层跳过，
+# 判题自动回落到 L0（SymPy）+ L1（规则）两层，行为与升级前完全一致。
+# 开关：JUDGE_L3=off 可完全关掉本层。详见 docs/judge-l3-math-verify.md。
+math-verify==0.9.*
+
+# 间隔重复算法（包名是 fsrs，不是 py-fsrs —— PyPI 上没有 py-fsrs 这个包）：
+# T04 复习调度统一入口（app/services/fsrs_scheduler.py）的新内核。
+# 降级策略：调度层在函数内 lazy import 本包；未安装 / 导入异常 / 运行期抛错时
+# 自动回退到内置 SM-2 内核，只打一条 WARNING，应用照常启动（只是退化成 SM-2）。
+# 启用方式：装包后设环境变量 SCHEDULER=fsrs_py（默认 sm2），
+# 并用 SCHEDULER_FSRS_ROLLOUT_RATIO（0~1）按学生稳定哈希灰度放量。
+# ⚠️ 必须 6.x（不要写成 5.x）：6.x 砍掉了 State.New / Card.scheduled_days /
+# Card.reps / Card.lapses / Card.elapsed_days，且 stability/difficulty 初值由
+# 0.0 变成 None —— 调度层的适配是按 6.x 实测校准的（偏差校准 2.239% 也在
+# 6.3.2 上做的），换到 5.x 会走一条没被校准过的代码路径。
+fsrs>=6.0,<7
+
+
+# ---------------------------------------------------------------- 测试工具
+# 覆盖率统计：本地/CI 执行 `pytest --cov=app` 时用到。
+# 降级策略：纯测试期依赖，应用运行时完全不 import，缺失只会导致 --cov 参数不可用。
+pytest-cov==5.*
