@@ -15,6 +15,7 @@
     * profile  —— 学习画像看板：掌握度 / 错因分布 / 练习推荐（T04·B8）。
     * report   —— 家长周报告：生成 / 公开分享 / 历史列表（Epic6 · T4/T5）。
     * practice —— 题库练习：抽题 / 判分 / 看答案 / 结算 / AI 引导（题库消费层·B4）。
+    * compliance —— 监护人同意留痕（V6.5 T13，受保护）。
 
 后续里程碑（task / parent / admin 等）只需在此追加
 ``api_router.include_router(xxx.router)`` 即可。
@@ -29,6 +30,7 @@ from app.api import (
     auth,
     billing,
     chat,
+    compliance,
     cron,
     dna,
     exercise,
@@ -103,6 +105,9 @@ api_router.include_router(geogebra.router)
 
 # ---- V6.5 · FSRS 科学复习卡片流（Review.vue 独立复习页）----------------------
 api_router.include_router(review.router)
+
+# ---- V6.5 T13 · 监护人同意留痕（60 人内测合规闸门，受保护）--------------------
+api_router.include_router(compliance.router)
 
 
 
