@@ -90,6 +90,9 @@ _LAST_RESULT_KEYS: Tuple[str, ...] = ("last_result_at", "last_attempt_at")
 #: 一天的秒数（把时间差换算成天）
 _SECONDS_PER_DAY: float = 86400.0
 
+#: 错题数取整时吃掉浮点误差（见 ``_result_boost`` 里 why floor 不用 round）
+_FLOAT_EPSILON: float = 1e-9
+
 #: 时间字符串解析格式（按长度尝试，失败即视为无时间）
 _TIME_FORMATS: Tuple[str, ...] = (
     "%Y-%m-%dT%H:%M:%S.%f",
@@ -343,7 +346,9 @@ def _result_boost(
     if attempts <= 0:
         return noop
     correct = clamp(to_float(_field(metrics, _RECENT_CORRECT_KEYS), 0.0), 0.0, float(attempts))
-    wrong = int(round(attempts - correct))
+    # 用 floor 而非 round：round 走银行家舍入，attempts-correct 恰好为 .5 时会被
+    # 舍成 0（如 3-2.5=0.5 → 0），导致 C1 静默不触发；+1e-9 吃掉浮点误差。
+    wrong = int(math.floor(attempts - correct + _FLOAT_EPSILON))
     wrong_rate = wrong / float(attempts)
 
     # ---- C1 错题回炉：错得多就取消近期降权，并按错题数加分 ----
@@ -353,7 +358,11 @@ def _result_boost(
     recent = -1.0
     if wrong >= 1 and wrong_rate >= floor:
         recent = 1.0
-        boost = max(0.0, to_float(settings.priority_wrong_boost, 0.25)) * min(1.0, wrong / boost_cap)
+        # 夹到 [0,1]：与 score 同值域。配太大（如 5.0）会让所有错题点被 clamp 拉平到
+        # 1.0 并全部并列，内部排序退化成「按 mastery / id」，反而丢掉区分度。
+        boost = clamp(to_float(settings.priority_wrong_boost, 0.25), 0.0, 1.0) * min(
+            1.0, wrong / boost_cap
+        )
 
     # ---- C2 题量饱和：单一知识点近期刷太多就整体乘抑制系数 ----
     cap = max(0, to_int(settings.priority_recent_attempts_cap, 10))

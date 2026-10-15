@@ -175,7 +175,7 @@ class AdaptiveConfig:
         priority_stale_after: 陈旧阈值（天），超过则按超出比例加分。
         priority_top_n: 缺省返回条数。
         priority_wrong_rate_floor: C1 触发门槛：近窗口错误率不低于该值才回炉。
-        priority_wrong_boost: C1 错题加分上限。
+        priority_wrong_boost: C1 错题加分上限（夹到 ``[0, 1]``，与 score 同值域）。
         priority_wrong_saturation: C1 加满分所需的错题数（除数，配置成 0 回退缺省）。
         priority_recent_attempts_cap: C2 单点饱和阈值（近窗口作答数超过即抑制）。
         priority_saturation_penalty: C2 抑制系数（置 1.0 即关闭该抑制）。
@@ -271,7 +271,8 @@ class AdaptiveConfig:
             "priority_wrong_rate_floor": clamp(
                 self.priority_wrong_rate_floor, 0.0, 1.0
             ),
-            "priority_wrong_boost": _non_negative(self.priority_wrong_boost, 0.25),
+            # 与 score 同值域：封顶避免所有错题点被拉平并列（见 engines/priority.py）
+            "priority_wrong_boost": clamp(self.priority_wrong_boost, 0.0, 1.0),
             "priority_wrong_saturation": _positive(
                 self.priority_wrong_saturation, 3.0
             ),

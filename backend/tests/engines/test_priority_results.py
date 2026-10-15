@@ -295,6 +295,54 @@ def test_score_stays_within_unit_interval():
     assert 0.0 <= result.score <= 1.0
 
 
+def test_wrong_boost_over_one_is_capped():
+    """``wrong_boost`` 配成 5.0 会被夹到 1.0：避免所有错题点被拉平并列。
+
+    夹到 1.0 后「错 1 题」与「错 3 题」的加分分别是 1/3 与 1.0——若不限幅，
+    两者都会被最终 clamp 拉成并列 1.0，内部排序退化成按 mastery/id，反而丢区分度。
+    """
+    config = DEFAULT_ADAPTIVE_CONFIG.replace(priority_wrong_boost=5.0)
+    assert config.priority_wrong_boost == 1.0
+    one_wrong = rank_priorities(
+        [_item("a", 0.5)],
+        results={"a": {"recent_attempts": 3, "recent_correct": 2}},
+        adaptive_config=config,
+        now=_NOW,
+    )[0].score
+    three_wrong = rank_priorities(
+        [_item("a", 0.5)],
+        results={"a": {"recent_attempts": 6, "recent_correct": 3}},
+        adaptive_config=config,
+        now=_NOW,
+    )[0].score
+    assert 0.0 < one_wrong < three_wrong <= 1.0
+
+
+def test_wrong_count_uses_floor_not_bankers_rounding():
+    """错题数用 floor 而非 round：round 走银行家舍入，在 .5 边界会**多算**一题。
+
+    ``attempts=5, correct=2.5`` 时：``floor(2.5)=2`` → C1 不触发（2/5=0.4 < 0.5）；
+    而 ``round(2.5)=2`` 也恰好相同——真正的差异在 ``attempts=3, correct=1.5``：
+    ``floor(1.5)=1``，``round(1.5)=2``（会把错题数多算一题、错误率翻倍）。
+    本用例钉死 floor 口径（更保守，不会凭空多算错题）。
+    """
+    base = (1 - 0.5) * 0.40 + (1 - 0.5) * 0.25  # 0.325
+
+    # attempts=3, correct=1.5：floor→wrong=1（1/3<0.5，C1 不触发）；
+    # 若用 round，wrong=round(1.5)=2（2/3≥0.5，会误触发 C1 并加分）
+    assert (
+        _score_of([_item("a", 0.5)], {"a": {"recent_attempts": 3, "recent_correct": 1.5}})
+        == round(base, 4)
+    )
+
+    # attempts=4, correct=1.5：floor→wrong=2（2/4=0.5 触发，BOOST=0.25×2/3）；
+    # 若用 round，wrong=round(2.5)=2（同为 2，此处两者一致，作为对照）
+    assert (
+        _score_of([_item("a", 0.5)], {"a": {"recent_attempts": 4, "recent_correct": 1.5}})
+        == round(base + 0.25 * (2 / 3), 4)
+    )
+
+
 def test_stable_sorting_is_preserved():
     """带 results 时排序依然是确定性的（同分按掌握度 / ID）。"""
     items = [_item("z", 0.5), _item("a", 0.5), _item("m", 0.5)]
@@ -363,14 +411,14 @@ def test_config_values_round_trip():
     config = build_adaptive_config(
         {
             "adaptive.priority.wrong_rate_floor": "9",
-            "adaptive.priority.wrong_boost": "-1",
+            "adaptive.priority.wrong_boost": "5.0",
             "adaptive.priority.wrong_saturation": "0",
             "adaptive.priority.recent_attempts_cap": "20",
             "adaptive.priority.saturation_penalty": "0.5",
         }
     )
     assert config.priority_wrong_rate_floor == 1.0
-    assert config.priority_wrong_boost == 0.25  # 负数回退缺省
+    assert config.priority_wrong_boost == 1.0  # 5.0 被封顶到 1.0
     assert config.priority_wrong_saturation == 3.0  # 0 触发除零保护
     assert config.priority_recent_attempts_cap == 20
     assert config.priority_saturation_penalty == 0.5
