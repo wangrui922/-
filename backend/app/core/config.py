@@ -129,6 +129,30 @@ class Settings(BaseSettings):
     scheduler: str = "sm2"
     scheduler_fsrs_rollout_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
 
+    # ---------- 语音合成 TTS（可切换 provider）----------
+    # 切换只改环境变量，业务层与前端零改动（详见 docs/tts-provider-switch.md）：
+    #   edge  = 微软 Edge TTS，免 Key，内测期默认 + 最终兜底（逆向接口，商用有风险）
+    #   volc  = 火山引擎语音技术 TTS（HTTP 接口），备案 / 商用切换目标
+    #   piper = 本地离线兜底（尚未实现，选中会自动降级到 edge）
+    tts_provider: str = "edge"
+    # 全局默认嗓音；留空则由各 provider 用自带默认（edge = zh-CN-XiaoxiaoNeural）
+    tts_voice: str = ""
+    # 主 provider 失败时自动降级到 edge（内测期务必保持 true）
+    tts_fallback_enabled: bool = True
+    # 火山语音凭据（控制台申请）：留空则 volc 通道不可用并自动降级到 edge
+    tts_volc_app_id: str = ""
+    # 火山 access token；留空时复用方舟的 ARK_API_KEY（同一火山账号）
+    tts_volc_access_token: str = ""
+    # 火山接入参数（默认值以控制台为准，可环境变量覆盖）
+    tts_volc_base_url: str = "https://openspeech.bytedance.com/api/v1/tts"
+    tts_volc_cluster: str = "volcano_tts"
+    tts_volc_voice_type: str = "BV001_streaming"
+    tts_volc_encoding: str = "mp3"
+    tts_volc_timeout_sec: int = 15
+    # 本地 piper 兜底（尚未实现，仅占位）
+    tts_piper_executable: str = ""
+    tts_piper_model_path: str = ""
+
     # ---------- 短信 ----------
     sms_provider: str = "mock"
     # dev_sms_code 已废弃：验证码改为随机生成，不再使用固定万能码

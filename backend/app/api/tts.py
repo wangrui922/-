@@ -1,73 +1,98 @@
-"""云端语音合成接口（TTS）。
+"""云端语音合成接口（TTS）——可切换 provider 版。
 
-给不会看题/不会打字的小朋友用「更甜」的云端嗓音读题、讲题。
+给不会看题/不会打字的小朋友用「更甜」的嗓音读题、讲题。
 
-选型：微软 Edge TTS（``edge-tts``）——**免 API Key、国内可达、不用翻墙**，
-默认 ``zh-CN-XiaoxiaoNeural``（甜美小云朵女声，最贴小朋友）。
-前端 ``speak()`` 会云端优先、失败自动回退到浏览器自带嗓音，所以本接口挂了也不影响使用。
+对外契约（**与改造前完全一致**，前端零改动）：
+    * ``POST /api/tts``  body={text, voice?, rate?}  ->  ``audio/mpeg``（音频字节流）；
+    * 失败返回 ``text/plain`` + 5xx（前端会自动回退浏览器自带嗓音）；
+    * 文本上限 2000 字，超长截断；按 ``(provider, voice, rate, text)`` 内存缓存。
 
-设计：
-    * POST /api/tts  body={text, voice?}  ->  audio/mpeg（mp3 字节流）；
-    * 服务端按 ``(voice, text)`` 做内存缓存，同一句话反复读不重复联网；
-    * 文本上限 2000 字，超长截断（避免单请求过大）。
+新增自检接口（统一响应 ``{"code":0,"msg":"ok","data":{}}``）：
+    * ``GET /api/tts/providers`` -> 当前 provider、兜底开关与三个通道的可用状态。
+
+嗓音由 ``app.services.tts_service`` 统一解析：
+    * 默认 ``TTS_PROVIDER=edge``（免 Key，内测期）；
+    * 备案 / 商用切 ``TTS_PROVIDER=volc``（火山引擎），详见 ``docs/tts-provider-switch.md``；
+    * 任何 provider 失败且 ``tts_fallback_enabled`` 为真时，自动降级到 edge。
 """
 from __future__ import annotations
-
-import io
 
 from fastapi import APIRouter
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-import edge_tts
+from app.core.response import ok
+from app.services import tts_service
 
 router = APIRouter(prefix="/tts", tags=["tts"])
 
-#: 小朋友友好嗓音清单（前端可传 key 切换，默认甜美小云朵）。
-DEFAULT_VOICE = "zh-CN-XiaoxiaoNeural"
-VOICE_ALIASES = {
-    "xiaoxiao": "zh-CN-XiaoxiaoNeural",  # 甜美小云朵（默认，最适合低年级）
-    "yunxi": "zh-CN-YunxiNeural",  # 阳光少年男声
-    "xiaoyi": "zh-CN-XiaoyiNeural",  # 温柔女声
-}
-
-_CACHE: dict[str, bytes] = {}
+#: 音频缓存：key -> (音频字节, mime)。切 provider 后 key 变化，不会命中旧音频。
+_CACHE: dict[str, tuple[bytes, str]] = {}
 _CACHE_MAX = 200
-_MAX_TEXT = 2000
 
 
 class TtsRequest(BaseModel):
+    """TTS 请求体（camelCase 出入参；``rate`` 为本次新增的可选项）。"""
+
     text: str
     voice: str | None = None
+    rate: str | None = None
 
 
 @router.post("")
 async def tts(req: TtsRequest) -> Response:
+    """合成语音，返回音频字节流。
+
+    Args:
+        req: 请求体，``text`` 必填（上限 2000 字，超出截断），
+            ``voice`` 为嗓音别名（xiaoxiao / yunxi / xiaoyi）或原生音色名，
+            ``rate`` 为语速（形如 ``"+10%"``），两者均可省略。
+
+    Returns:
+        成功：``audio/mpeg``（或 provider 实际编码对应的 mime）音频字节流；
+        空文本：400；合成失败：500（前端自动回退浏览器嗓音）。
+    """
     text = (req.text or "").strip()
     if not text:
         return Response(b"", status_code=400, media_type="text/plain")
-    if len(text) > _MAX_TEXT:
-        text = text[:_MAX_TEXT]
+    if len(text) > tts_service.MAX_TEXT_LEN:
+        text = text[: tts_service.MAX_TEXT_LEN]
 
-    voice = VOICE_ALIASES.get((req.voice or "").lower(), DEFAULT_VOICE)
-    cache_key = f"{voice}:{text}"
-    if cache_key in _CACHE:
-        return Response(_CACHE[cache_key], media_type="audio/mpeg")
+    # 缓存 key 带上 provider / voice / rate，切换 provider 后不会命中旧音频
+    provider = tts_service.resolve_provider_name()
+    voice = tts_service.resolve_voice(provider, req.voice)
+    rate = tts_service.normalize_rate(req.rate) or ""
+    cache_key = f"{provider}:{voice}:{rate}:{text}"
+
+    cached = _CACHE.get(cache_key)
+    if cached is not None:
+        audio, mime = cached
+        return Response(audio, media_type=mime)
 
     try:
-        communicate = edge_tts.Communicate(text, voice)
-        buf = io.BytesIO()
-        async for chunk in communicate.stream():
-            if chunk.get("type") == "audio":
-                buf.write(chunk["data"])
-        audio = buf.getvalue()
-    except Exception as exc:  # 云端偶发抖动 -> 前端会自动回退浏览器嗓音
-        return Response(f"TTS 合成失败: {exc}".encode("utf-8"), status_code=502, media_type="text/plain")
+        audio, mime = await tts_service.synthesize(text, voice=req.voice, rate=req.rate)
+    except Exception as exc:  # 所有 provider 均失败 -> 前端自动回退浏览器嗓音
+        return Response(
+            f"TTS 合成失败: {exc}".encode("utf-8"),
+            status_code=500,
+            media_type="text/plain",
+        )
 
     if not audio:
-        return Response(b"", status_code=502, media_type="text/plain")
+        return Response(b"", status_code=500, media_type="text/plain")
 
     if len(_CACHE) >= _CACHE_MAX:
         _CACHE.clear()
-    _CACHE[cache_key] = audio
-    return Response(audio, media_type="audio/mpeg")
+    _CACHE[cache_key] = (audio, mime)
+    return Response(audio, media_type=mime)
+
+
+@router.get("/providers")
+async def tts_providers() -> dict:
+    """TTS 通道自检（只读，不发起任何网络请求）。
+
+    Returns:
+        统一响应 ``{"code":0,"msg":"ok","data":{...}}``，``data`` 含当前
+        provider、兜底开关、默认嗓音与三个通道的可用状态，便于前端与运维排查。
+    """
+    return ok(tts_service.describe())

@@ -14,7 +14,12 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.12
 httpx==0.27.*
 # 云端 TTS：读题/讲题更甜的「小云朵」小朋友嗓音（免 key、国内可达、不用翻墙）
+# 内测期默认 provider（TTS_PROVIDER=edge），同时是所有 provider 的最终兜底
 edge-tts==7.2.*
+# 火山引擎 TTS（可选）：内置实现走 HTTP 接口 + httpx（httpx 已是硬依赖），
+# 因此这一行**不装也能正常切换**；未安装 + volc 不可用时自动降级到 edge-tts。
+# 只有需要官方 SDK 做签名/其它语音能力时才装（纯 Python，无需本地编译）：
+#   volcengine-python-sdk[ark]==1.*
 # 任务队列（AI 异步化 + 定时任务）
 celery[redis]==5.4.*
 redis==5.0.*
