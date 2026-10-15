@@ -41,9 +41,11 @@ sympy==1.13.*
 # 开关：JUDGE_L3=off 可完全关掉本层。详见 docs/judge-l3-math-verify.md。
 math-verify==0.6.*
 
-# 间隔重复算法（py-fsrs）：T04 复习调度升级用。
-# 降级策略：当前 app/services/fsrs_scheduler.py 是纯 SM-2 实现，**不 import 本包**，
-# 因此未安装不影响启动与现有测试；装上后才由调度层按 FSRS 字段适配启用。
+# 间隔重复算法（py-fsrs）：T04 复习调度统一入口（app/services/fsrs_scheduler.py）的新内核。
+# 降级策略：调度层在函数内 lazy import 本包；未安装 / 导入异常 / 运行期抛错时
+# 自动回退到内置 SM-2 内核，只打一条 WARNING，**不影响应用启动与现有测试**。
+# 启用方式：装包后设环境变量 SCHEDULER=fsrs_py（默认 sm2），
+# 并用 SCHEDULER_FSRS_ROLLOUT_RATIO（0~1）按学生稳定哈希灰度放量。
 py-fsrs>=5.0,<6
 
 
