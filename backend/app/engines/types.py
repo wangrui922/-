@@ -15,7 +15,8 @@
 
 当前实现进度：
     * ``DifficultyInput`` / ``DifficultyBand`` —— T05 已实现（``engines.difficulty``）；
-    * ``PriorityItem`` / ``ExercisePlan`` —— 占位，T06 实现；
+    * ``PriorityItem`` / ``ExercisePlan`` —— T06 已实现（``engines.priority`` /
+      ``engines.generation``）；``ExercisePlan`` 维持四字段，出题引擎不返回题目 ID；
     * ``PlanItem`` —— 占位，T07 实现。
 """
 
@@ -316,13 +317,19 @@ class PriorityItem:
 
 @dataclass(frozen=True)
 class ExercisePlan:
-    """出题引擎出参（T06 实现，本 Sprint 仅占位数据类）。
+    """出题引擎出参（T06）。
+
+    ⚠️ ``to_api()`` 的键集合按 T05 冻结契约**恒为四键**：
+    ``knowledgePointId`` / ``questionCount`` / ``difficultyLevels`` / ``strategy``
+    ——不得改名、不得删除、也不追加新键（引擎不返回题目 ID，见
+    ``docs/engines-design.md`` 第 7 节）。
 
     Attributes:
         knowledge_point_id: 目标知识点 ID。
-        question_count: 计划题目数量。
+        question_count: **计划**题目数量（配额意图，恒等于配额分配结果）。
         difficulty_levels: 计划覆盖的离散难度档位组合。
-        strategy: 出题策略标记（如 ``review_first`` / ``gap_first``）。
+        strategy: 出题策略标记（``new_first`` / ``review_first`` / ``balanced``，
+            空队列兜底时为 ``diagnostic_fallback``）。
     """
 
     knowledge_point_id: str = ""
@@ -331,7 +338,7 @@ class ExercisePlan:
     strategy: str = ""
 
     def __post_init__(self) -> None:
-        """兜底：题数非负、档位限制在合法集合内。"""
+        """兜底：题数非负、档位限制在合法集合内且恒非空。"""
         object.__setattr__(self, "question_count", max(0, to_int(self.question_count, 0)))
         levels = tuple(
             int(level) for level in self.difficulty_levels if int(level) in DIFFICULTY_LEVELS

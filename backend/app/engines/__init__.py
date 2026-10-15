@@ -7,23 +7,23 @@
 入口函数       职责              数据类              实现状态
 ============  ================  ==================  ==============
 ``decide_difficulty``   下一批题出多难   ``DifficultyBand``  ✅ T05 已实现
-``rank_priorities``     先补哪个知识点   ``PriorityItem``    ⏳ T06（占位）
-``plan_exercises``      出几道、啥配比   ``ExercisePlan``    ⏳ T06（占位）
-``build_learning_plan`` 多天日程怎么排   ``PlanItem``        ⏳ T07（占位）
+``rank_priorities``     先补哪个知识点   ``PriorityItem``    ✅ T06 已实现
+``plan_exercises``      出几道、啥配比   ``ExercisePlan``    ✅ T06 已实现``build_learning_plan`` 多天日程怎么排   ``PlanItem``        ⏳ T07（占位）
 ============  ================  ==================  ==============
 
 铁律（详见 ``docs/engines-design.md``）
 --------------------------------------
-* **引擎是纯函数**：``engines/difficulty.py`` / ``types.py`` 只依赖标准库，
-  禁止 ORM / Session / env / 配置文件；阈值一律由调用方注入 ``AdaptiveConfig``；
+* **引擎是纯函数**：算法模块禁止 ORM / Session / env / 配置文件；阈值一律由调用方
+  注入 ``AdaptiveConfig``；
 * **唯一脏边界**是 ``config.read_adaptive_config(db)``（延迟 import ORM），
   服务层在请求入口调一次，之后所有引擎调用都是纯计算；
-* 占位引擎调用时会 ``raise NotImplementedError``（loud fail，不静默兜底）。
+* 尚未落地的 T07 占位引擎调用时会 ``raise NotImplementedError``（loud fail）。
 
 接线顺序（建议）
 ----------------
-``read_adaptive_config`` → ``get_learning_dna`` → ``difficulty_input_from_dna``
-→ ``decide_difficulty`` → ``.to_api()`` → ``{code:0, msg:"ok", data:...}``。
+``read_adaptive_config`` → ``decide_difficulty``（出多难）→ ``rank_priorities``
+（先补哪个点）→ ``plan_exercises``（出几道）→ ``.to_api()``
+→ ``{code:0, msg:"ok", data:...}``；题目本身仍由服务层捞（引擎不碰题库）。
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from app.engines.config import (
     build_adaptive_config,
     read_adaptive_config,
 )
-# ⏳ T06：优先级引擎占位（调用即 NotImplementedError，见模块内说明）
+# ✅ T06：优先级与出题编排引擎
 from app.engines.generation import plan_exercises
 from app.engines.priority import rank_priorities
 from app.engines.difficulty import (
@@ -65,7 +65,7 @@ __all__ = [
     "difficulty_input_from_dna",
     "DifficultyInput",
     "DifficultyBand",
-    # ---- T06 优先级 / 出题（占位）
+    # ---- T06 优先级 / 出题（已实现）
     "rank_priorities",
     "PriorityItem",
     "plan_exercises",

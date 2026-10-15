@@ -56,16 +56,16 @@ backend/app/engines/
 ├─ types.py         共享数据类 + 类型安全工具（clamp/to_float/snap_levels...）
 ├─ config.py        AdaptiveConfig 缺省值 + 解码器 + read_adaptive_config（脏边界）
 ├─ difficulty.py    【T05 已实现】难度引擎
-├─ priority.py      【T06 占位】优先级引擎
-├─ generation.py    【T06 占位】出题配额引擎
+├─ priority.py      【T06 已实现】优先级引擎
+├─ generation.py    【T06 已实现】出题配额引擎
 └─ planner.py       【T07 占位】学习计划引擎
 ```
 
 | 引擎入口 | 输入 | 输出 | 职责 | 状态 |
 | --- | --- | --- | --- | --- |
 | `decide_difficulty` | `DifficultyInput` + `AdaptiveConfig` | `DifficultyBand` | 下一批题**出多难**（区间 `[lo,hi]`） | ✅ T05 |
-| `rank_priorities` | DNA + `AdaptiveConfig` + `limit` | `List[PriorityItem]` | 先补**哪个知识点** | ⏳ T06 |
-| `plan_exercises` | `List[PriorityItem]` + `List[DifficultyBand]` + `total` | `List[ExercisePlan]` | 出**几道**、各档位怎么配 | ⏳ T06 |
+| `rank_priorities` | `mastery_items` + `gaps` + `graph` + `results` + `AdaptiveConfig` + `now` + `top_n` | `List[PriorityItem]` | 先补**哪个知识点** | ✅ T06 |
+| `plan_exercises` | `List[PriorityItem]` + `List[DifficultyBand]` + `total` (+ 可选 `plan_units`) | `List[ExercisePlan]` | 出**几道**、各档位怎么配 | ✅ T06 |
 | `build_learning_plan` | `List[PriorityItem]` + `List[ExercisePlan]` + `days` | `List[PlanItem]` | 多天日程怎么排 | ⏳ T07 |
 
 边界纪律：
@@ -102,6 +102,16 @@ adaptive.difficulty.hint_high_offset        # 提示依赖 high 的偏置
 adaptive.difficulty.hint_low_offset         # 提示依赖 low 的偏置
 adaptive.difficulty.reason_shift            # 原因码位移阈值
 adaptive.difficulty.min / .max / .default   # 难度坐标边界与默认值
+adaptive.priority.weights                  # 四项权重（dict 或 JSON 字符串）
+adaptive.priority.gap_divisor              # 前置缺口条数归一化除数
+adaptive.priority.out_degree_divisor       # 图谱出度归一化除数
+adaptive.priority.recent_window            # 近期练习窗口（天）
+adaptive.priority.stale_after              # 陈旧阈值（天）
+adaptive.priority.top_n                    # 缺省返回条数
+adaptive.generation.default_total          # total 缺省时的批次题数
+adaptive.generation.max_total              # 单批题数上限
+adaptive.generation.max_knowledge_points   # 单批覆盖知识点上限
+adaptive.generation.new_ratio              # 新题占比（决定策略标记）
 ```
 
 **新增阈值的三步**（不要偷懒跳过任何一步）：
@@ -175,18 +185,175 @@ return {"code": 0, "msg": "ok", "data": data}                      # 统一响�
 
 ---
 
-## 6. 测试约定
+## 6. 优先级引擎算法（T06）
+
+### 6.1 输入输出
+
+```python
+rank_priorities(
+    mastery_items,                 # 掌握度条目（dict / 对象均可）
+    gaps=None,                     # detect_prerequisite_gaps() 的结果
+    graph=None,                    # {kp_id: 出度} 或前置边序列
+    results=None,                  # T07 从 attempts 聚合的结果（本次仅留出入口）
+    *,
+    adaptive_config=None,          # AdaptiveConfig（priority_* 阈值）
+    now=None,                      # 时间基准，用于「陈旧 / 近期」判定
+    top_n=None,                    # None 时取 priority.top_n（缺省 5）
+) -> List[PriorityItem]
+```
+
+* `mastery_items` 每项兼容多套键名：`knowledge_point_id`/`kp_id`/`id`、
+  `mastery`/`mastery_score`/`score`、`confidence`/`conf`、`kp_name`/`name`、
+  `last_practiced_at`/`last_practice_at`/`last_reviewed_at`；
+* `graph` 支持映射（`{kp_id: 出度}`）与边序列（按 `pre_kp_id` 出现次数计出度）；
+* `results` 本次只留出入口：`None` 时忽略；提供时其中的 `last_practiced_at`
+  会覆盖条目上的时间戳参与陈旧/近期判定；
+* 出参是按 `score` 降序的去重 `List[PriorityItem]`；
+  `mastery_items` 为空（或 `None` / 脏容器）时返回 `[]`；
+* 引擎**不读系统时钟**：`now=None` 时直接跳过时间维度。
+
+### 6.2 缺省常量
+
+```text
+PRIORITY_WEIGHTS_DEFAULT = {"mastery":0.40,"confidence":0.25,"gap":0.20,"degree":0.15}
+PRIORITY_GAP_DIVISOR=3.0  PRIORITY_OUTDEG_DIVISOR=5  PRIORITY_RECENT_WINDOW=7
+PRIORITY_STALE_AFTER=14   PRIORITY_LOW_MASTERY=0.5   PRIORITY_LOW_CONFIDENCE=0.5
+PRIORITY_TOP_N_DEFAULT=5
+```
+
+权重可由 `adaptive.priority.weights` 覆盖，**dict 与 JSON 字符串两种载体都要能处理**，
+缺 key / 解析失败 / 类型不对一律回退缺省；除数被配置成 0 或负数时回退内置缺省
+（除零保护）。
+
+### 6.3 排序规则与依据
+
+| 编号 | 规则 | 教学依据 | 配置 |
+| --- | --- | --- | --- |
+| R1 `gap` | 被点名为前置缺口的次数按 `min(count, gap_divisor)/gap_divisor` 加权 | 地基没补会让学生在后置知识上反复受挫 | `priority.gap_divisor`、权重 `gap` |
+| R2 `mastery` | `(1-mastery)` 加权 | 有限时间先消除真实能力短板 | 权重 `mastery` |
+| R3 `confidence` | `(1-confidence)` 加权 | 置信度低说明结论不可靠，需先做题补样本 | 权重 `confidence` |
+| R4 `degree` | `min(degree, out_degree_divisor)/out_degree_divisor` 加权 | 枢纽基础点能解锁更多后续内容 | `priority.out_degree_divisor`、权重 `degree` |
+| R5 `stale` | `days > stale_after` 时加 `(days-stale_after)/stale_after` | 遗忘曲线：久不练的能力会回退 | `priority.stale_after` |
+| R6 `recent` | `days <= recent_window` 时乘 `(days+1)/(window+1)` 降权 | 用间隔练习代替同一知识点机械连刷 | `priority.recent_window` |
+| R7 | 同 ID 去重；同分按掌握度、等级、ID 稳定排序 | 避免重复配额并保证同输入同输出 | 无（结构性规则） |
+
+```text
+score = (1-mastery)      × w.mastery
+      + (1-confidence)   × w.confidence
+      + gap_ratio        × w.gap
+      + degree_ratio     × w.degree
+      + stale_boost                       # 仅 days > stale_after
+      # recent 时整体乘 (days+1)/(window+1)
+score = clamp(score, 0, 1) 并保留 4 位小数
+```
+
+`reason` 使用中文模板（前置基础 / 很久没练 / 掌握度偏低 / 近期错峰 / 掌握不稳），
+前端可直接展示；`to_api()` 保持
+`knowledgePointId/kpName/score/mastery/level/reason` 六个 camelCase 键不变。
+
+---
+
+## 7. 出题编排引擎算法（T06）
+
+### 7.1 职责边界
+
+```python
+plan_exercises(
+    priorities,                    # List[PriorityItem]
+    bands,                         # 与 priorities 按位置对应的 DifficultyBand
+    *,
+    total=None,                    # None/非正/脏值 → plan_units 题量之和 → 配置默认
+    config=None,
+    plan_units=None,               # 可选：调用方已拆好的计划单元
+) -> List[ExercisePlan]
+```
+
+只负责：
+
+1. 对优先级知识点去重并选前 N 个；
+2. 决定每个知识点出几题（题数总和严格等于批次配额）；
+3. 传递各知识点的离散难度档；
+4. 标记批次策略 `new_first` / `review_first` / `balanced`（空队列兜底为
+   `diagnostic_fallback`）。
+
+它**从不查询题库**：`services/practice_service.py` 里已有 `draw_questions()` /
+`_draw_with_relaxation()`（1–3 档逐级放宽）/ `_recent_question_ids()`（7 天回避窗口）
+三件套，引擎再做一遍就是重复造轮子。因此引擎**既不接收也不返回题目 ID**——
+`ExercisePlan` 维持 T05 冻结的四字段，`to_api()` 键集合恒为
+`knowledgePointId/questionCount/difficultyLevels/strategy`（不改名、不删除、不追加）。
+
+`plan_units` 是**可选且仅关键字**：省略时题量由引擎按优先级自行摊派，
+老调用方零感知。
+
+### 7.2 配额、档位与兜底规则
+
+| 编号 | 规则 | 配置 |
+| --- | --- | --- |
+| G1 | `total` 为 `None`/非正/脏值时：先取 `plan_units` 各单元 `question_count` 之和，仍为 0 再取默认题数；超大值夹到批次上限 | `generation.default_total`、`generation.max_total` |
+| G2 | 同知识点仅保留最高优先项；最多覆盖 N 个，且每点至少 1 题 | `generation.max_knowledge_points` |
+| G3 | 剩余题量按非负 `score` 用最大余数法分配；全零分等比分配 | 无（结构性规则） |
+| G4 | `bands` 短缺/脏值时用 `DifficultyBand()` 全档探索带 | 无（结构性规则） |
+| G5 | `levels` 取不到（缺失/越界/脏值）时回退 `(3,)`，且档位去重后恒非空 | 无（结构性规则） |
+| G6 | 优先级队列为空时返回 `__mixed_review__` 综合摸底计划 | `generation.default_total` |
+| G7 | `new_count=round(total×new_ratio)`、`review_count=total-new_count`；新题多 → `new_first`，复习多 → `review_first`，相等 → `balanced` | `generation.new_ratio`（缺省 `PLAN_NEW_RATIO_DEFAULT=0.6`） |
+
+G6 保证 `List[ExercisePlan]` 永不为空；每项 `question_count>=1`、
+`difficulty_levels` 非空。「题数总和 = 批次配额」是硬不变式：即使 `plan_units`
+给出的题量与批次配额不一致，引擎也会回退到自算的摊派值补齐。所有步骤无随机数，
+同输入同输出。
+
+### 7.3 服务层接缝（T07 落地，引擎层不再新增入口）
+
+引擎层四个入口就此定型；「计划 → 具体题目」只在服务层补一个薄包装，禁止新增
+`engines/next_question.py`：
+
+```python
+def draw_questions_by_plan(
+    db: Session,
+    *,
+    student_id: Any,
+    plans: Sequence[ExercisePlan],   # plan_exercises 出参，原样透传
+    grade: Optional[int] = None,
+    recent_days: int = 7,
+) -> Dict[str, Any]:
+    """逐 ExercisePlan 调用现有 _draw_with_relaxation 完成抽题。
+
+    - exclude_ids = _recent_question_ids(db, student_id, days=recent_days)
+    - difficulty_levels 逐档传给 _draw_with_relaxation 的 common['difficulty']
+    - plan.strategy 原样写回出参；diagnostic_fallback 时 kp_id 置 None
+    - 复用既有的「少给不凑数」与 relaxed_to_level / relaxation_steps 语义
+    """
+```
+
+### 7.4 `plan_units` 单元字段约定（T07 组装数据时照此来）
+
+`plan_units` 与 `priorities` **按位置一一对应**（第 i 个单元描述第 i 个优先级知识点）：
+
+| 字段 | 必填 | 类型 | 说明 |
+| --- | --- | --- | --- |
+| `question_count` | 是 | `int` | 该知识点计划出几道。缺失 / 为 0 / 脏值 → 该单元回退引擎摊派值 |
+| `levels` | 否 | `Sequence[int]` | 该单元的难度档（子集只能是 `1/3/5`）。缺失 / 越界 / 脏值 → 回退对应 `DifficultyBand` 的档位，仍取不到则回退 `(3,)` |
+
+同义键名也认：`count` / `total` 等价于 `question_count`；
+`difficulty_levels` / `difficulty` 等价于 `levels`。单元可以是 dict 也可以是带同名
+属性的对象；`plan_units` 为空时等价「不传」，题量由引擎按优先级自行摊派。
+
+---
+
+## 8. 测试约定
 
 * 位置：`backend/tests/engines/test_*.py`（纯单测，不依赖 DB fixture）；
 * 每个引擎**至少 20 条**用例，必须覆盖：边界钳制、冷启动、极端掌握度、
   配置生效、脏入参兜底、幂等性；
+* T06 额外约定：出参 camelCase 键集合要有专项断言；每个引擎模块都要有一条
+  **AST 守卫**（顶层 import 不得出现 `sqlalchemy` / `app.models` / `os`）；
 * 本机离线环境无 pytest 时，可直接 `python tests/engines/test_difficulty.py`
   ——测试文件末尾自带 runner，逐条执行本模块全部 `test_*` 函数并汇总
   （有 pytest 时它就是普通 pytest 模块，两种跑法都成立）。
 
 ---
 
-## 7. 如何新增一个引擎
+## 9. 如何新增一个引擎
 
 1. 在 `types.py` 加出参数据类（`frozen=True` + `to_api()` + `__post_init__` 兜底）；
 2. 在 `config.py` 加**自己前缀**的阈值（字段 + `CONFIG_SPECS` 一行，见第 4 节三步）；

@@ -27,6 +27,7 @@ key 一律以 ``adaptive.`` 打头（如 ``adaptive.difficulty.band_width``）�
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
@@ -50,18 +51,76 @@ CONFIG_KEY_PREFIX: str = "adaptive."
 _KIND_FLOAT: str = "float"
 _KIND_INT: str = "int"
 _KIND_BOOL: str = "bool"
+#: JSON 载体：value 可能是 dict，也可能是后台里存成的 JSON 字符串
+_KIND_JSON: str = "json"
 
-_CASTERS: Dict[str, Callable[[Any, Any], Any]] = {
-    _KIND_FLOAT: lambda raw, default: to_float(raw, float(default)),
-    _KIND_INT: lambda raw, default: to_int(raw, int(default)),
-    _KIND_BOOL: lambda raw, default: to_bool(raw, bool(default)),
+# ------------------------------------------------------------ 优先级缺省常量
+# 与 ``engines.priority`` 的同名常量**同口径**（此处不 import 该模块，避免
+# 与引擎形成循环依赖）；一致性由 tests/engines/test_priority.py 的守卫单测保证。
+_PRIORITY_WEIGHTS_DEFAULT: Dict[str, float] = {
+    "mastery": 0.40,
+    "confidence": 0.25,
+    "gap": 0.20,
+    "degree": 0.15,
 }
+_PRIORITY_GAP_DIVISOR_DEFAULT: float = 3.0
+_PRIORITY_OUTDEG_DIVISOR_DEFAULT: int = 5
+_PRIORITY_RECENT_WINDOW_DEFAULT: int = 7
+_PRIORITY_STALE_AFTER_DEFAULT: int = 14
+_PRIORITY_TOP_N_DEFAULT: int = 5
 
 
 def _non_negative(value: Any, default: float) -> float:
     """非负数值钳制（脏配置为负时回退缺省值）。"""
     number = to_float(value, default)
     return number if number >= 0.0 else float(default)
+
+
+def _positive(value: Any, default: float) -> float:
+    """正数钳制（脏配置为 0 / 负数时回退缺省值，避免除零）。"""
+    number = to_float(value, default)
+    return number if number > 0.0 else float(default)
+
+
+def _normalize_priority_weights(
+    value: Any, defaults: Optional[Mapping[str, float]] = None
+) -> Dict[str, float]:
+    """把优先级权重归一成完整 dict（缺 key / 解析失败回退缺省值）。
+
+    支持两种载体：``dict`` 与 JSON 字符串（运营在后台按文本配置时很常见）。
+
+    Args:
+        value: 原始权重（dict / JSON 字符串 / 脏值）。
+        defaults: 缺省权重表；``None`` 时用内置缺省表。
+
+    Returns:
+        四项俱全、每项都夹紧到 ``[0, 1]`` 的权重字典。
+    """
+    table: Mapping[str, float] = defaults or _PRIORITY_WEIGHTS_DEFAULT
+    if isinstance(value, Mapping):
+        source: Mapping[str, Any] = value
+    elif isinstance(value, (str, bytes)):
+        try:
+            parsed = json.loads(str(value))
+        except (TypeError, ValueError):
+            parsed = None
+        source = parsed if isinstance(parsed, Mapping) else {}
+    else:
+        source = {}
+    return {
+        name: clamp(to_float(source.get(name), default), 0.0, 1.0)
+        for name, default in table.items()
+    }
+
+
+_CASTERS: Dict[str, Callable[[Any, Any], Any]] = {
+    _KIND_FLOAT: lambda raw, default: to_float(raw, float(default)),
+    _KIND_INT: lambda raw, default: to_int(raw, int(default)),
+    _KIND_BOOL: lambda raw, default: to_bool(raw, bool(default)),
+    _KIND_JSON: lambda raw, default: _normalize_priority_weights(
+        raw, default if isinstance(default, Mapping) else None
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -108,6 +167,18 @@ class AdaptiveConfig:
         difficulty_hint_high_offset: 提示依赖 high 的难度偏置（负=降难度）。
         difficulty_hint_low_offset: 提示依赖 low 的难度偏置（正=升难度）。
         difficulty_reason_shift: 判定「推上去/拉下来」的中心位移阈值。
+        priority_weights: 优先级四项权重 ``{mastery, confidence, gap, degree}``，
+            支持 dict 或 JSON 字符串，缺 key / 解析失败回退缺省权重。
+        priority_gap_divisor: 前置缺口条数归一化除数（配置成 0 会回退缺省值）。
+        priority_out_degree_divisor: 图谱出度归一化除数（至少为 1）。
+        priority_recent_window: 近期练习窗口（天），窗口内练过才降权。
+        priority_stale_after: 陈旧阈值（天），超过则按超出比例加分。
+        priority_top_n: 缺省返回条数。
+        generation_default_total: 未指定题数时的批次默认题数。
+        generation_max_total: 单批题数硬上限。
+        generation_max_knowledge_points: 单批最多覆盖的知识点数。
+        generation_new_ratio: 新题占比，决定 ``new_first`` / ``review_first`` /
+            ``balanced`` 策略。
     """
 
     enabled: bool = True
@@ -126,6 +197,16 @@ class AdaptiveConfig:
     difficulty_hint_high_offset: float = -0.4
     difficulty_hint_low_offset: float = 0.2
     difficulty_reason_shift: float = 0.5
+    priority_weights: Any = None
+    priority_gap_divisor: float = 3.0
+    priority_out_degree_divisor: int = 5
+    priority_recent_window: int = 7
+    priority_stale_after: int = 14
+    priority_top_n: int = 5
+    generation_default_total: int = 5
+    generation_max_total: int = 20
+    generation_max_knowledge_points: int = 3
+    generation_new_ratio: float = 0.6
 
     def __post_init__(self) -> None:
         """把每个字段夹紧到合法区间（脏配置不得把推荐算飞）。"""
@@ -162,6 +243,29 @@ class AdaptiveConfig:
             "difficulty_hint_high_offset": to_float(self.difficulty_hint_high_offset, -0.4),
             "difficulty_hint_low_offset": to_float(self.difficulty_hint_low_offset, 0.2),
             "difficulty_reason_shift": _non_negative(self.difficulty_reason_shift, 0.5),
+            "priority_weights": _normalize_priority_weights(self.priority_weights),
+            "priority_gap_divisor": _positive(
+                self.priority_gap_divisor, _PRIORITY_GAP_DIVISOR_DEFAULT
+            ),
+            "priority_out_degree_divisor": max(
+                1,
+                to_int(self.priority_out_degree_divisor, _PRIORITY_OUTDEG_DIVISOR_DEFAULT),
+            ),
+            "priority_recent_window": max(
+                0, to_int(self.priority_recent_window, _PRIORITY_RECENT_WINDOW_DEFAULT)
+            ),
+            "priority_stale_after": max(
+                0, to_int(self.priority_stale_after, _PRIORITY_STALE_AFTER_DEFAULT)
+            ),
+            "priority_top_n": max(1, to_int(self.priority_top_n, _PRIORITY_TOP_N_DEFAULT)),
+            "generation_default_total": max(
+                1, to_int(self.generation_default_total, 5)
+            ),
+            "generation_new_ratio": clamp(self.generation_new_ratio, 0.0, 1.0),
+            "generation_max_total": max(1, to_int(self.generation_max_total, 20)),
+            "generation_max_knowledge_points": max(
+                1, to_int(self.generation_max_knowledge_points, 3)
+            ),
         }
         for name, value in normalized.items():
             set_field(self, name, value)
@@ -202,6 +306,46 @@ _SPEC_TABLE: Tuple[Tuple[str, str, str, Any], ...] = (
     ("difficulty.hint_high_offset", "difficulty_hint_high_offset", _KIND_FLOAT, -0.4),
     ("difficulty.hint_low_offset", "difficulty_hint_low_offset", _KIND_FLOAT, 0.2),
     ("difficulty.reason_shift", "difficulty_reason_shift", _KIND_FLOAT, 0.5),
+    (
+        "priority.weights",
+        "priority_weights",
+        _KIND_JSON,
+        _PRIORITY_WEIGHTS_DEFAULT,
+    ),
+    (
+        "priority.gap_divisor",
+        "priority_gap_divisor",
+        _KIND_FLOAT,
+        _PRIORITY_GAP_DIVISOR_DEFAULT,
+    ),
+    (
+        "priority.out_degree_divisor",
+        "priority_out_degree_divisor",
+        _KIND_INT,
+        _PRIORITY_OUTDEG_DIVISOR_DEFAULT,
+    ),
+    (
+        "priority.recent_window",
+        "priority_recent_window",
+        _KIND_INT,
+        _PRIORITY_RECENT_WINDOW_DEFAULT,
+    ),
+    (
+        "priority.stale_after",
+        "priority_stale_after",
+        _KIND_INT,
+        _PRIORITY_STALE_AFTER_DEFAULT,
+    ),
+    ("priority.top_n", "priority_top_n", _KIND_INT, _PRIORITY_TOP_N_DEFAULT),
+    ("generation.default_total", "generation_default_total", _KIND_INT, 5),
+    ("generation.max_total", "generation_max_total", _KIND_INT, 20),
+    (
+        "generation.max_knowledge_points",
+        "generation_max_knowledge_points",
+        _KIND_INT,
+        3,
+    ),
+    ("generation.new_ratio", "generation_new_ratio", _KIND_FLOAT, 0.6),
 )
 
 #: 展开后的配置清单（供 ``build_adaptive_config`` / ``adaptive_config_to_rows`` 使用）
@@ -256,7 +400,12 @@ def adaptive_config_to_rows() -> Dict[str, str]:
     rows: Dict[str, str] = {}
     for spec in CONFIG_SPECS:
         value = getattr(DEFAULT_ADAPTIVE_CONFIG, spec.attr)
-        rows[spec.key] = "true" if value is True else ("false" if value is False else str(value))
+        if spec.kind == _KIND_JSON:
+            rows[spec.key] = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        elif value is True or value is False:
+            rows[spec.key] = "true" if value else "false"
+        else:
+            rows[spec.key] = str(value)
     return rows
 
 
