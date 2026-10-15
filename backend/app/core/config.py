@@ -171,6 +171,7 @@ class Settings(BaseSettings):
     def judge_l3_enabled(self) -> bool:
         """L3 数学等价判定层是否启用（``JUDGE_L3=off`` 关闭）。"""
         return str(self.judge_l3).strip().lower() == "on"
+    @property
     def scheduler_mode(self) -> str:
         """归一化后的复习调度内核：``fsrs_py`` | ``sm2``（未知值一律回落 ``sm2``）。"""
         raw = (self.scheduler or "").strip().lower()
