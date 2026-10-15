@@ -693,14 +693,10 @@ def test_read_adaptive_config_falls_back_on_failure():
 
 
 def _placeholder_calls() -> List[Any]:
-    """三个占位引擎的「最少实参调用」，便于统一断言它们会 loud fail。"""
-    from app.engines import build_learning_plan, plan_exercises, rank_priorities
+    """仍未实现的 T07 引擎最少实参调用。"""
+    from app.engines import build_learning_plan
 
-    return [
-        lambda: rank_priorities({}),
-        lambda: plan_exercises([], []),
-        lambda: build_learning_plan([], []),
-    ]
+    return [lambda: build_learning_plan([], [])]
 
 
 # ============================================================ 纯函数铁律
@@ -749,8 +745,8 @@ def test_config_module_imports_orm_lazily():
             assert line[:1] in (" ", "\t"), f"顶层 ORM 导入违反铁律: {line}"
 
 
-def test_placeholder_engines_raise_not_implemented():
-    """T06/T07 占位入口必须 loud fail（返回空结果比抛错更危险）。"""
+def test_placeholder_engine_raises_not_implemented():
+    """T07 占位入口必须 loud fail（返回空结果比抛错更危险）。"""
     for call in _placeholder_calls():
         try:
             call()
