@@ -76,6 +76,17 @@ from app.services.importers.text_clean import clean_line  # noqa: E402
 # T15：登记 5 份苏教 3 下专项复习卷后，源总数应为 20。
 EXPECTED_SOURCE_COUNT = 20
 
+#: 原始 docx 试卷语料是否在本机可用。
+#:
+#: ``DEFAULT_SOURCE_DIR`` 是**开发者本机绝对路径**（默认 ``D:\我的文档\Documents\数学题``），
+#: 那 20 份原始试卷是二进制、不入库，所以 CI / 沙箱 / 换机后一律不存在的。
+#: 「登记表 vs 磁盘」的存在性断言因此必须按需跳过——这与本仓库既有的
+#: ``TestL1PoolInvariantOnRealBank``（dev.db 缺失即 skip）是同一套约定。
+#:
+#: 注意：**只有磁盘部分跳过**，「登记数量」等纯内存不变式在任何环境都照跑。
+_SOURCES_AVAILABLE_ON_DISK: bool = DEFAULT_SOURCE_DIR.is_dir()
+_SKIP_NO_SOURCE_DIR = f" docx 源目录不存在：{DEFAULT_SOURCE_DIR}"
+
 
 @pytest.fixture
 def session():
@@ -770,10 +781,11 @@ def test_trailing_number_inside_long_line_still_protected():
 
 # ==================================================================== T15 增量回归
 def test_manifest_total_source_count_is_twenty():
-    """T15：登记 5 份苏教 3 下专项复习卷后，源总数恰好 20 且无磁盘缺失。
+    """T15：登记 5 份苏教 3 下专项复习卷后，源总数恰好 20。
 
-    这是 DELTA 任务的核心不变量——任何一处登记漏写 / 文件名拼错都会让
-    ``len(ALL_SOURCES) != 20`` 或 ``missing_files()`` 非空，从而被本测试拦下。
+    这是 DELTA 任务的核心不变量——任何一处登记漏写都会让
+    ``len(ALL_SOURCES) != 20``，从而被本测试拦下。本断言**不依赖磁盘**，
+    因此在 CI / 沙箱里也照常执行。
     """
     assert len(ALL_SOURCES) == EXPECTED_SOURCE_COUNT, (
         f"登记源总数应为 {EXPECTED_SOURCE_COUNT}，实际 {len(ALL_SOURCES)}"
@@ -784,7 +796,15 @@ def test_manifest_total_source_count_is_twenty():
     assert len(QINGDAO_SOURCES) == 5
     assert len(SUJIAO_A_SOURCES) == 8
     assert len(SUJIAO_B_SOURCES) == 7
-    # 磁盘上全部存在（沙箱无 docx 时跳过，避免 CI 误红）
+
+
+@pytest.mark.skipif(not _SOURCES_AVAILABLE_ON_DISK, reason=_SKIP_NO_SOURCE_DIR)
+def test_manifest_registered_files_exist_on_disk():
+    """T15：登记在册的 20 份源文件在磁盘上一个都不能少（文件名拼错即红）。
+
+    仅在本机存在原始 docx 语料时才跑：这些二进制不入版本库，CI / 换机后
+    目录不存在属于**环境问题**，不该让 CI 变红。
+    """
     missing = missing_files(DEFAULT_SOURCE_DIR)
     assert missing == [], f"以下登记文件在源目录缺失：{missing}"
 

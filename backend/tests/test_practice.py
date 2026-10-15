@@ -1219,6 +1219,29 @@ def _real_bank_rows() -> List[Tuple[Any, Any, Any]]:
         conn.close()
 
 
+#: 只读拉 active 选择题（含身份信息），供「失败要能给出题号清单」的用例用。
+def _real_bank_choice_rows_with_identity() -> List[Tuple[Any, Any, Any, Any]]:
+    """只读拉取真实题库里 ``active`` 选择题的 ``(id, content, options, correct_answer)``。
+
+    与 ``_real_bank_rows`` 同口径（同库、同 ``mode=ro``、同 ``status='active'``
+    过滤），只是把调用方要的 **身份列** 一起带出来——失败时能直接给题号和题干
+    清单，运营可以直接按清单返工，不用再现地写脚本捞一遍。
+
+    Returns:
+        ``(question_id, content, raw_options, correct_answer)`` 列表。
+    """
+    uri = f"file:{_DEV_DB.replace(os.sep, '/')}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        return conn.execute(
+            "SELECT q.id, q.content, q.options, a.correct_answer "
+            "FROM questions q JOIN answers a ON a.question_id = q.id "
+            "WHERE q.status = 'active' AND q.type = '选择'"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
 @pytest.mark.skipif(not os.path.exists(_DEV_DB), reason="真实题库 dev.db 不存在，跳过 V3 全库不变式")
 class TestL1PoolInvariantOnRealBank:
     """V3 全库不变式：**不硬编码池子规模**，只断言口径自洽。
@@ -1309,12 +1332,13 @@ class TestL1PoolInvariantOnRealBank:
         """
         from app.services.importers.quality_gate import validate_choice_options
 
-        naked: List[Any] = []
-        for q_type, raw_options, _correct_answer in _real_bank_rows():
-            if q_type != "选择":
-                continue
+        offenders: List[Tuple[Any, str]] = []
+        for qid, content, raw_options, _correct in _real_bank_choice_rows_with_identity():
             options = _parse_options(raw_options)
             if not validate_choice_options(options):
-                naked.append(_parse_options(raw_options))
+                offenders.append((qid, str(content)[:40]))
 
-        assert not naked, f"有 {len(naked)} 道 active 选择题仍缺 A-D 完整选项，样例：{naked[:5]}"
+        assert not offenders, (
+            f"有 {len(offenders)} 道 active 选择题仍缺 A-D 完整选项，"
+            f"题号/题干清单（返工直接照这张表）：{offenders[:20]}"
+        )

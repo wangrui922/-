@@ -4,6 +4,7 @@
     * **必须在 import app 之前** 把 ``DATABASE_URL`` 设成内存 SQLite，
       因为 ``app.db`` 在导入时即按环境变量构建引擎（单例）。
     * 提供 ``client``：基于 ``fastapi.TestClient`` 的测试客户端。
+    * 提供 ``db``：会话级**共享**（``StaticPool`` 内存 SQLite）的数据库会话。
     * 提供 ``make_token``：造一个合法 access JWT 的 helper。
     * 提供 ``new_phone``（T04 新增）：产出全局唯一手机号，用于隔离学生数据。
 """
@@ -69,6 +70,39 @@ def _create_schema():
 
 
 @pytest.fixture
+def db():
+    """返回一个**函数级**数据库会话，语义与 ``app.db.get_db`` 完全一致。
+
+    为什么既要有这个 fixture、又有大量用例直接 ``with SessionLocal() as s:``：
+        两者同根——都走 ``app.db.SessionLocal``，指向会话级共享的内存 SQLite
+        （``StaticPool`` 单连接）。本 fixture 只是把这套约定包装一层，方便用例
+        以「参数注入」而不是「自己 with」的方式拿会话。
+
+    方言差异**一律**由 ``app/db.py`` 屏蔽；这里不出现任何 SQLite / PG 分支，
+    也不做任何 commit 时机上的方言假设。
+
+    提交语义（与 ``get_db`` 对齐）：用例正常跑完即 commit，让后续用
+    ``SessionLocal()`` 独立开的会话也能读到；用例抛异常则 rollback。
+
+    Usage:
+        def test_something(db):
+            db.add(...)
+            db.flush()
+    """
+    from app.db import SessionLocal
+
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+@pytest.fixture
 def client() -> TestClient:
     """返回应用测试客户端。"""
     return TestClient(app)
@@ -108,6 +142,17 @@ def auth_headers(make_token):
 #: 全局自增序列，保证同一次 pytest 会话内手机号不重复
 _PHONE_SEQ = itertools.count(1)
 
+#: new_phone() 的号段起点（8 位序号部分）。
+#:
+#: 为什么不是 0：库里有若干**硬编码**手机号已经占了低段——
+#: ``test_backfill_kp.py`` 用 ``13900000001``、``test_review_service.py`` 用
+#: ``13900000001`` ~ ``13900000005``，它们与本 fixture 落在**同一个会话级共享
+#: 内存库**里。序号若从 0 开始递增，跑全量时前者先到先用低段互不干扰，但一旦
+#: 只跑子集（``-k`` / 单文件 / 调整执行顺序），``new_phone()`` 就会撞上这些写死的
+#: 学生，登录时拿到别人的档案，画像类断言随即漂移——同一套代码在不同人机器上
+#: 跑出不同结果，正是这个坑。把号段整体抬到 50000000 以上即可彻底避开。
+_PHONE_BASE: int = 50_000_000
+
 
 @pytest.fixture
 def new_phone():
@@ -119,20 +164,22 @@ def new_phone():
         执行顺序漂移）。每个用例取一个新手机号 = 一个干净的新学生。
 
     手机号格式必须匹配 ``app.services.sms.PHONE_PATTERN``（``^1[3-9]\\d{9}$``），
-    这里用 ``139`` + 8 位序号拼出 11 位。
+    这里用 ``139`` + 8 位序号拼出 11 位；号段起点 ``_PHONE_BASE`` 保证不与他人
+    写死的测试手机号相撞。
 
     Usage:
         phone = new_phone()
     """
 
     def _make() -> str:
-        return f"139{next(_PHONE_SEQ):08d}"
+        return f"139{_PHONE_BASE + next(_PHONE_SEQ):08d}"
 
     return _make
 
 
 __all__ = [
     "client",
+    "db",
     "make_token",
     "auth_headers",
     "new_phone",

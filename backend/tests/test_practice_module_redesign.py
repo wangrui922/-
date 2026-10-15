@@ -30,12 +30,14 @@ QA 不写业务代码、不写 git；只写测试 + 智能路由判定。
 
 from __future__ import annotations
 
-import os
+import hashlib
+import importlib.util
+import io
 import re
-import subprocess
-import sys
 import uuid
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Dict, List, Tuple
 
 import pytest
@@ -60,6 +62,9 @@ from t04_helpers import login, seed_attempts
 from test_practice import _draw as _api_draw  # type: ignore
 from test_practice import make_bank_question  # type: ignore
 
+#: 项目根（backend/ 的上一级）。真实交付物都在 ``docs/`` 下——测试**只读**地拿
+#: 它做兜底校验，一个字节都不许写（见 ``TestDataCleanupScriptsDryRun``）。
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # 抽题 fallback 兜底档位（设计 §1.5：1-3 档 + 兜底 404）。
 # 实现里硬编码 6，此处用常量统一引用，便于测试与脚本同步。
@@ -983,15 +988,50 @@ class TestFrontendTypeAlignment:
 
 # ==================================================================== G. 数据补全脚本 dry-run（隔离 tmp_path DB）
 class TestDataCleanupScriptsDryRun:
-    """F. 数据补全脚本 ``--dry-run`` 行为（不动 DB，仅统计）。
+    """G. 数据补全脚本 ``--dry-run`` 行为（不动 DB，仅统计）。
 
-    策略：用 ``tmp_path`` 创建隔离的 SQLite 文件 DB；建 schema、塞种子数据；
-    设 ``DATABASE_URL`` 调子进程跑三个脚本；解析 stdout 断言扫描/命中数 > 0。
+    策略：``tmp_path`` 建隔离 SQLite 文件 DB；建 schema、塞种子数据；
+    在**本进程内**调脚本的 ``main(["--dry-run"])``；解析 stdout 断言扫描/命中数 > 0。
 
-    这是端到端覆盖（脚本是独立进程），不替换 get_engine。
+    ━━━━━━━━━━━━━━━ 为什么不再用 subprocess（重要，改动前请读完）━━━━━━━━━━━━━━━
+    早期版本用 ``subprocess`` + 只覆盖 ``DATABASE_URL``：DB 隔离了，但脚本收尾
+    都会调 ``scripts/data_cleanup/_common.py::append_log()``，而它写的
+    ``LOG_PATH`` 是**模块级常量**，硬指向受版本控制的
+    ``docs/data-cleanup-log-20260811.md``——子进程没有任何 env/CLI 开关能改它，
+    于是**每跑一次 pytest 就往真实运维日志里追加一段 seed 假数据**
+    （``git status`` 必脏，不同人跑完的日志还不一样）。
+
+    改为 in-process 后可以用 ``monkeypatch`` 把 ``get_engine`` / ``LOG_PATH`` /
+    各类 CSV 产物常量一并重定向到 ``tmp_path`` —— 与
+    ``test_residual_choice_cleanup.py``、``test_dead_inventory_cleanup.py``
+    完全同一套约定。仍是端到端：真 argparse + 真 SQLAlchemy + 真日志落盘，
+    只是产物落在临时目录。``test_real_docs_untouched`` 常驻兜底防止复发。
     """
 
-    SCRIPTS_DIR = Path("scripts/data_cleanup")
+    #: ⚠️ 必须是绝对路径：写法 ``Path("scripts/data_cleanup")`` 只有在 pytest 的
+    #: CWD 恰好是 backend/ 时才成立（换 CWD 跑 CI 必炸）。
+    SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts" / "data_cleanup"
+
+    #: 脚本里「除数据库外」还会往磁盘落盘的产物常量 → 临时文件名。
+    #: 少重定向一个，就会污染真实交付物。
+    _ATTR_TO_NAME = {
+        "EXPORT_CSV": "unmapped-human-triage-20260811.csv",
+        "_REMOVED_CSV": "residual-choice-removed-20260812.csv",
+        "_PATCHED_CSV": "residual-choice-patched-20260812.csv",
+    }
+
+    @staticmethod
+    def _load_script(path: Path) -> ModuleType:
+        """按路径加载脚本模块（文件名以数字开头，不能直连 import）。
+
+        每次返回**全新模块对象**，避免多个用例之间的 monkeypatch 相互串味。
+        """
+        spec = importlib.util.spec_from_file_location(f"_pmr_script_{path.stem}", path)
+        if spec is None or spec.loader is None:  # pragma: no cover - 路径写错才会触发
+            raise ImportError(f"无法加载脚本模块：{path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
     @pytest.fixture
     def seeded_db(self, tmp_path: Path) -> Path:
@@ -1056,31 +1096,60 @@ class TestDataCleanupScriptsDryRun:
         return db_path
 
     @pytest.fixture
-    def _python_path(self) -> List[str]:
-        """把 backend/ 加进 PYTHONPATH 让子进程 ``from app...`` 能工作。"""
-        return [str(Path("backend").resolve())]
+    def docs_dir(self, tmp_path: Path) -> Path:
+        """脚本产物的隔离目录（运维日志 + CSV 都落这里，绝不落真实 docs/）。"""
+        docs = tmp_path / "docs"
+        docs.mkdir(parents=True, exist_ok=True)
+        return docs
 
-    def _run_script(self, script_name: str, db_url: str, python_path: List[str]) -> Tuple[int, str, str]:
-        """子进程跑一个数据补全脚本；返回 (returncode, stdout, stderr)。"""
-        env = os.environ.copy()
-        env["DATABASE_URL"] = db_url
-        env["PYTHONPATH"] = (
-            ":".join(python_path) if python_path else env.get("PYTHONPATH", "")
-        )
-        # 关掉 dev 模式可能带来的副作用
-        env.setdefault("ENVIRONMENT", "test")
-        cmd = [sys.executable, str(self.SCRIPTS_DIR / script_name), "--dry-run"]
-        result = subprocess.run(
-            cmd,
-            env=env,
-            capture_output=True,
-            text=True,
-            cwd=str(Path.cwd()),
-            timeout=60,
-        )
-        return result.returncode, result.stdout, result.stderr
+    def _run_script(
+        self,
+        script_name: str,
+        db_url: str,
+        docs_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> Tuple[int, str, str]:
+        """在本进程里跑一个数据补全脚本的 ``main(["--dry-run"])``。
 
-    def test_archive_incomplete_options_dry_run_counts_match(self, seeded_db, _python_path) -> None:
+        重定向清单（缺一不可，少一个就会污染真实交付物）：
+
+        * ``scripts.data_cleanup._common.LOG_PATH`` → ``tmp_path/docs/``；
+          ``append_log()`` 是按**模块级常量**定位日志文件的，这是污染事故的根。
+        * ``<script>.get_engine`` → 指向入参 ``db_url`` 的临时库；
+        * ``<script>.EXPORT_CSV`` / ``_REMOVED_CSV`` / ``_PATCHED_CSV`` → ``tmp_path/docs/``。
+
+        Returns:
+            ``(returncode, stdout, stderr)``——字段语义与 subprocess 版保持一致，
+            调用方（三个断言用例）无需任何改动。
+        """
+        from sqlalchemy import create_engine
+
+        from scripts.data_cleanup import _common as _cleanup_common
+
+        monkeypatch.setattr(
+            _cleanup_common, "LOG_PATH", docs_dir / "data-cleanup-log.md"
+        )
+
+        module = self._load_script(self.SCRIPTS_DIR / script_name)
+        engine = create_engine(db_url, future=True)
+        monkeypatch.setattr(module, "get_engine", lambda: engine)
+        for attr, filename in self._ATTR_TO_NAME.items():
+            if hasattr(module, attr):
+                monkeypatch.setattr(module, attr, docs_dir / filename)
+
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with redirect_stdout(out), redirect_stderr(err):
+                code = module.main(["--dry-run"])
+        except SystemExit as exc:  # argparse 的 --help / 参数错误走这条
+            code = int(exc.code or 0)
+        finally:
+            engine.dispose()
+        return int(code or 0), out.getvalue(), err.getvalue()
+
+    def test_archive_incomplete_options_dry_run_counts_match(
+        self, seeded_db, docs_dir, monkeypatch
+    ) -> None:
         """``archive_incomplete_options.py --dry-run``：扫描数 > 0、命中数 > 0。
 
         种子：5 道 active 选择题，其中 2 道 partial + 1 道 missing = 3 道命中。
@@ -1089,7 +1158,8 @@ class TestDataCleanupScriptsDryRun:
         rc, out, err = self._run_script(
             "20260811_archive_incomplete_options.py",
             f"sqlite:///{seeded_db}",
-            _python_path,
+            docs_dir,
+            monkeypatch,
         )
         assert rc == 0, f"exit={rc}\nSTDOUT={out}\nSTDERR={err}"
         match = re.search(r"扫描\s*(\d+)\s*道\s*active\s*选择题，命中归档\s*(\d+)\s*道", out)
@@ -1099,7 +1169,9 @@ class TestDataCleanupScriptsDryRun:
         assert scanned > 0, f"扫描数应为正，实际 {scanned}"
         assert matched > 0, f"命中数应为正（partial/missing 共 3 道），实际 {matched}"
 
-    def test_strip_e2e_prefix_dry_run_counts_match(self, seeded_db, _python_path) -> None:
+    def test_strip_e2e_prefix_dry_run_counts_match(
+        self, seeded_db, docs_dir, monkeypatch
+    ) -> None:
         """``strip_e2e_prefix.py --dry-run``：全表扫描数 > 0、命中数 ≥ 1（E2E 前缀题）。
 
         种子：5 道题，前 2 道题干含 ``E2E`` 前缀 → 应至少命中 2 道。
@@ -1108,7 +1180,8 @@ class TestDataCleanupScriptsDryRun:
         rc, out, err = self._run_script(
             "20260811_strip_e2e_prefix.py",
             f"sqlite:///{seeded_db}",
-            _python_path,
+            docs_dir,
+            monkeypatch,
         )
         assert rc == 0, f"exit={rc}\nSTDOUT={out}\nSTDERR={err}"
         match = re.search(r"全表\s*(\d+)\s*行扫描，命中 E2E 前缀\s*(\d+)\s*行", out)
@@ -1118,7 +1191,9 @@ class TestDataCleanupScriptsDryRun:
         assert total > 0, f"全表行数应为正：{total}"
         assert matched >= 2, f"应至少命中 2 道（题干有 E2E 前缀）：{matched}"
 
-    def test_autotag_unmapped_dry_run_counts_match(self, seeded_db, _python_path) -> None:
+    def test_autotag_unmapped_dry_run_counts_match(
+        self, seeded_db, docs_dir, monkeypatch
+    ) -> None:
         """``autotag_unmapped.py --dry-run``：扫描数 > 0、自动打标或待人工数 > 0。
 
         种子：3 道不可归因题 → 至少有一个扫描数 > 0。
@@ -1127,7 +1202,8 @@ class TestDataCleanupScriptsDryRun:
         rc, out, err = self._run_script(
             "20260811_autotag_unmapped.py",
             f"sqlite:///{seeded_db}",
-            _python_path,
+            docs_dir,
+            monkeypatch,
         )
         assert rc == 0, f"exit={rc}\nSTDOUT={out}\nSTDERR={err}"
         match = re.search(r"自动打标\s*(\d+)\s*题，待人工标注\s*(\d+)\s*题", out)
@@ -1138,6 +1214,42 @@ class TestDataCleanupScriptsDryRun:
         assert (auto_tagged + pending) > 0, (
             f"dry-run 应至少扫描/打标/标不上数：auto_tagged={auto_tagged}, pending={pending}"
         )
+
+    def test_real_docs_untouched(self, seeded_db, docs_dir, monkeypatch) -> None:
+        """G-兜底：跑完三个脚本，受版本控制的真实交付物**一个字节都不能变**。
+
+        历史事故：subprocess 版每跑一次 pytest 就往
+        ``docs/data-cleanup-log-20260811.md`` 追加 seed 假数据，``git status``
+        必脏，且各人本地日志互不相同。这条把「测试不污染工作区」焊死。
+        """
+        real_artifacts = (
+            _PROJECT_ROOT / "docs" / "data-cleanup-log-20260811.md",
+            _PROJECT_ROOT / "docs" / "unmapped-human-triage-20260811.csv",
+        )
+        before = {
+            path: (hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None)
+            for path in real_artifacts
+        }
+
+        for script in (
+            "20260811_archive_incomplete_options.py",
+            "20260811_strip_e2e_prefix.py",
+            "20260811_autotag_unmapped.py",
+        ):
+            rc, out, err = self._run_script(
+                script, f"sqlite:///{seeded_db}", docs_dir, monkeypatch
+            )
+            assert rc == 0, f"{script} 退出 {rc}\nSTDOUT={out}\nSTDERR={err}"
+
+        for path, digest in before.items():
+            after = (
+                hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+            )
+            assert after == digest, (
+                f"真实交付物被测试污染：{path}\n"
+                f"  跑脚本前 sha256={digest}\n  跑脚本后 sha256={after}\n"
+                f"  → 检查 _run_script 的重定向清单是否漏了某个产物常量。"
+            )
 
 
 # ==================================================================== H. 边界与契约
