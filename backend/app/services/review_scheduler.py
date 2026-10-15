@@ -11,6 +11,13 @@
     算法把一次练习的结果（quality 0-5）转成「下次什么时候复习」「间隔天数」「难度系数 EF」，
     让系统能挑出「今天该复习哪些题」。
 
+⚠️ 双版本裁决后的定位变更（详见 ``docs/scheduler-py-fsrs-migration.md``）：
+    本模块已**降级为兼容壳** —— 复习调度的统一入口收敛到
+    ``app.services.fsrs_scheduler``（内核可在 py-fsrs / SM-2 之间切换并支持
+    灰度放量）。这里保留 SM-2 内核实现（``_sm2_review_core``）与全部既有
+    常量/数据结构/纯函数，**仅为兼容旧调用方**，新的调用方一律走
+    ``fsrs_scheduler.FSRSScheduler`` 或 ``fsrs_scheduler.review_review_state``。
+
 时区约定：入参时间统一按 UTC 处理（与 ``mastery_engine`` 一致）。
 """
 
@@ -82,10 +89,12 @@ def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 def update_ease_factor(current_ef: float, quality: int) -> float:
-    """SM-2 难度系数更新。
+    """SM-2 难度系数更新（无状态纯函数，兼容保留）。
 
     ``EF' = EF + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))``，下限 ``MIN_EASE_FACTOR``。
     quality 取 0-5；q≥3 时 EF 上升或持平，q<3 时下降。
+
+    注：调度主链路已由 fsrs_scheduler 统一，本函数保留仅为兼容旧调用方。
     """
     q = max(0, min(5, int(quality)))
     delta = 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)
@@ -93,10 +102,10 @@ def update_ease_factor(current_ef: float, quality: int) -> float:
     return max(MIN_EASE_FACTOR, round(new_ef, 4))
 
 
-def review(
+def _sm2_review_core(
     state: ReviewState, quality: int, now: Optional[datetime] = None
 ) -> ReviewPlan:
-    """根据一次练习的 quality（0-5）推进复习排程，返回新的 ``ReviewPlan``。
+    """SM-2 内核（原 ``review`` 实现，现由兼容壳 ``review`` 转发到统一入口后回调）。
 
     Args:
         state: 当前复习状态（不修改入参，返回新对象）。
@@ -141,10 +150,40 @@ def review(
     )
 
 
+def review(
+    state: ReviewState,
+    quality: int,
+    now: Optional[datetime] = None,
+    student_id: Optional[str] = None,
+) -> ReviewPlan:
+    """（兼容壳）已由 fsrs_scheduler 统一，保留仅为兼容旧调用方。
+
+    真实裁决发生在 ``app.services.fsrs_scheduler.review_review_state``：按
+    ``Settings.scheduler``（``fsrs_py`` | ``sm2``）与 ``scheduler_fsrs_rollout_ratio``
+    选择内核；py-fsrs 未安装时自动降级为 SM-2。默认配置下行为与本函数历史实现
+    **完全一致**（走 ``_sm2_review_core``）。
+
+    Args:
+        state: 当前复习状态（不修改入参，返回新对象）。
+        quality: 本次回忆质量 0-5（5=秒回且熟练，0=完全不会）。
+        now: 当前时间（UTC）；缺省取 ``datetime.now(timezone.utc)``。
+        student_id: 学生 ID，仅用于 py-fsrs 灰度放量（稳定哈希分批），可缺省。
+
+    Returns:
+        ``ReviewPlan``：含新的 EF / 间隔 / 连续次数 / 下次到期时间。
+    """
+    # 延迟导入：避免与 fsrs_scheduler（它在模块级 import 本模块的 SM-2 内核）形成循环
+    from app.services.fsrs_scheduler import review_review_state
+
+    return review_review_state(state, quality, now=now, student_id=student_id)
+
+
 def is_due(state: ReviewState, now: Optional[datetime] = None) -> bool:
     """该知识点现在是否该复习了。
 
     ``due_at`` 为 ``None``（从未复习）视为「立即到期」→ 返回 ``True``。
+
+    注：调度主链路已由 fsrs_scheduler 统一，本函数（纯到期判定）保留仅为兼容旧调用方。
     """
     now = _as_utc(now) or datetime.now(timezone.utc)
     if state.due_at is None:
@@ -155,7 +194,10 @@ def is_due(state: ReviewState, now: Optional[datetime] = None) -> bool:
 def select_due(
     states: Iterable[ReviewState], now: Optional[datetime] = None
 ) -> List[ReviewState]:
-    """从一批复习状态里挑出「今天该复习的」，按到期时间升序返回。"""
+    """从一批复习状态里挑出「今天该复习的」，按到期时间升序返回。
+
+    注：调度主链路已由 fsrs_scheduler 统一，本函数（纯到期挑选）保留仅为兼容旧调用方。
+    """
     now = _as_utc(now) or datetime.now(timezone.utc)
     due = [s for s in states if is_due(s, now)]
     return sorted(
@@ -166,6 +208,8 @@ def select_due(
 
 def quality_from_correct(correct: bool, verdict: str = "pending") -> int:
     """把「对/错 + 辅导 verdict」收敛成 SM-2 的 quality（0-5）。
+
+    注：调度主链路已由 fsrs_scheduler 统一，本函数（纯映射）保留仅为兼容旧调用方。
 
     这是调用方（practice_service / ai_exercise）的便捷映射，避免各处自己拍脑袋：
         * 错（wrong）：q=1（基本没记住）；
@@ -181,7 +225,10 @@ def quality_from_correct(correct: bool, verdict: str = "pending") -> int:
 
 
 def initial_state(key: str, now: Optional[datetime] = None) -> ReviewState:
-    """生成一个「从未复习」的初始状态（due_at=None → 立即到期，等待首次练习）。"""
+    """生成一个「从未复习」的初始状态（due_at=None → 立即到期，等待首次练习）。
+
+    注：调度主链路已由 fsrs_scheduler 统一，本函数（纯初始化）保留仅为兼容旧调用方。
+    """
     return ReviewState(key=key, due_at=None, last_reviewed_at=_as_utc(now))
 
 
@@ -191,12 +238,15 @@ __all__ = [
     "MAX_EASE_FACTOR",
     "FIRST_INTERVAL_DAYS",
     "SECOND_INTERVAL_DAYS",
+    "LAPSE_INTERVAL_DAYS",
+    "LAPSE_QUALITY_THRESHOLD",
     "ReviewState",
     "ReviewPlan",
     "update_ease_factor",
-    "review",
+    "review",  # 兼容壳：转发到 fsrs_scheduler.review_review_state
     "is_due",
     "select_due",
     "quality_from_correct",
     "initial_state",
+    "_sm2_review_core",  # SM-2 内核本体，供 fsrs_scheduler 统一入口回调
 ]

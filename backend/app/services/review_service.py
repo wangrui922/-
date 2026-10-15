@@ -47,6 +47,16 @@ class ReviewService:
         self.db = db
         self.scheduler = FSRSScheduler()
 
+    def _scheduler_for(self, student_id: Optional[str]) -> FSRSScheduler:
+        """按学生取调度器：把 student_id 透传给内核裁决（py-fsrs 灰度放量用）。
+
+        灰度是按学生稳定哈希分批的，只有拿到 student_id 才能裁决该学生走
+        py-fsrs 还是 SM-2；拿不到时退回无学生上下文的全局裁决（等价于默认 sm2）。
+        """
+        if student_id is None:
+            return self.scheduler
+        return FSRSScheduler(student_id=str(student_id))
+
     def _get_db(self) -> Session:
         if self.db:
             return self.db
@@ -100,10 +110,12 @@ class ReviewService:
         if existing:
             return {"id": existing[0], "created": False, "reason": "already_exists"}
 
-        # 创建 FSRS 卡片
+        # 创建 FSRS 卡片（调度器按学生取，保证灰度裁决与后续复习一致）
         card = Card()
         card.id = str(uuid.uuid4())
-        card, _ = self.scheduler.review_card(card, initial_rating, now)
+        card, _ = self._scheduler_for(student_id).review_card(
+            card, initial_rating, now
+        )
 
         # 持久化到数据库
         db.execute(
@@ -166,7 +178,9 @@ class ReviewService:
 
         card = Card()
         card.id = str(uuid.uuid4())
-        card, _ = self.scheduler.review_card(card, initial_rating, now)
+        card, _ = self._scheduler_for(student_id).review_card(
+            card, initial_rating, now
+        )
 
         db.execute(
             text("""INSERT INTO review_cards 
@@ -250,8 +264,8 @@ class ReviewService:
             last_review=self._to_dt(row[12]),
         )
 
-        # 执行 FSRS 调度
-        card, log = self.scheduler.review_card(card, rating, now)
+        # 执行 FSRS 调度（用卡片所属学生做灰度裁决，同一学生始终同一内核）
+        card, log = self._scheduler_for(row[1]).review_card(card, rating, now)
 
         # 更新卡片
         db.execute(
@@ -362,7 +376,7 @@ class ReviewService:
                 "scheduled_days": row[7],
                 "reps": row[8],
                 "lapses": row[9],
-                "retrievability": self.scheduler.get_retrievability(
+                "retrievability": self._scheduler_for(student_id).get_retrievability(
                     Card(
                         stability=row[4],
                         last_review=due_dt - timedelta(days=row[7])
