@@ -13,11 +13,72 @@ from __future__ import annotations
 
 import itertools
 import os
+import sys
+from urllib.parse import urlparse
 
 # ⚠️ 必须最先执行：在 import app 任何模块前固定测试库为内存 SQLite
 os.environ["DATABASE_URL"] = os.environ.get("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("JWT_SECRET", "test-secret-do-not-use-in-prod")
 os.environ.setdefault("APP_ENV", "test")
+
+# ─────────────────────────── 基线可复现闸门（T15）───────────────────────────
+#: 团队统一口径：**回归测试一律不设 ``DATABASE_URL``**，走内存 SQLite。
+#:
+#: 为什么要把这条变成"机器保证"而不是"口头规范"：
+#:     ``app.db`` 是按环境变量**在 import 时**建引擎的单例，一旦外部把
+#:     ``DATABASE_URL`` 设成文件库（``sqlite:///./dev.db``），整个测试会话就真的
+#:     往**真实题库文件**里读写。实测同一 commit 4acd250 上：
+#:
+#:      * 不设 → 969 collected / 963 passed / 2 failed / 3 error，dev.db 指纹不变；
+#:      * 设了 → 969 collected / 959 passed / 6 failed / 3 error，dev.db **被写脏**。
+#:
+#:     多出来的 4 条失败（L1 全库不变式 + 3 条薄弱画像）不是新 bug，而是"测试把
+#:     自己要读的库改了"的自噬效应。团队之前 960 / 959 / 949 三个数字互相打架，
+#:     根因就在这里。所以这里直接拦死，不给"悄悄跑歪"的机会。
+#:
+#: 确有需要连真实文件库跑时（例如迁移类任务），显式开闸：
+#:     ``ALLOW_FILE_DB=1``
+_ALLOW_FILE_DB_ENV = "ALLOW_FILE_DB"
+_DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+
+def _is_sqlite_file_db(raw_url: str) -> bool:
+    """判断连接串是否指向一个 **SQLite 文件库**（而不是内存库 / PG）。"""
+    url = urlparse(raw_url)
+    if url.geturl().startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
+        return False
+    # sqlite:///:memory:  /  sqlite://  /  file:memdb1?mode=memory
+    database = url.path or ""
+    if database in ("", ":memory:", "/:memory:"):
+        return False
+    if "mode=memory" in (url.query or ""):
+        return False
+    return True
+
+
+if (
+    os.environ.get("DATABASE_URL")
+    and _is_sqlite_file_db(_DATABASE_URL)
+    and os.environ.get(_ALLOW_FILE_DB_ENV) != "1"
+):
+    sys.stderr.write(
+        "\n"
+        "=" * 78 + "\n"
+        "[测试基线闸门] 拒绝启动：DATABASE_URL 指向了 SQLite **文件库**。\n"
+        f"    DATABASE_URL = {_DATABASE_URL}\n"
+        "\n"
+        "测试一旦连上真实文件库，就会在跑的过程中把它写脏 —— 同一个 commit 上\n"
+        "不同人跑出的失败数会互相打架（实测 5 条 vs 9 条 vs 16 条，全是这个原因）。\n"
+        "团队已统一口径：回归测试**不设 DATABASE_URL**，走默认内存库。\n"
+        "\n"
+        "  修法一（推荐）：unset DATABASE_URL 后重跑\n"
+        "  修法二（确有需要连文件库）：ALLOW_FILE_DB=1 显式开闸\n"
+        "  需要连真实题库跑的用例（如 L1 全库不变式）请用只读快照，见\n"
+        "      python scripts/reset_dev_db.py --check\n"
+        "=" * 78 + "\n\n"
+    )
+    raise SystemExit(2)
+# ───────────────────────────────────────────────────────────────────────────
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
