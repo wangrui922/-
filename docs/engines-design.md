@@ -127,7 +127,7 @@ adaptive.generation.new_ratio              # 新题占比（决定策略标记�
 3. 补一条「配置确实生效」的单测（照抄 `test_band_width_config_applies` 的写法）。
 
 **优先级 discipline**：各引擎只读写**自己前缀**的字段（`difficulty_*` / `priority_*` /
-`generation_*` / `plan_*`），不许跨前缀取值。
+`generation_*`），不许跨前缀取值。（T07 编排层不引入新前缀：只消费上述字段。）
 
 **降级**：`read_adaptive_config` 读库失败（表不存在、会话异常）一律记 warning 并回退缺省配置，
 绝不上抛——配置读失败不能拖垮出题主流程（与既有 `_emit_dna_event` 旁路兜底同一思路）。
