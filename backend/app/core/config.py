@@ -91,6 +91,21 @@ class Settings(BaseSettings):
     explanation_quality_gate_enabled: bool = True
     explanation_quality_gate_threshold: int = Field(default=3, ge=1, le=5)
 
+    # ---------- 复习调度内核（双版本裁决：py-fsrs / SM-2）----------
+    # 背景：仓库历史上一度存在两套复习调度（fsrs_scheduler 自研 FSRS 语义适配 +
+    # review_scheduler SM-2），排程口径不一致。现统一入口收在
+    # app/services/fsrs_scheduler.py，内核可在两者之间切换：
+    #   * scheduler=sm2      —— 全量走既有 SM-2（默认，灰度基线，零风险）；
+    #   * scheduler=fsrs_py  —— 走 py-fsrs（社区验证算法，MIT 许可）；
+    #                           包未安装时自动降级 SM-2，绝不阻断应用启动；
+    #   * scheduler=fsrs_py + scheduler_fsrs_rollout_ratio=r（0<r<1）
+    #                        —— 按 student_id 稳定哈希分批放量：
+    #                           hash(student_id) < r 的学生走 py-fsrs，其余走 SM-2，
+    #                           同一学生哈希恒定 → 体验始终一致。
+    # 回滚：把 SCHEDULER 改回 sm2（或 ratio 调成 0）即可，无需改代码、无需改数据。
+    scheduler: str = "sm2"
+    scheduler_fsrs_rollout_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+
     # ---------- 短信 ----------
     sms_provider: str = "mock"
     # dev_sms_code 已废弃：验证码改为随机生成，不再使用固定万能码
@@ -128,6 +143,23 @@ class Settings(BaseSettings):
         if not self.is_prod:
             return True
         return self.jwt_secret != "dev-secret-change-me" and len(self.jwt_secret) >= 16
+
+    @property
+    def scheduler_mode(self) -> str:
+        """归一化后的复习调度内核：``fsrs_py`` | ``sm2``（未知值一律回落 ``sm2``）。"""
+        raw = (self.scheduler or "").strip().lower()
+        if raw in {"fsrs_py", "fsrs-py", "fsrs", "pyfsrs", "py-fsrs"}:
+            return "fsrs_py"
+        return "sm2"
+
+    @property
+    def scheduler_fsrs_rollout_ratio_safe(self) -> float:
+        """灰度比例钳制到 [0.0, 1.0]（防御 .env 手改越界导致放量失控）。"""
+        try:
+            ratio = float(self.scheduler_fsrs_rollout_ratio)
+        except (TypeError, ValueError):
+            return 0.0
+        return min(1.0, max(0.0, ratio))
 
     @property
     def storage_path(self) -> Path:
