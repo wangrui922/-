@@ -274,13 +274,18 @@ def test_now_is_injected_not_system_time():
     assert "很久没练" in with_now[0].reason
 
 
-def test_results_can_supply_last_practiced_at():
-    """``results`` 提供的 ``last_practiced_at`` 参与陈旧/近期判定。"""
-    items = [_item("a", 0.5, days_ago=30)]
-    results = {"a": {"last_practiced_at": (_NOW - timedelta(days=2)).isoformat()}}
-    with_result = rank_priorities(items, results=results, adaptive_config=_only_mastery_config(), now=_NOW)
-    without_result = rank_priorities(items, adaptive_config=_only_mastery_config(), now=_NOW)
-    assert with_result[0].score < without_result[0].score
+def test_last_result_at_is_fallback_when_row_has_no_time():
+    """掌握度行缺时间字段时，``results.last_result_at`` 兜底驱动陈旧/近期判定。"""
+    items = [_item("a", 0.5)]
+    baseline = rank_priorities(items, adaptive_config=_only_mastery_config(), now=_NOW)[0].score
+    stale_result = {
+        "a": {"recent_attempts": 0, "last_result_at": (_NOW - timedelta(days=30)).isoformat()}
+    }
+    with_result = rank_priorities(
+        items, results=stale_result, adaptive_config=_only_mastery_config(), now=_NOW
+    )
+    assert with_result[0].score > baseline
+    assert "很久没练" in with_result[0].reason
 
 
 def test_results_none_is_ignored():

@@ -174,6 +174,11 @@ class AdaptiveConfig:
         priority_recent_window: 近期练习窗口（天），窗口内练过才降权。
         priority_stale_after: 陈旧阈值（天），超过则按超出比例加分。
         priority_top_n: 缺省返回条数。
+        priority_wrong_rate_floor: C1 触发门槛：近窗口错误率不低于该值才回炉。
+        priority_wrong_boost: C1 错题加分上限。
+        priority_wrong_saturation: C1 加满分所需的错题数（除数，配置成 0 回退缺省）。
+        priority_recent_attempts_cap: C2 单点饱和阈值（近窗口作答数超过即抑制）。
+        priority_saturation_penalty: C2 抑制系数（置 1.0 即关闭该抑制）。
         generation_default_total: 未指定题数时的批次默认题数。
         generation_max_total: 单批题数硬上限。
         generation_max_knowledge_points: 单批最多覆盖的知识点数。
@@ -203,6 +208,11 @@ class AdaptiveConfig:
     priority_recent_window: int = 7
     priority_stale_after: int = 14
     priority_top_n: int = 5
+    priority_wrong_rate_floor: float = 0.5
+    priority_wrong_boost: float = 0.25
+    priority_wrong_saturation: float = 3.0
+    priority_recent_attempts_cap: int = 10
+    priority_saturation_penalty: float = 0.85
     generation_default_total: int = 5
     generation_max_total: int = 20
     generation_max_knowledge_points: int = 3
@@ -258,6 +268,19 @@ class AdaptiveConfig:
                 0, to_int(self.priority_stale_after, _PRIORITY_STALE_AFTER_DEFAULT)
             ),
             "priority_top_n": max(1, to_int(self.priority_top_n, _PRIORITY_TOP_N_DEFAULT)),
+            "priority_wrong_rate_floor": clamp(
+                self.priority_wrong_rate_floor, 0.0, 1.0
+            ),
+            "priority_wrong_boost": _non_negative(self.priority_wrong_boost, 0.25),
+            "priority_wrong_saturation": _positive(
+                self.priority_wrong_saturation, 3.0
+            ),
+            "priority_recent_attempts_cap": max(
+                0, to_int(self.priority_recent_attempts_cap, 10)
+            ),
+            "priority_saturation_penalty": clamp(
+                self.priority_saturation_penalty, 0.0, 1.0
+            ),
             "generation_default_total": max(
                 1, to_int(self.generation_default_total, 5)
             ),
@@ -337,6 +360,31 @@ _SPEC_TABLE: Tuple[Tuple[str, str, str, Any], ...] = (
         _PRIORITY_STALE_AFTER_DEFAULT,
     ),
     ("priority.top_n", "priority_top_n", _KIND_INT, _PRIORITY_TOP_N_DEFAULT),
+    (
+        "priority.wrong_rate_floor",
+        "priority_wrong_rate_floor",
+        _KIND_FLOAT,
+        0.5,
+    ),
+    ("priority.wrong_boost", "priority_wrong_boost", _KIND_FLOAT, 0.25),
+    (
+        "priority.wrong_saturation",
+        "priority_wrong_saturation",
+        _KIND_FLOAT,
+        3.0,
+    ),
+    (
+        "priority.recent_attempts_cap",
+        "priority_recent_attempts_cap",
+        _KIND_INT,
+        10,
+    ),
+    (
+        "priority.saturation_penalty",
+        "priority_saturation_penalty",
+        _KIND_FLOAT,
+        0.85,
+    ),
     ("generation.default_total", "generation_default_total", _KIND_INT, 5),
     ("generation.max_total", "generation_max_total", _KIND_INT, 20),
     (

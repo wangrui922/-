@@ -108,6 +108,11 @@ adaptive.priority.out_degree_divisor       # 图谱出度归一化除数
 adaptive.priority.recent_window            # 近期练习窗口（天）
 adaptive.priority.stale_after              # 陈旧阈值（天）
 adaptive.priority.top_n                    # 缺省返回条数
+adaptive.priority.wrong_rate_floor         # C1 触发门槛（近窗口错误率）
+adaptive.priority.wrong_boost              # C1 错题加分上限
+adaptive.priority.wrong_saturation         # C1 加满分所需错题数
+adaptive.priority.recent_attempts_cap      # C2 单点饱和阈值
+adaptive.priority.saturation_penalty       # C2 饱和抑制系数
 adaptive.generation.default_total          # total 缺省时的批次题数
 adaptive.generation.max_total              # 单批题数上限
 adaptive.generation.max_knowledge_points   # 单批覆盖知识点上限
@@ -206,8 +211,20 @@ rank_priorities(
   `mastery`/`mastery_score`/`score`、`confidence`/`conf`、`kp_name`/`name`、
   `last_practiced_at`/`last_practice_at`/`last_reviewed_at`；
 * `graph` 支持映射（`{kp_id: 出度}`）与边序列（按 `pre_kp_id` 出现次数计出度）；
-* `results` 本次只留出入口：`None` 时忽略；提供时其中的 `last_practiced_at`
-  会覆盖条目上的时间戳参与陈旧/近期判定；
+* `results: Mapping[str, Mapping[str, Any]]`，键为 `knowledge_point_id` 字符串，
+  每项字段**全部可选**：
+
+  | 字段 | 类型 | 含义 | 缺省 |
+  | --- | --- | --- | --- |
+  | `recent_attempts` | `int` | 近 `priority.recent_window` 天作答次数 | 0 |
+  | `recent_correct` | `int` | 近窗口答对次数（会被夹到 `[0, recent_attempts]`） | 0 |
+  | `last_result_at` | ISO str / datetime | 最近作答时间，**仅在掌握度行缺时间字段时兜底** | 忽略 |
+
+  `wrong` / `wrong_rate` 一律由引擎从上面两个字段派生，**上游禁止传**（单一推导口径）。
+  时间维度的**主口径是掌握度行自带的 `last_practice_at`**，`results` 的时间只是兜底；
+* `results` 为 `None`（或该知识点不在其中、或 `recent_attempts <= 0`）时，
+  R6b / R6c 全部失效（`BOOST=0`、`SATURATION=1`），得分退化为不含 results 的历史算法
+  ——**这条逐位等价由 `test_priority_results.py` 的写死真值用例钉死**；
 * 出参是按 `score` 降序的去重 `List[PriorityItem]`；
   `mastery_items` 为空（或 `None` / 脏容器）时返回 `[]`；
 * 引擎**不读系统时钟**：`now=None` 时直接跳过时间维度。
@@ -235,20 +252,30 @@ PRIORITY_TOP_N_DEFAULT=5
 | R4 `degree` | `min(degree, out_degree_divisor)/out_degree_divisor` 加权 | 枢纽基础点能解锁更多后续内容 | `priority.out_degree_divisor`、权重 `degree` |
 | R5 `stale` | `days > stale_after` 时加 `(days-stale_after)/stale_after` | 遗忘曲线：久不练的能力会回退 | `priority.stale_after` |
 | R6 `recent` | `days <= recent_window` 时乘 `(days+1)/(window+1)` 降权 | 用间隔练习代替同一知识点机械连刷 | `priority.recent_window` |
+| R6b `C1 错题回炉` | 近窗口 `wrong>=1` 且 `wrong_rate>=floor` → **取消 R6 降权**（`RECENT:=1`），并加 `wrong_boost × min(1, wrong/wrong_saturation)` | 错题当天就该排得上（T15「错题当天回炉」的官方解法，不动 FSRS） | `priority.wrong_rate_floor`、`priority.wrong_boost`、`priority.wrong_saturation` |
+| R6c `C2 题量饱和` | 近窗口 `recent_attempts > cap` → 整体乘 `saturation_penalty` | 抑制同一知识点连刷 | `priority.recent_attempts_cap`、`priority.saturation_penalty` |
 | R7 | 同 ID 去重；同分按掌握度、等级、ID 稳定排序 | 避免重复配额并保证同输入同输出 | 无（结构性规则） |
 
 ```text
-score = (1-mastery)      × w.mastery
-      + (1-confidence)   × w.confidence
-      + gap_ratio        × w.gap
-      + degree_ratio     × w.degree
-      + stale_boost                       # 仅 days > stale_after
-      # recent 时整体乘 (days+1)/(window+1)
-score = clamp(score, 0, 1) 并保留 4 位小数
+BASE   = (1-mastery)      × w.mastery
+       + (1-confidence)   × w.confidence
+       + gap_ratio        × w.gap
+       + degree_ratio     × w.degree
+STALE  = days > stale_after ? (days-stale_after)/stale_after : 0
+RECENT = (recent_window>0 && days<=recent_window) ? (days+1)/(window+1) : 1
+# C1 命中时 RECENT := 1.0
+SATURATION = recent_attempts > cap ? saturation_penalty : 1.0
+BOOST      = wrong>=1 && wrong_rate>=floor ? wrong_boost × min(1, wrong/wrong_saturation) : 0
+
+raw   = (BASE + STALE) × RECENT × SATURATION + BOOST
+score = clamp(raw, 0, 1) 并保留 4 位小数
 ```
 
-`reason` 使用中文模板（前置基础 / 很久没练 / 掌握度偏低 / 近期错峰 / 掌握不稳），
-前端可直接展示；`to_api()` 保持
+`reason` 使用中文模板，信号优先级为
+**前置缺口 → 近窗口错题回炉 → 陈旧 → 掌握度偏低 → 近期练过 → 兜底**；
+新增文案「「<名称>」刚做过 X 题错了 Y 题，今天先回炉订正。」插在 gap 之后、stale 之前
+（由 `test_reason_priority_gap_then_wrong_then_stale` 钉死既有文案仍可达）。
+`to_api()` 保持
 `knowledgePointId/kpName/score/mastery/level/reason` 六个 camelCase 键不变。
 
 ---
