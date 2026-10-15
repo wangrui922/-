@@ -4,10 +4,28 @@
 - 批次 A (云南中考真题) ship_ready=1 + source_tag=green
 - 所有选择题过 classify_question(clean) + validate_choice_options + is_l1_safe
 - 27 道题入库齐全(15 选择 + 4 填空 + 8 解答)
+
+取数口径（T15 收尾修复，勿改）
+-----------------------------
+* **只读断言走裸 sqlite3 直连 dev.db**：conftest 把测试会话的
+  ``DATABASE_URL`` 默认设成 ``:memory:``（团队铁律：回归不碰文件库），
+  app 会话查的是空内存库；本组要验证的是**冷母库 dev.db 里的批次数据**，
+  只能直连文件。这些查询全部只读，不写 dev.db。
+* **幂等断言走临时副本 + 子进程导入**：早期版本在测试进程内调 ``run()``，
+  ``run()`` 写 ``:memory:`` 而断言读 dev.db——两边分叉，before/after 恒等，
+  **幂等性从未被真正验证**（假绿）。现在把 dev.db 用备份 API 拷成临时库
+  （禁 ``cp``：源库带 WAL，直接拷会出 malformed 快照），子进程以
+  ``DATABASE_URL=临时库`` 跑导入，连跑两次验证 upsert 零新增。真 dev.db
+  一个字节都不碰。
 """
 import json
+import os
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from app.services.importers.quality_gate import (
     classify_question,
@@ -16,12 +34,45 @@ from app.services.importers.quality_gate import (
 from app.services.judge_engine import is_l1_safe
 
 ROOT = Path(__file__).resolve().parents[1]
+BACKEND_DIR = ROOT
 DEV_DB = ROOT / "dev.db"
 SEED_FILE = ROOT / "seed" / "exam_yunnan_2025.json"
 
 
 def _conn():
     return sqlite3.connect(str(DEV_DB))
+
+
+def _copy_db_to_temp(tmp_path: Path) -> Path:
+    """用 sqlite3 备份 API 把 dev.db 拷成临时库（WAL 安全，禁 cp）。"""
+    target = tmp_path / "exam_idem.db"
+    source = sqlite3.connect(str(DEV_DB))
+    try:
+        destination = sqlite3.connect(str(target))
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+    finally:
+        source.close()
+    return target
+
+
+def _run_import_subprocess(db_path: Path) -> None:
+    """子进程跑导入，``DATABASE_URL`` 指向临时库（与断言同一真源）。"""
+    env = dict(os.environ)
+    env["DATABASE_URL"] = f"sqlite:///{db_path.as_posix()}"
+    env.pop("ALLOW_FILE_DB", None)
+    proc = subprocess.run(
+        [sys.executable, "-m", "app.scripts.import_exam_pdf", str(SEED_FILE)],
+        cwd=str(BACKEND_DIR),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, f"导入子进程失败:\nstdout={proc.stdout}\nstderr={proc.stderr}"
+    assert "OK=27" in proc.stdout, f"导入统计异常: {proc.stdout}"
 
 
 class TestExamYunnan2025Import:
@@ -91,14 +142,41 @@ class TestExamYunnan2025Import:
             c.close()
         assert n == 15, f"选择题应全部挂CZ_ KP, 实挂 {n}/15"
 
-    def test_question_idempotency(self):
-        """同一 JSON 重跑应零新增(uid5 派生 id 幂等)。"""
-        from app.scripts.import_exam_pdf import run  # noqa: WPS433
-        before = _conn().execute(
-            "SELECT count(*) FROM questions WHERE source_doc='exam_yunnan_2025'"
-        ).fetchone()[0]
-        run(str(SEED_FILE))
-        after = _conn().execute(
-            "SELECT count(*) FROM questions WHERE source_doc='exam_yunnan_2025'"
-        ).fetchone()[0]
-        assert before == after == 27, f"重入应幂等: before={before} after={after}"
+    def test_question_idempotency(self, tmp_path: Path):
+        """同一 JSON 重跑应零新增(uuid5 派生 id 幂等)——临时副本上连跑两次。
+
+        为什么必须子进程 + 临时库：测试进程的 app 会话被 conftest 指向
+        ``:memory:``，进程内调 ``run()`` 写的是抛掷型内存库，与 dev.db
+        分叉，before/after 恒等——那种写法证明不了任何事。这里让导入
+        与断言打同一个临时库，且真 dev.db 不被触碰。
+        """
+        temp_db = _copy_db_to_temp(tmp_path)
+
+        def _count() -> int:
+            c = sqlite3.connect(str(temp_db))
+            try:
+                return c.execute(
+                    "SELECT count(*) FROM questions WHERE source_doc='exam_yunnan_2025'"
+                ).fetchone()[0]
+            finally:
+                c.close()
+
+        before = _count()
+        _run_import_subprocess(temp_db)
+        after_first = _count()
+        _run_import_subprocess(temp_db)
+        after_second = _count()
+
+        assert before == 27, f"临时库初始应含 27 题, 实为 {before}"
+        assert after_first == 27, f"首次重入应幂等: 27 → {after_first}"
+        assert after_second == 27, f"二次重入应幂等: 27 → {after_second}"
+
+        c = sqlite3.connect(str(temp_db))
+        try:
+            dupes = c.execute(
+                "SELECT count(*) FROM (SELECT id FROM questions "
+                "WHERE source_doc='exam_yunnan_2025' GROUP BY id HAVING count(*) > 1)"
+            ).fetchone()[0]
+        finally:
+            c.close()
+        assert dupes == 0, f"uuid5 幂等失效: {dupes} 个重复 id"
