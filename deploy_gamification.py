@@ -6,6 +6,8 @@
     export COACH_SSH_PASSWORD=xxxx     (Linux/macOS)
 可选覆盖：COACH_SSH_HOST / COACH_SSH_USER / COACH_SSH_KEY（私钥文件路径）
 
+COACH_SSH_KEY 支持 ed25519 / rsa / ecdsa 自动识别（2026-10-15 轮换后为 ed25519）。
+
 本地源目录已随仓库迁移全部失效（旧路径 D:\\制作网页\\错题教练 已删除），
 现改为环境变量注入、缺失即报错，不再有指向旧磁盘位置的硬编码：
     COACH_SRC_BACKEND   后端 app 目录（待上传的 backend/app）
@@ -17,6 +19,7 @@ import sys
 import io
 import zipfile
 import paramiko
+from paramiko import ECDSAKey, Ed25519Key, RSAKey
 
 HOST = os.environ.get("COACH_SSH_HOST", "118.25.44.126")
 USER = os.environ.get("COACH_SSH_USER", "ubuntu")
@@ -34,8 +37,26 @@ SRC_WEBDIST = os.environ.get("COACH_SRC_WEBDIST", "")
 SRC_SCRIPT = os.environ.get("COACH_SRC_SCRIPT", "")
 
 
+def _load_pkey(path: str):
+    """按私钥内容自动识别类型（ed25519 / rsa / ecdsa）。
+
+    2026-10-15 密钥轮换后新密钥为 ed25519（OpenSSH 新格式），
+    原 paramiko.RSAKey 写死 RSA 会直接解析失败，故改为依次尝试。
+    """
+    errors = []
+    for cls in (Ed25519Key, RSAKey, ECDSAKey):
+        try:
+            return cls.from_private_key_file(path)
+        except Exception as e:  # noqa: BLE001 - 收集全部失败原因后统一报错
+            errors.append(f"{cls.__name__}: {e}")
+    raise SystemExit(
+        f"无法加载私钥 {path}（仅支持未加密的 ed25519/rsa/ecdsa 私钥）："
+        + "; ".join(errors)
+    )
+
+
 def get_client():
-    pk = paramiko.RSAKey.from_private_key_file(KEY_PATH)
+    pk = _load_pkey(KEY_PATH)
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     c.connect(hostname=HOST, username=USER, pkey=pk, timeout=15)
