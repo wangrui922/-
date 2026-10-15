@@ -38,6 +38,15 @@ BACKEND_DIR = ROOT
 DEV_DB = ROOT / "dev.db"
 SEED_FILE = ROOT / "seed" / "exam_yunnan_2025.json"
 
+#: dev.db 是否在本机可用（gitignored，CI / 新 worktree 里可能没有）。
+#: T15 实测：同一 commit 只差库在不在，全量从 963 passed/2 failed 变成
+#: 947 passed/7 failed——多出的 5 条 FAILED 就是本组，环境差异伪装成新回归，
+#: 是最难排查的假阳性，所以库不在时整组显式 skip（与 test_schema_guard 同款口径）。
+_DEV_DB_EXISTS: bool = DEV_DB.is_file()
+_SKIP_NO_DEV_DB = f"真实题库 dev.db 不存在，跳过 #70 试卷入库闸门：{DEV_DB}"
+
+pytestmark = pytest.mark.skipif(not _DEV_DB_EXISTS, reason=_SKIP_NO_DEV_DB)
+
 
 def _conn():
     return sqlite3.connect(str(DEV_DB))

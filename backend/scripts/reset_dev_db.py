@@ -40,11 +40,14 @@
     # 2) 只体检，不写任何东西（CI 里建议跑在测试之前）
     python scripts/reset_dev_db.py --check
 
-    # 3) 指定母版 / 目标（例如给另一个 worktree 起快照）
+    # 3) CI 前置：库不在或被跑脏就自动重建，否则什么都不做（推荐放在测试之前）
+    python scripts/reset_dev_db.py --ensure
+
+    # 4) 指定母版 / 目标（例如给另一个 worktree 起快照）
     python scripts/reset_dev_db.py --master F:/错题教练/_wt/_master_dev.db \\
                                    --target ../_wt/other/backend/dev.db
 
-    # 4) 期望题目数可按需覆盖（比如换了新母版）
+    # 5) 期望题目数可按需覆盖（比如换了新母版）
     python scripts/reset_dev_db.py --expect-questions 4458
 
 退出码：
@@ -335,6 +338,29 @@ def check_only(master: Path, target: Path, expect_questions: int) -> int:
     return 0
 
 
+def ensure(master: Path, target: Path, expect_questions: int) -> int:
+    """CI 前置：确保目标库**存在且与母版一致**，不一致就直接重建。
+
+    为什么需要这个模式：``backend/dev.db`` 在不在会直接改变 16 条用例的成败
+    （11 条变 skip、5 条变 failed），所以 CI 不能"听天由命"——要么保证库在且干净，
+    要么明确失败。``--ensure`` 把这两种都消掉：**先体检，不合格就地重建**。
+
+    Args:
+        master: 冷母版路径。
+        target: 目标库路径。
+        expect_questions: 期望的题目数。
+
+    Returns:
+        0 目标库已就绪；非 0 表示连重建都救不回来（母版坏了）。
+    """
+    code = check_only(master, target, expect_questions)
+    if code == 0:
+        print(f"[就绪] {target} 已是干净的冷快照，无需重建")
+        return 0
+    print(f"[重建] 目标库不可用或已被改写（--check 退出码 {code}），从母版重建")
+    return reset_from_master(master, target, expect_questions)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """构造命令行解析器。"""
     parser = argparse.ArgumentParser(
@@ -355,6 +381,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--check",
         action="store_true",
         help="只体检并 diff 目标库与母版，不写任何文件",
+    )
+    parser.add_argument(
+        "--ensure",
+        action="store_true",
+        help="CI 前置：目标库不存在或已被改写时自动从母版重建，否则什么都不做",
     )
     parser.add_argument(
         "--expect-questions",
@@ -378,6 +409,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     master = resolve_master(args.master)
     target = Path(args.target).expanduser().resolve() if args.target else DEFAULT_TARGET
 
+    if args.ensure:
+        return ensure(master, target, args.expect_questions)
     if args.check:
         return check_only(master, target, args.expect_questions)
     return reset_from_master(master, target, args.expect_questions)
