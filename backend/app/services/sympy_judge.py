@@ -626,11 +626,21 @@ def _strip_unit_pair(correct_text: str, selected_text: str) -> Tuple[str, str]:
     return correct_text, selected_text
 
 
+#: ⚠️ **Windows 上必须关掉 math_verify 自带的超时**：它的 ``timeout`` 装饰器在
+#: Windows 分支用 ``multiprocessing.Process(target=run_func)``，而 ``run_func`` 是
+#: 定义在闭包里的**局部函数**，spawn 起步方式 pickle 不了，实测（0.6.1 / 0.9.0）
+#: **每一次 ``parse`` 都失败并返回空列表**（``AttributeError: Can't get local object
+#: 'timeout.<locals>...run_func'``）。关掉它改由本模块自己的守护线程超时兜底
+#: ——这也是 math_verify 官方给多线程环境的建议（见其 grader.py 注释）。
+_MV_NO_TIMEOUT: Dict[str, Any] = {"parsing_timeout": None, "timeout_seconds": None}
+
+
 def _math_verify_parse(parse_fn: Callable[..., Any], text: str) -> Any:
     """调用 ``math_verify.parse``，兼容不同版本的可选参数名。
 
-    ``extraction_config`` 是 0.6.x 的可选关键字；老版本没有这个名字，
-    退化成 ``parse(text)`` 用默认抽取配置（LaTeX + 纯文本表达式）。
+    * ``extraction_config``：0.6.x 起的可选关键字，老版本没有这个名字；
+    * ``parsing_timeout=None``：**必须**关掉库自带超时，否则 Windows 上恒返回空
+      （原因见 :data:`_MV_NO_TIMEOUT`）。超时由 :func:`_run_with_timeout` 负责。
     """
     try:
         from math_verify import ExprExtractionConfig, LatexExtractionConfig
@@ -638,9 +648,14 @@ def _math_verify_parse(parse_fn: Callable[..., Any], text: str) -> Any:
         return parse_fn(
             text,
             extraction_config=[LatexExtractionConfig(), ExprExtractionConfig()],
+            parsing_timeout=_MV_NO_TIMEOUT["parsing_timeout"],
         )
     except TypeError:
-        return parse_fn(text)
+        # 老版本不认 parsing_timeout：退一档，只给抽取配置
+        try:
+            return parse_fn(text, parsing_timeout=_MV_NO_TIMEOUT["parsing_timeout"])
+        except TypeError:
+            return parse_fn(text)
     except Exception:  # noqa: BLE001 —— 老版本没有这两个配置类，退回默认抽取配置
         return parse_fn(text)
 
@@ -658,6 +673,33 @@ def _is_empty_extraction(parsed: Any) -> bool:
     if isinstance(parsed, str):
         return not parsed.strip()
     return False
+
+
+def _extraction_is_complete(parsed: Any, text: str) -> bool:
+    """``math_verify.parse`` 的抽取结果是否**完整覆盖**了输入文本。
+
+    实测（0.9.0）math_verify 的纯文本抽取是**有损**的，两类真实坑：
+
+    1. **单位被吞**：``parse("5cm")`` → ``[5, '5']``，``parse("5m")`` 也一样，
+       于是 ``5cm`` 会被判成等价于 ``5m``（单位错判成对）；
+    2. **表达式被截断**：``parse("1+x")`` → ``[1, '1']``（只抽到 ``1``），
+       于是 ``1`` 会被判成等价于 ``1+x``（漏写项判成对）。
+
+    这两类都是「把错的判成对」，比不判更危险。因此要求：抽取结果里**必须有一项
+    原文与输入完全一致**，说明库真的吃下了整段答案；只抽到片段的一律拒绝判定。
+
+    Args:
+        parsed: ``math_verify.parse`` 的返回值（形如 ``[expr, '原文']``）。
+        text: 送入 parse 的原文（已过百分号/单位归一）。
+
+    Returns:
+        ``True`` 表示抽取完整、可以拿去做等价比较。
+    """
+    if not isinstance(parsed, (list, tuple)):
+        # 非列表形态（老版本可能直接给表达式）：没有原文可校验，按完整处理
+        return True
+    stripped = text.strip()
+    return any(isinstance(item, str) and item.strip() == stripped for item in parsed)
 
 
 def _math_verify_equivalent(
@@ -710,11 +752,20 @@ def _math_verify_equivalent(
             raise ValueError(
                 f"math_verify 抽取失败（判不了即降级）：gold={gold!r} target={target!r}"
             )
+        # 只抽到片段（单位被吞 / 表达式被截断）→ 拒绝判定，否则会把错的判成对
+        if not _extraction_is_complete(gold, gold_text):
+            raise ValueError(f"math_verify 未完整抽取标准答案（拒绝判定）：{gold_text!r} → {gold!r}")
+        if not _extraction_is_complete(target, target_text):
+            raise ValueError(f"math_verify 未完整抽取学生作答（拒绝判定）：{target_text!r} → {target!r}")
         try:
-            return bool(verify(gold, target))
+            # timeout_seconds=None：理由同 parsing_timeout（Windows 上库自带超时必炸）
+            return bool(verify(gold, target, timeout_seconds=_MV_NO_TIMEOUT["timeout_seconds"]))
         except TypeError:
-            # 老版本 verify 直接吃字符串，不接受 parse 后的列表
-            return bool(verify(gold_text, target_text))
+            # 老版本 verify 不认 timeout_seconds / 直接吃字符串
+            try:
+                return bool(verify(gold, target))
+            except TypeError:
+                return bool(verify(gold_text, target_text))
 
     completed, value, error = _run_with_timeout(_verify, max(int(timeout_ms), 1) / 1000.0)
     if not completed:
@@ -931,6 +982,8 @@ __all__ = [
     "_strip_unit_pair",
     "_math_verify_equivalent",
     "_is_empty_extraction",
+    "_extraction_is_complete",
+    "_MV_NO_TIMEOUT",
     "_load_l3_config",
     "_l3_enabled_for",
     "_l3_equivalent",

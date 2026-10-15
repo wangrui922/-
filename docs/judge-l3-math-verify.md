@@ -1,7 +1,7 @@
 # 判题层升级：L3 数学等价判定（math_verify）
 
 > 适用版本：V4.1+ ｜ 代码：`backend/app/services/sympy_judge.py`
-> 依赖：`math-verify==0.6.*`（**可选依赖**，见「降级路径」）
+> 依赖：`math-verify==0.9.*`（**可选依赖**，见「降级路径」；必须 ≥0.9，Windows 上 0.6.x 完全不可用）
 > 开关：`JUDGE_L3=on|off`（默认 `on`）、`JUDGE_L3_TIMEOUT_MS=500`
 
 ## 1. 为什么要加这一层
@@ -73,7 +73,34 @@ L1 规则引擎 / L2 LLM 之前给出判错结论。
    → 跳过，**保证选择/判断题仍由 L1 规则引擎判定**；
 5. **解析异常**：`math_verify` 内部抛任何异常 → 捕获并跳过。
 
-### 3.3 超时为什么用守护线程
+### 3.3 ⚠️ 必须关掉 math_verify 自带的超时（Windows 上它 100% 不可用）
+
+实测（0.6.1 与 0.9.0 均如此）：`math_verify` 的 `timeout` 装饰器在 Windows 分支走
+`multiprocessing.Process(target=run_func)`，而 `run_func` 是定义在闭包里的**局部函数**，
+Windows 的 spawn 起步方式 pickle 不了它，于是：
+
+```
+>>> parse("1/2")            # parsing_timeout 默认 5
+Error parsing: 1/2
+AttributeError: Can't get local object 'timeout.<locals>.decorator.<locals>.wrapper.<locals>.run_func'
+[]
+```
+
+**每一次 `parse` 都返回空列表**，L3 会整层失效（而且静默失效，最难查的那种）。
+Linux 走 `signal.alarm` 分支不受影响——所以这个问题只在 Windows（开发机）上暴露。
+
+解法：显式传 `parsing_timeout=None` / `timeout_seconds=None` 关掉库自带超时，
+改由本模块自己的 500ms 守护线程超时兜底。这也是 math_verify 官方给多线程环境的建议
+（见其 `grader.py`：`parsing_timeout=None` + "you need to handle the timeouting yourself"）。
+
+⚠️ 因此依赖版本**必须 ≥ 0.9**：只有 0.9.0 起 `timeout(None)` 才会真正短路成
+「不加装饰器」，0.6.x 即使传 `None` 也照样走 multiprocessing 分支。
+
+代价：关掉库自带超时后，一个病态输入可能让判定无限跑。守护线程保证**判题延迟**不超
+500ms（超时即丢弃结果），但那条线程本身不会被杀（Python 没法安全杀线程），
+极端情况下会泄漏一条守护线程。已接受，见「已知边界」。
+
+### 3.4 超时为什么用守护线程
 
 | 方案 | 不用它的原因 |
 | --- | --- |
@@ -83,6 +110,25 @@ L1 规则引擎 / L2 LLM 之前给出判错结论。
 | ✅ `threading.Thread(daemon=True)` + `join(timeout)` | 不阻塞事件循环、不拖住进程退出；超时后线程被放弃（结果丢弃） |
 
 实现见 `sympy_judge._run_with_timeout(func, timeout_sec) -> (completed, value, error)`。
+
+## 3.5 抽取完整性校验（防「错的判成对」）
+
+实测 math_verify 的纯文本抽取是**有损**的，两类真实坑（都已用用例钉住）：
+
+| 输入 | `parse()` 实际返回 | 后果 |
+| --- | --- | --- |
+| `5cm`、`5m` | `[5, '5']`（单位被吞） | `5cm` 会被判成等价于 `5m`，**单位错判成对** |
+| `1+x` | `[1, '1']`（只抽到 `1`） | `1` 会被判成等价于 `1+x`，**漏写项判成对** |
+
+这类「把错的判成对」比不判更危险。因此 L3 在比较前多做一道校验
+（`_extraction_is_complete`）：**抽取结果里必须有一项原文与输入完全一致**，
+说明库真的吃下了整段答案；只抽到片段的一律拒绝判定（降级）。
+
+配合原有的两道闸门，L3 现在一共三道才敢说「等价」：
+
+1. `_is_empty_extraction` —— 抽不到表达式，拒绝（防 `verify([], [])` 返回 True）；
+2. `_extraction_is_complete` —— 只抽到片段，拒绝（防单位被吞 / 表达式被截断）；
+3. `verify()` —— 真正做等价比较。
 
 ## 4. L3 内部的两处归一（自己可控，不依赖 math_verify 的行为）
 
@@ -116,23 +162,37 @@ L1 规则引擎 / L2 LLM 之前给出判错结论。
 
 ```txt
 sympy==1.13.*        # L0 层已在用，此前漏登记，补锁避免线上裸奔
-math-verify==0.6.*   # L3 层；未安装 → L3 整层跳过，行为与升级前一致
-py-fsrs>=5.0,<6      # T04 复习调度预留；当前 fsrs_scheduler 不 import，未装无影响
+math-verify==0.9.*   # L3 层；未安装 → L3 整层跳过，行为与升级前一致（版本须 ≥0.9）
+fsrs==6.3.*          # T04 复习调度内核（包名是 fsrs，不是 py-fsrs）；未装回退 SM-2
 pytest-cov==5.*      # 仅测试期使用，缺失不影响应用启动
 ```
 
 ## 7. 测试
 
-`backend/tests/test_sympy_judge_equiv.py`（49 条参数化用例 + 路由/降级/超时/开关用例）：
+`backend/tests/test_sympy_judge_equiv.py`（**92 条，实测全绿**：
+`92 passed`，0 failed、0 skipped，math_verify 0.9.0 + sympy 1.13.3 + pytest 8.3.5）：
 
 * `EQUIV_CASES_L0`（26 条）：L0 已能覆盖的等价形式，**装没装 math_verify 都必须判对**；
 * `EQUIV_CASES_L3`（11 条）：只有 L3 能救回的形式（百分号 / 单位 / 单位大小写），
   **math_verify 未安装时整组 skip**（`requires_math_verify` 标记，不 fail）；
-* `NOT_EQUIV_CASES`（12 条）：不等价必须判错（含 `5cm` vs `5m` 这类单位错）。
+* `NOT_EQUIV_CASES`（15 条）：不等价必须判错（含 `5cm` vs `5m` 单位错、
+  `1` vs `1+x` 与 `2` vs `2x` 这类**漏写项**，专门钉死 math_verify 的有损抽取）；
+* 其余 40 条：百分号归一（5）、单位剥离（8）、抽取完整性（4）、配置开关（12）、
+  L3 路由与降级（6）、超时工具（3）、no-leak（1）。
 
 用例来源覆盖：`1/2`=`0.5`、`0.5`=`1/2`、`x+1`=`1+x`、`2x`=`2*x`、
 `\frac{1}{2}`=`0.5`、百分号与小数、带单位、全角/半角括号、多余空格、
 单位大小写、正负号位置、分数与除法式、`3.0`=`3`。
+
+### 实测延迟（Windows，math_verify 0.9.0，关掉库自带超时后）
+
+| 场景 | 耗时 |
+| --- | --- |
+| 冷启动第一次（含 `import math_verify`，**不计入 500ms 超时**） | ~850ms（一次性） |
+| 预热后 p50 / p95 / max | 1.2ms / 2.7ms / 4.3ms |
+
+500ms 预算对单题判定绰绰有余（p95 只用了 0.5%）。注意冷启动那一次不计入超时窗口——
+若把它也算进 500ms，第一道题必然超时，L3 对首题永远不生效。
 
 ## 8. 对外契约（未变更）
 

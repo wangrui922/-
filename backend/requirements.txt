@@ -35,18 +35,23 @@ sympy==1.13.*
 
 # 数学等价判定：判题 L3 层，负责 1/2≡0.5、x+1≡1+x、\frac{1}{2}≡0.5、50%≡0.5
 # 这类「等价但字面不同」的答案（LaTeX 与纯文本双支持）。
+# ⚠️ 必须 >=0.9：0.6.x 在 Windows 上 100% 不可用——它的超时装饰器用
+# ``multiprocessing.Process(target=闭包内的局部函数)``，spawn 起步方式 pickle 不了，
+# 实测每一次 parse 都抛 AttributeError 并返回空列表（Linux 走 signal 分支不受影响）。
+# 0.9.0 起 ``parsing_timeout=None`` / ``timeout_seconds=None`` 可关掉库自带超时，
+# 改由本模块自己的 500ms 守护线程超时兜底（详见 docs/judge-l3-math-verify.md）。
 # 降级策略：**函数内 lazy import + 捕获 ImportError**，未安装时 L3 整层跳过，
-# 判题自动回落到 L0（SymPy）+ L1（规则）两层，行为与升级前完全一致；
-# 另外单题判定有 500ms 超时（JUDGE_L3_TIMEOUT_MS），超时同样强制回退。
+# 判题自动回落到 L0（SymPy）+ L1（规则）两层，行为与升级前完全一致。
 # 开关：JUDGE_L3=off 可完全关掉本层。详见 docs/judge-l3-math-verify.md。
-math-verify==0.6.*
+math-verify==0.9.*
 
-# 间隔重复算法（py-fsrs）：T04 复习调度统一入口（app/services/fsrs_scheduler.py）的新内核。
+# 间隔重复算法（包名是 fsrs，不是 py-fsrs —— PyPI 上没有 py-fsrs 这个包）：
+# T04 复习调度统一入口（app/services/fsrs_scheduler.py）的新内核。
 # 降级策略：调度层在函数内 lazy import 本包；未安装 / 导入异常 / 运行期抛错时
-# 自动回退到内置 SM-2 内核，只打一条 WARNING，**不影响应用启动与现有测试**。
+# 自动回退到内置 SM-2 内核，只打一条 WARNING，应用照常启动（只是退化成 SM-2）。
 # 启用方式：装包后设环境变量 SCHEDULER=fsrs_py（默认 sm2），
 # 并用 SCHEDULER_FSRS_ROLLOUT_RATIO（0~1）按学生稳定哈希灰度放量。
-py-fsrs>=5.0,<6
+fsrs==6.3.*
 
 
 # ---------------------------------------------------------------- 测试工具

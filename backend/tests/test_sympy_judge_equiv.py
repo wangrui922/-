@@ -106,6 +106,9 @@ NOT_EQUIV_CASES: List[Tuple[str, str]] = [
     ("1/2", "2"),                       # 分数 vs 倒数
     ("3/4", "0.34"),                    # 分数 vs 近似小数
     ("5cm", "5m"),                      # **单位不同**：绝不能被剥成 5 == 5 判对
+    ("5m", "5cm"),                      # 单位不同（反向）
+    ("1", "1+x"),                       # **漏写项**：math_verify 会把 1+x 截断成 1
+    ("2", "2x"),                        # **漏写项**：math_verify 会把 2x 截断成 2
 ]
 
 
@@ -210,9 +213,18 @@ class TestL3LayerRouting:
 
     @requires_math_verify
     def test_timeout_forces_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """单题判定超时（这里把超时压到 1ms）→ 强制降级，返回 None 而不是卡住。"""
-        monkeypatch.setattr(sympy_judge, "_load_l3_config", lambda: (True, 1))
-        assert sympy_judge._math_verify_equivalent("1/2", "0.5", 1) is None
+        """单题判定超时 → 强制降级，返回 None 而不是卡住判题主流程。
+
+        这里刻意把「判定本体」换成慢函数（而不是只把超时压到 1ms 去赌机器快慢），
+        保证用例在任何机器上都是确定性的。
+        """
+
+        def _slow_parse(parse_fn: Any, text: str) -> list:
+            time.sleep(0.3)
+            return ["stub"]
+
+        monkeypatch.setattr(sympy_judge, "_math_verify_parse", _slow_parse)
+        assert sympy_judge._math_verify_equivalent("1/2", "0.5", 50) is None
 
     def test_l3_never_flips_correct_to_wrong(
         self, monkeypatch: pytest.MonkeyPatch
@@ -279,7 +291,7 @@ class TestNormalizeHelpers:
         ("correct_text", "selected_text", "expected"),
         [
             ("5cm", "5", ("5", "5")),            # 单侧带单位 → 剥
-            ("5", "5cm", ("5", "5cm")),          # 单侧带单位（反向）→ 剥
+            ("5", "5cm", ("5", "5")),            # 单侧带单位（反向）→ 剥学生侧
             ("5 cm", "5", ("5", "5")),           # 数字与单位间有空格
             ("5CM", "5cm", ("5", "5")),          # 单位相同（大小写不同）→ 一起剥
             ("5cm", "5m", ("5cm", "5m")),        # 单位不同 → 一个都不剥
@@ -292,6 +304,21 @@ class TestNormalizeHelpers:
         self, correct_text: str, selected_text: str, expected: Tuple[str, str]
     ) -> None:
         assert sympy_judge._strip_unit_pair(correct_text, selected_text) == expected
+
+    @pytest.mark.parametrize(
+        ("parsed", "text", "expected"),
+        [
+            ([5, "5"], "5", True),          # 原文完整命中 → 可以判
+            ([5, "5"], "5cm", False),       # 单位被吞（"5cm" 只抽到 "5"）→ 拒绝
+            ([1, "1"], "1+x", False),       # 表达式被截断 → 拒绝
+            ([], "1/2", False),                 # 空抽取 → 拒绝
+        ],
+    )
+    def test_extraction_is_complete(
+        self, parsed: object, text: str, expected: bool
+    ) -> None:
+        """math_verify 的抽取必须完整覆盖原文，否则拒绝判定（防「错的判成对」）。"""
+        assert sympy_judge._extraction_is_complete(parsed, text) is expected
 
 
 # ------------------------------------------------------------------ 配置开关
