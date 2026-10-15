@@ -130,7 +130,34 @@ def test_dual_run_1000_reviews_deviation_below_5pct():
 
 @pytest.mark.skipif(
     not PYFSRS_AVAILABLE,
-    reason="py-fsrs 未安装（pip install \"py-fsrs>=5.0,<6\" 后本用例自动生效）",
+    reason="py-fsrs 未安装（pip 安装 fsrs 后本用例自动生效）",
+)
+def test_good_chain_keeps_progressing():
+    """连续 Good 必须让间隔持续增长（防「卡片永久卡死在学习步」）。
+
+    这是一条**真实踩过的坑**：fsrs 6.x 用 ``Card.step`` 记录学习步进度，而我们的
+    Card 契约存不下它，每次复习都从 Card 重建 py-fsrs Card（step 恒为 0）。
+    只要 ``learning_steps`` 配成多步（如 (1,4) 天），连续 Good 的间隔就会恒为
+    [4,4,4,4,...]，卡片永远无法毕业到 Review —— 而**均值类指标看不出这个 bug**，
+    因为均值仍然可能落在阈值内。故单独加这条形状断言。
+    """
+    card, now = Card(id="p"), START
+    intervals: List[int] = []
+    for _ in range(6):
+        card, _log = _pyfsrs_review_card(card, 3, now)
+        intervals.append(int(card.scheduled_days))
+        now = now + timedelta(days=max(1, int(card.scheduled_days)))
+
+    assert len(set(intervals)) >= 4, (
+        f"连续 6 次 Good 的间隔只有 {len(set(intervals))} 种取值 {intervals}，"
+        f"疑似卡片卡死在学习步（检查 PYFSRS_LEARNING_STEPS_DAYS 是否被改成多步）"
+    )
+    assert intervals[-1] > intervals[0], f"间隔应随复习增长，实际 {intervals}"
+
+
+@pytest.mark.skipif(
+    not PYFSRS_AVAILABLE,
+    reason="py-fsrs 未安装（pip 安装 fsrs 后本用例自动生效）",
 )
 def test_pyfsrs_engine_is_deterministic():
     """同一输入两次调用结果完全一致（py-fsrs 已关闭 fuzzing）。"""
@@ -304,14 +331,24 @@ class TestSchedulerModeResolution:
         assert all(resolve_scheduler_mode(s) == MODE_FSRS_PY for s in hit)
 
     def test_pyfsrs_missing_degrades_to_sm2(self, monkeypatch, set_scheduler_mode):
-        """py-fsrs 未安装：即使开关打开也降级 SM-2，绝不阻断。"""
-        monkeypatch.delitem(sys.modules, "fsrs", raising=False)
+        """py-fsrs 未安装：即使开关打开也降级 SM-2，绝不阻断。
+
+        用 ``sys.modules['fsrs'] = None`` 构造「装不上」的场景——这样即使本机
+        真装了 fsrs，这条降级路径也能被真实覆盖（而不是 skip 掉）。
+        """
+        monkeypatch.setitem(sys.modules, "fsrs", None)
         reset_pyfsrs_cache()
         try:
-            if pyfsrs_available():  # 真身装了就跳过（本用例只验降级路径）
-                pytest.skip("py-fsrs 已安装，无法构造缺失场景")
+            assert pyfsrs_available() is False, "应构造出 py-fsrs 不可用"
             set_scheduler_mode("fsrs_py", ratio=1.0)
             assert resolve_scheduler_mode("student-1") == MODE_SM2
+
+            # 且调度结果与 SM-2 内核完全一致（降级对调用方透明）
+            scheduler = FSRSScheduler(student_id="student-1")
+            card, _log = scheduler.review_card(Card(id="c1"), 3, START)
+            sm2_card, _ = _sm2_review_card(Card(id="c1"), 3, START)
+            assert card.scheduled_days == sm2_card.scheduled_days
+            assert card.difficulty == sm2_card.difficulty
         finally:
             reset_pyfsrs_cache()
 
@@ -340,13 +377,24 @@ class TestPyfsrsBranchBehaviour:
         assert card.due is not None and card.due > START
 
     def test_pyfsrs_kwargs_are_applied(self, fake_fsrs, set_scheduler_mode):
-        """Scheduler 按「天粒度 + 关 fuzzing」口径构造。"""
+        """Scheduler 按「天粒度 + 关 fuzzing + 校准后保留率」口径构造。"""
+        from app.services.fsrs_scheduler import (
+            PYFSRS_DESIRED_RETENTION,
+            PYFSRS_LEARNING_STEPS_DAYS,
+            PYFSRS_MAXIMUM_INTERVAL_DAYS,
+        )
+
         set_scheduler_mode("fsrs_py", ratio=1.0)
         FSRSScheduler(student_id="s").review_card(Card(id="c1"), 3, START)
         kwargs = _FakeScheduler.last_kwargs
         assert kwargs.get("enable_fuzzing") is False
-        assert kwargs.get("desired_retention") == 0.9
-        assert kwargs.get("maximum_interval") == 365
+        assert kwargs.get("desired_retention") == PYFSRS_DESIRED_RETENTION
+        assert kwargs.get("maximum_interval") == PYFSRS_MAXIMUM_INTERVAL_DAYS
+        # 学习步必须是天粒度（本项目排程是整数天，分钟级学习步会排出 0 天间隔）
+        steps = kwargs.get("learning_steps") or ()
+        assert len(steps) == len(PYFSRS_LEARNING_STEPS_DAYS)
+        for step, expected_days in zip(steps, PYFSRS_LEARNING_STEPS_DAYS):
+            assert step == timedelta(days=expected_days)
 
     def test_pyfsrs_runtime_error_degrades_to_sm2(
         self, fake_fsrs, set_scheduler_mode, monkeypatch

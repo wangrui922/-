@@ -42,12 +42,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
 from app.services.review_scheduler import (
-    FIRST_INTERVAL_DAYS,
     INITIAL_EASE_FACTOR,
     LAPSE_QUALITY_THRESHOLD,
     MAX_EASE_FACTOR,
     MIN_EASE_FACTOR,
-    SECOND_INTERVAL_DAYS,
     ReviewPlan,
     ReviewState,
     _sm2_review_core,
@@ -71,8 +69,25 @@ STATE_RELEARNING = 3  # 遗忘 / 答错，重新学习中
 MODE_SM2 = "sm2"  # 既有 SM-2 内核（默认）
 MODE_FSRS_PY = "fsrs_py"  # py-fsrs 内核（未安装时自动降级 sm2）
 
-#: py-fsrs 目标保留率（0.9 = 到期时约 90% 还记得）
-PYFSRS_DESIRED_RETENTION: float = 0.9
+#: py-fsrs 目标保留率。
+#: ⚠️ 这是**对齐 SM-2 基线的校准值**，不是 FSRS 社区默认（0.9）。
+#: 实测（fsrs 6.3.2 / 1000 次双跑 / seed=20261001 / 真实重建路径）：
+#:     0.930 → 26.4%，0.936 → 7.6%，**0.938 → 2.24%**，0.940 → 6.4%，0.950 → 39.7%。
+#: 该曲线对保留率**极敏感**（±0.002 就能从 2% 跳到 6%），属 knife-edge 拟合，
+#: 仅保证在这条评分分布下与 SM-2 同节奏。内测积累真实 review_logs 后必须重新拟合，
+#: 并优先改用「真实留存率」而非「与 SM-2 对齐」作为目标函数。
+PYFSRS_DESIRED_RETENTION: float = 0.938
+#: py-fsrs 学习步（天）。本项目排程是**天粒度**（review_cards.scheduled_days 是整数天），
+#: 默认「分钟级」学习步会导致首几次复习挤在同一天、间隔 0 天。
+#:
+#: ⚠️ **必须保持单步**：我们的 Card 契约不保存 fsrs 6.x 的 ``step``（学习步进度），
+#: 每次复习都要从 Card 重建 py-fsrs Card，`step` 恒为 0。实测多步配置会让卡片
+#: **永久卡死**在学习步上——例如 (1,4) 天时连续 Good 的间隔恒为 [4,4,4,4,4,4]，
+#: 卡片永远无法毕业到 Review。单步 (1,) 时首次复习即毕业，重建无损。
+#: （详见 docs/scheduler-py-fsrs-migration.md §6.4「已知陷阱」）
+PYFSRS_LEARNING_STEPS_DAYS: tuple = (1.0,)
+#: 遗忘后的重学步（天）
+PYFSRS_RELEARNING_STEPS_DAYS: tuple = (1.0,)
 #: py-fsrs 最大间隔（天）上限，与本项目 K-12 学期尺度匹配
 PYFSRS_MAXIMUM_INTERVAL_DAYS: int = 365
 
@@ -271,9 +286,10 @@ def _build_pyfsrs_scheduler(scheduler_cls: Any) -> Any:
     """构造 py-fsrs ``Scheduler`` 实例，参数按本项目口径对齐。
 
     对齐要点：
-        * ``learning_steps`` 用**天**粒度（1 天 / 6 天），与 SM-2 的
-          ``FIRST_INTERVAL_DAYS`` / ``SECOND_INTERVAL_DAYS`` 同尺度，
-          避免默认「分钟级」学习步导致首两次复习在当天重复出现；
+        * ``learning_steps`` 用**天**粒度，与本项目整数天排程同尺度，
+          避免默认「分钟级」学习步导致首几次复习挤在同一天（间隔 0 天）；
+        * ``desired_retention`` 与学习步经 1000 次双跑实测校准（见常量处注释），
+          目的是让新内核排出的间隔与现状 SM-2 对齐，切换对学生无感；
         * ``enable_fuzzing=False`` —— 关闭随机模糊化，保证同输入同输出可回归；
         * ``maximum_interval=365`` —— K-12 学期尺度上限，避免间隔膨胀到数十年。
 
@@ -282,11 +298,12 @@ def _build_pyfsrs_scheduler(scheduler_cls: Any) -> Any:
     try:
         return scheduler_cls(
             desired_retention=PYFSRS_DESIRED_RETENTION,
-            learning_steps=(
-                timedelta(days=FIRST_INTERVAL_DAYS),
-                timedelta(days=SECOND_INTERVAL_DAYS),
+            learning_steps=tuple(
+                timedelta(days=float(d)) for d in PYFSRS_LEARNING_STEPS_DAYS
             ),
-            relearning_steps=(timedelta(days=FIRST_INTERVAL_DAYS),),
+            relearning_steps=tuple(
+                timedelta(days=float(d)) for d in PYFSRS_RELEARNING_STEPS_DAYS
+            ),
             maximum_interval=PYFSRS_MAXIMUM_INTERVAL_DAYS,
             enable_fuzzing=False,
         )
@@ -327,12 +344,22 @@ def _pyfsrs_difficulty_to_ef(difficulty: float) -> float:
 
 
 def _to_pyfsrs_state(state_cls: Any, state: int) -> Any:
-    """我们的 state（0-3）→ py-fsrs ``State``；构造失败时回落原始整数。"""
+    """我们的 state（0-3）→ py-fsrs ``State``。
+
+    版本差异：fsrs 5.x 有 ``State.New == 0``；**6.x 移除了 New**
+    （只剩 Learning=1 / Review=2 / Relearning=3）。因此新卡（0）在 6.x 上
+    要落成 ``Learning``，否则 ``State(0)`` 会抛 ValueError。
+    """
     value: int = int(state)
     try:
         return state_cls(value)
     except (TypeError, ValueError):
-        return value
+        pass
+    # 新卡在 6.x 上没有 New：按 Learning 处理（step 由 Card 默认给出）
+    try:
+        return state_cls(STATE_LEARNING)
+    except (TypeError, ValueError):
+        return STATE_LEARNING
 
 
 def _from_pyfsrs_state(state_obj: Any, lapsed: bool, reps: int) -> int:
@@ -365,12 +392,19 @@ def _to_pyfsrs_card(mod: Dict[str, Any], card: Card) -> Any:
     """把我们的 :class:`Card` 转成 py-fsrs 的 Card。
 
     difficulty 走 EF→py-fsrs 映射（不直接落 1~10 值），保证与 review_cards
-    既有列语义一致、回滚无损。构造参数不被支持时逐字段 setattr 兜底。
+    既有列语义一致、回滚无损。
+
+    版本差异：fsrs 6.x 的 Card **没有** ``elapsed_days`` / ``scheduled_days`` /
+    ``reps`` / ``lapses`` 四个字段（5.x 有）。这里统一按「先构造、缺字段跳过」
+    处理；同时 6.x 新卡的 ``stability`` / ``difficulty`` 默认是 ``None``
+    （由首次 rating 反推），所以**新卡不传这两个值**，避免用我们的 EF 去污染
+    FSRS 的初始难度估计。
     """
+    #: 从未复习过的全新卡片（有 last_review 但 reps=0 属于「遗忘后重学」，不算全新）
+    brand_new: bool = card.last_review is None and int(card.reps or 0) == 0
+
     kwargs: Dict[str, Any] = {
         "due": _as_utc(card.due),
-        "stability": float(card.stability or 0.0),
-        "difficulty": _ef_to_pyfsrs_difficulty(_sm2_restore_ef(card)),
         "elapsed_days": int(card.elapsed_days or 0),
         "scheduled_days": int(card.scheduled_days or 0),
         "reps": int(card.reps or 0),
@@ -378,6 +412,9 @@ def _to_pyfsrs_card(mod: Dict[str, Any], card: Card) -> Any:
         "state": _to_pyfsrs_state(mod["State"], card.state),
         "last_review": _as_utc(card.last_review),
     }
+    if not brand_new:
+        kwargs["stability"] = float(card.stability or 0.0)
+        kwargs["difficulty"] = _ef_to_pyfsrs_difficulty(_sm2_restore_ef(card))
     if kwargs["due"] is None:
         # 全新卡片没有 due：交给 py-fsrs 用默认值填充，避免 None 触发类型校验
         kwargs.pop("due")
@@ -474,18 +511,40 @@ def _pyfsrs_review_card(
         logger.warning("py-fsrs 调度失败，本次降级 SM-2：%s", exc)
         return _sm2_review_card(card, rating, now)
 
-    scheduled_days = int(round(float(getattr(py_next, "scheduled_days", 0) or 0)))
-    due = getattr(py_next, "due", None)
+    # ---- 读回结果（fsrs 5.x / 6.x 字段差异在这里收敛）-------------------
+    # 6.x 的 Card 没有 scheduled_days / reps / lapses，需自行推导或自维护
+    due = _as_utc(getattr(py_next, "due", None))
     if due is None:
-        due = now + timedelta(days=max(1, scheduled_days))
-    stability = float(getattr(py_next, "stability", 0.0) or 0.0)
-    reps = int(getattr(py_next, "reps", card.reps + 1) or 0)
-    lapses = int(getattr(py_next, "lapses", card.lapses) or 0)
-    state = _from_pyfsrs_state(getattr(py_next, "state", None), lapsed, reps)
-    # difficulty 列统一存 SM-2 EF（回滚无损的核心约定）
-    difficulty = _ef_to_difficulty(
-        _pyfsrs_difficulty_to_ef(getattr(py_next, "difficulty", 5.0))
+        due = now + timedelta(days=1)
+
+    raw_scheduled = getattr(py_next, "scheduled_days", None)
+    if raw_scheduled is not None:
+        scheduled_days = int(round(float(raw_scheduled or 0)))
+    else:
+        # 6.x：间隔 = due - 本次复习时刻（天）
+        scheduled_days = int(
+            round(max(0.0, (due - now).total_seconds()) / 86400.0)
+        )
+
+    stability = float(getattr(py_next, "stability", None) or 0.0)
+
+    raw_reps = getattr(py_next, "reps", None)
+    reps = int(raw_reps) if raw_reps is not None else (0 if lapsed else card.reps + 1)
+    raw_lapses = getattr(py_next, "lapses", None)
+    lapses = (
+        int(raw_lapses)
+        if raw_lapses is not None
+        else card.lapses + (1 if lapsed else 0)
     )
+    state = _from_pyfsrs_state(getattr(py_next, "state", None), lapsed, reps)
+
+    # difficulty 列统一存 SM-2 EF（回滚无损的核心约定）。
+    # 6.x 新卡首复习前 difficulty 可能为 None → 沿用卡上既有 EF。
+    raw_difficulty = getattr(py_next, "difficulty", None)
+    if raw_difficulty is None:
+        difficulty = _ef_to_difficulty(_sm2_restore_ef(card))
+    else:
+        difficulty = _ef_to_difficulty(_pyfsrs_difficulty_to_ef(raw_difficulty))
 
     new_card = Card(
         id=card.id,
