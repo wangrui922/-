@@ -7,6 +7,7 @@
  *     /dashboard        学习画像（默认首页）
  *     /ai               AI 老师
  *     /practice         题库练习（题库消费层 · F1，需登录，**不加** meta.public）
+ *     /today-plan       今日学习计划（T07 自适应编排，只读，不加 meta.public）
  *     /mistakes         错题本
  *
  * 守卫口径：除 meta.public 的页面外，无 token 一律跳 /login（带 redirect 回跳）。
@@ -45,6 +46,12 @@ const routes: RouteRecordRaw[] = [
         name: 'practice',
         component: () => import('@/views/Practice.vue'),
         meta: { title: '练习' },
+      },
+      {
+        path: 'today-plan',
+        name: 'today-plan',
+        component: () => import('@/views/TodayPlan.vue'),
+        meta: { title: '今日计划' },
       },
       {
         path: 'mistakes',
