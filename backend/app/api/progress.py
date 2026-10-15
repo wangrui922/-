@@ -1,8 +1,9 @@
 """练习进度云同步 API。
 
-    POST /api/progress          保存当前进度（UPSERT，每次练习状态变化时调用）
-    GET  /api/progress          读取最新进度（登录后进入练习页时调用）
-    DELETE /api/progress        清空进度（用户手动放弃/完成时调用）
+    POST /api/progress              保存当前进度（UPSERT，每次练习状态变化时调用）
+    GET  /api/progress              读取最新进度（登录后进入练习页时调用）
+    GET  /api/progress/adaptive-plan 今日学习计划（T07 自适应编排，只读）
+    DELETE /api/progress            清空进度（用户手动放弃/完成时调用）
 
 冲突解决策略：
     前端每次保存时带 ``client_saved_at``（ms 时间戳）。
@@ -19,7 +20,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -27,11 +28,16 @@ from app.core.deps import CurrentUser, get_current_user
 from app.core.response import ok
 from app.db import get_db
 from app.models.progress import PracticeProgress
+from app.services.adaptive_plan_service import build_adaptive_plan
 from app.services.learning_service import require_student_id
 
 logger = logging.getLogger("app.api.progress")
 
 router = APIRouter(prefix="/progress", tags=["progress"])
+
+# ---- T07：今日学习计划的题量上下界（与 practice_service 保持同一口径）--------
+ADAPTIVE_PLAN_MIN_COUNT: int = 1
+ADAPTIVE_PLAN_MAX_COUNT: int = 30
 
 
 class ProgressSaveIn(BaseModel):
@@ -119,6 +125,72 @@ def save_progress(
     db.refresh(progress)
     logger.info("progress saved: student=%s phase=%s", sid, body.phase)
     return ok({"saved": True, "updated_at": progress.updated_at.isoformat()})
+
+
+def _adaptive_plan_to_api(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """把编排层的 snake_case 信封转成 camelCase（DB/内部 snake，出入参 camel）。"""
+    items = payload.get("items")
+    return {
+        "generatedAt": payload.get("generated_at"),
+        "engineVersion": payload.get("engine_version"),
+        "total": payload.get("total", 0),
+        "actualCount": payload.get("actual_count", 0),
+        "missCount": payload.get("miss_count", 0),
+        "questionIds": payload.get("question_ids") or [],
+        "items": [
+            {
+                "knowledgePointId": item.get("knowledge_point_id", ""),
+                "kpName": item.get("kp_name", ""),
+                "questionCount": item.get("question_count", 0),
+                "difficultyLevels": item.get("difficulty_levels") or [],
+                "strategy": item.get("strategy", ""),
+                "reason": item.get("reason", ""),
+            }
+            for item in (items if isinstance(items, list) else [])
+        ],
+        "relaxationSteps": payload.get("relaxation_steps") or [],
+    }
+
+
+@router.get("/adaptive-plan")
+def get_adaptive_plan(
+    count: Optional[int] = Query(
+        default=None, ge=ADAPTIVE_PLAN_MIN_COUNT, le=ADAPTIVE_PLAN_MAX_COUNT
+    ),
+    grade: Optional[int] = Query(default=None, ge=1, le=12),
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """今日学习计划（T07 自适应编排，**只读**，不建会话、不写库）。
+
+    依次经过 优先级排序 → 难度带决策 → 题量配额 → 逐计划抽题，产出今日该练的
+    知识点清单与题目 ID。``adaptive.enabled=false`` 时自动降级为普通抽题，
+    出参 ``engineVersion`` 会变成 ``legacy-draw``。
+
+    Query:
+        count: 本批题数（1~30），缺省 10。
+        grade: 年级筛选（1~12），缺省不限。
+
+    Returns:
+        ``{code:0,msg:"ok",data:{generatedAt, engineVersion, total, actualCount,
+        missCount, questionIds, items[], relaxationSteps}}``。
+
+    Raises:
+        ApiError: 400 未绑定学生 / 参数越界；401 未登录。
+    """
+    sid = require_student_id(current)
+    payload = build_adaptive_plan(db, student_id=sid, count=count, grade=grade)
+    logger.info(
+        "adaptive-plan student=%s count=%s grade=%s → engine=%s total=%s actual=%s items=%d",
+        sid,
+        count,
+        grade,
+        payload.get("engine_version"),
+        payload.get("total"),
+        payload.get("actual_count"),
+        len(payload.get("items") or []),
+    )
+    return ok(_adaptive_plan_to_api(payload))
 
 
 @router.get("")

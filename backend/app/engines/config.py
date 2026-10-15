@@ -68,6 +68,12 @@ _PRIORITY_OUTDEG_DIVISOR_DEFAULT: int = 5
 _PRIORITY_RECENT_WINDOW_DEFAULT: int = 7
 _PRIORITY_STALE_AFTER_DEFAULT: int = 14
 _PRIORITY_TOP_N_DEFAULT: int = 5
+# --- T07 裁决①：``results`` 后处理修正因子（全部有缺省，不配 = 今天的行为）---
+_PRIORITY_WRONG_RATE_FLOOR_DEFAULT: float = 0.5
+_PRIORITY_WRONG_BOOST_DEFAULT: float = 0.25
+_PRIORITY_WRONG_SATURATION_DEFAULT: int = 3
+_PRIORITY_RECENT_ATTEMPTS_CAP_DEFAULT: int = 10
+_PRIORITY_SATURATION_PENALTY_DEFAULT: float = 0.85
 
 
 def _non_negative(value: Any, default: float) -> float:
@@ -174,6 +180,14 @@ class AdaptiveConfig:
         priority_recent_window: 近期练习窗口（天），窗口内练过才降权。
         priority_stale_after: 陈旧阈值（天），超过则按超出比例加分。
         priority_top_n: 缺省返回条数。
+        priority_wrong_rate_floor: T07 C1「错题回炉」触发的错误率门槛（0~1）。
+            近窗口错误率 >= 该值才取消「近期练过」降权并加分。
+        priority_wrong_boost: C1 的加分上限（取消降权之外再往上加的分）。
+            配成 0 = 只保留「取消近期降权」，用于 A/B 观察是否提得太猛。
+        priority_wrong_saturation: C1 加几分打满（近 3 次错即满分）。
+        priority_recent_attempts_cap: C2「题量饱和」阈值（近窗口作答次数）。
+            超过则乘上 ``priority_saturation_penalty`` 抑制，防单点连刷。
+        priority_saturation_penalty: C2 的抑制系数（0~1）。配成 1.0 = 关闭抑制。
         generation_default_total: 未指定题数时的批次默认题数。
         generation_max_total: 单批题数硬上限。
         generation_max_knowledge_points: 单批最多覆盖的知识点数。
@@ -203,6 +217,11 @@ class AdaptiveConfig:
     priority_recent_window: int = 7
     priority_stale_after: int = 14
     priority_top_n: int = 5
+    priority_wrong_rate_floor: float = 0.5
+    priority_wrong_boost: float = 0.25
+    priority_wrong_saturation: float = 3.0
+    priority_recent_attempts_cap: int = 10
+    priority_saturation_penalty: float = 0.85
     generation_default_total: int = 5
     generation_max_total: int = 20
     generation_max_knowledge_points: int = 3
@@ -258,6 +277,34 @@ class AdaptiveConfig:
                 0, to_int(self.priority_stale_after, _PRIORITY_STALE_AFTER_DEFAULT)
             ),
             "priority_top_n": max(1, to_int(self.priority_top_n, _PRIORITY_TOP_N_DEFAULT)),
+            "priority_wrong_rate_floor": clamp(
+                to_float(
+                    self.priority_wrong_rate_floor, _PRIORITY_WRONG_RATE_FLOOR_DEFAULT
+                ),
+                0.0,
+                1.0,
+            ),
+            "priority_wrong_boost": _non_negative(
+                self.priority_wrong_boost, _PRIORITY_WRONG_BOOST_DEFAULT
+            ),
+            "priority_wrong_saturation": _positive(
+                self.priority_wrong_saturation, _PRIORITY_WRONG_SATURATION_DEFAULT
+            ),
+            "priority_recent_attempts_cap": max(
+                0,
+                to_int(
+                    self.priority_recent_attempts_cap,
+                    _PRIORITY_RECENT_ATTEMPTS_CAP_DEFAULT,
+                ),
+            ),
+            "priority_saturation_penalty": clamp(
+                to_float(
+                    self.priority_saturation_penalty,
+                    _PRIORITY_SATURATION_PENALTY_DEFAULT,
+                ),
+                0.0,
+                1.0,
+            ),
             "generation_default_total": max(
                 1, to_int(self.generation_default_total, 5)
             ),
@@ -337,6 +384,36 @@ _SPEC_TABLE: Tuple[Tuple[str, str, str, Any], ...] = (
         _PRIORITY_STALE_AFTER_DEFAULT,
     ),
     ("priority.top_n", "priority_top_n", _KIND_INT, _PRIORITY_TOP_N_DEFAULT),
+    (
+        "priority.wrong_rate_floor",
+        "priority_wrong_rate_floor",
+        _KIND_FLOAT,
+        _PRIORITY_WRONG_RATE_FLOOR_DEFAULT,
+    ),
+    (
+        "priority.wrong_boost",
+        "priority_wrong_boost",
+        _KIND_FLOAT,
+        _PRIORITY_WRONG_BOOST_DEFAULT,
+    ),
+    (
+        "priority.wrong_saturation",
+        "priority_wrong_saturation",
+        _KIND_FLOAT,
+        _PRIORITY_WRONG_SATURATION_DEFAULT,
+    ),
+    (
+        "priority.recent_attempts_cap",
+        "priority_recent_attempts_cap",
+        _KIND_INT,
+        _PRIORITY_RECENT_ATTEMPTS_CAP_DEFAULT,
+    ),
+    (
+        "priority.saturation_penalty",
+        "priority_saturation_penalty",
+        _KIND_FLOAT,
+        _PRIORITY_SATURATION_PENALTY_DEFAULT,
+    ),
     ("generation.default_total", "generation_default_total", _KIND_INT, 5),
     ("generation.max_total", "generation_max_total", _KIND_INT, 20),
     (

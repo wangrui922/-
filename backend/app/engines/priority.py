@@ -20,6 +20,18 @@ R5 ``stale``：超过 ``PRIORITY_STALE_AFTER`` 天没练的知识点按天数加
 R6 ``recent``：``PRIORITY_RECENT_WINDOW`` 天内刚练过的按「离今天数越近降权越多」
    递减系数降权，用间隔练习代替同一知识点机械连刷；
 R7 稳定排序与去重：同一知识点只保留一项，同分按掌握度、ID 字典序，跨进程可复现。
+R8 ``results`` 后处理修正（T07 裁决①）：近窗口作答流水只在**时间/强度修正层**
+   起作用，不新增权重分量——``mastery`` 已是平滑正确率，再加一份「准不准」
+   等于同一信号算三遍。两条规则：
+
+   * **C1 错题回炉**：近窗口 ``wrong >= 1`` 且 ``wrong_rate >= wrong_rate_floor``
+     → 取消 R6 的「近期练过」降权（``RECENT := 1.0``），并加
+     ``wrong_boost × min(1, wrong / wrong_saturation)`` 分；
+   * **C2 题量饱和**：近窗口 ``recent_attempts > recent_attempts_cap``
+     → 乘 ``saturation_penalty`` 抑制，防止一天全砸在同一个知识点上。
+
+   落地公式 ``raw = (BASE + STALE) × RECENT × SATURATION + BOOST``。
+   **``results=None`` 时 BOOST=0、SATURATION=1、RECENT 不变，输出与改造前逐位相同。**
 
 缺省权重 ``PRIORITY_WEIGHTS_DEFAULT`` 可由调用方通过
 ``adaptive_config.priority_weights`` 覆盖（dict 或 JSON 字符串均可，缺 key 回退缺省）。
@@ -61,6 +73,18 @@ PRIORITY_LOW_CONFIDENCE: float = 0.5
 #: 缺省返回条数
 PRIORITY_TOP_N_DEFAULT: int = 5
 
+# ------------------------------------------- T07 裁决①：results 修正因子缺省值
+#: C1 触发的错误率门槛（近窗口错题占比）
+PRIORITY_WRONG_RATE_FLOOR: float = 0.5
+#: C1 的加分上限（在「取消近期降权」之外再往上加）
+PRIORITY_WRONG_BOOST: float = 0.25
+#: C1 加几分打满（近 3 次错 → 满分）
+PRIORITY_WRONG_SATURATION: float = 3.0
+#: C2 触发阈值：近窗口作答次数超过它即视为单点刷量
+PRIORITY_RECENT_ATTEMPTS_CAP: int = 10
+#: C2 的抑制系数（配成 1.0 = 关闭抑制）
+PRIORITY_SATURATION_PENALTY: float = 0.85
+
 #: 掌握度 / 置信度等 0~1 字段的候选键名（兼容多种上游口径）
 _MASTERY_KEYS: Tuple[str, ...] = ("mastery", "mastery_score", "score")
 _CONFIDENCE_KEYS: Tuple[str, ...] = ("confidence", "conf")
@@ -72,6 +96,16 @@ _LAST_PRACTICED_KEYS: Tuple[str, ...] = (
     "last_reviewed_at",
     "updated_at",
 )
+
+#: ``results`` 里的作答时间字段（T07）：**只是兜底**，主口径永远是掌握度行的时间。
+#: 单独列一组而``不``并进 ``_LAST_PRACTICED_KEYS``，是为了让「仅当掌握度行缺
+#: 时间字段时兜底」这条语义在代码里显式可读——混在一起就是隐式覆盖了。
+_LAST_RESULT_KEYS: Tuple[str, ...] = ("last_result_at", "last_attempt_at")
+
+#: ``results`` 每项里「近窗口作答次数」的候选键名
+_RESULT_ATTEMPTS_KEYS: Tuple[str, ...] = ("recent_attempts", "attempts", "count")
+#: ``results`` 每项里「近窗口答对次数」的候选键名
+_RESULT_CORRECT_KEYS: Tuple[str, ...] = ("recent_correct", "correct", "correct_count")
 
 #: 一天的秒数（把时间差换算成天）
 _SECONDS_PER_DAY: float = 86400.0
@@ -177,6 +211,12 @@ def _divisor(value: float, default: float) -> float:
     return number if number > 0.0 else float(default)
 
 
+def _non_negative(value: Any, default: float) -> float:
+    """非负钳制：负数回退缺省值（脏配置不得把得分算成负数）。"""
+    number = to_float(value, default)
+    return number if number >= 0.0 else float(default)
+
+
 # ============================================================ 上下文统计
 def _gap_counts(gaps: Any) -> Dict[str, int]:
     """统计每个知识点作为「前置缺口」被点名的次数。"""
@@ -245,11 +285,40 @@ def _result_map(results: Any) -> Dict[str, Mapping[str, Any]]:
 
 
 # ============================================================ 评分
-def _reason(kp_name: str, mastery: float, gap_count: int, stale: bool, recent: bool) -> str:
-    """生成前端可直接展示的中文教学理由（按最关键的信号排序）。"""
+def _reason(
+    kp_name: str,
+    mastery: float,
+    gap_count: int,
+    stale: bool,
+    recent: bool,
+    *,
+    wrong: int = 0,
+    attempts: int = 0,
+) -> str:
+    """生成前端可直接展示的中文教学理由（按最关键的信号排序）。
+
+    T07 新增一路「错题回炉」，排在 ``gap`` 之后、``stale`` 之前——
+    **错题优先于遗忘**：刚错过的题当天就该回炉，比「很久没练」更急。
+    ``wrong``/``attempts`` 为 0（即未触发 C1）时该分支不生效，
+    与改造前的文案完全一致。
+
+    Args:
+        kp_name: 知识点名称。
+        mastery: 掌握度。
+        gap_count: 该知识点作为前置缺口被点名的次数。
+        stale: 是否久未练习。
+        recent: 是否近期练过。
+        wrong: 近窗口答错次数（仅在 C1 触发时由调用方传入，否则为 0）。
+        attempts: 近窗口作答次数（同上）。
+
+    Returns:
+        一句话中文理由。
+    """
     display_name = kp_name or "该知识点"
     if gap_count > 0:
         return f"「{display_name}」是未掌握的前置基础，建议先补牢再往后学。"
+    if wrong >= 1 and attempts > 0:
+        return f"「{display_name}」刚做过 {attempts} 题错了 {wrong} 题，今天先回炉订正。"
     if stale:
         return f"「{display_name}」很久没练了，先做几道把它捡回来。"
     if mastery < PRIORITY_LOW_MASTERY:
@@ -257,6 +326,104 @@ def _reason(kp_name: str, mastery: float, gap_count: int, stale: bool, recent: b
     if recent:
         return f"「{display_name}」近期已经练过，适当错峰后再复习。"
     return f"「{display_name}」掌握还不稳，建议安排一轮针对性练习。"
+
+
+# ============================================================ results 修正
+def _wrong_metrics(metrics: Any, settings: AdaptiveConfig) -> Tuple[int, int, bool]:
+    """从近窗口作答指标派生 ``(attempts, wrong, c1_triggered)``。
+
+    ``wrong`` / ``wrong_rate`` 一律由本函数从 ``recent_attempts`` /
+    ``recent_correct`` 派生（**上游禁止直接传**），保证单一推导口径。
+
+    Args:
+        metrics: ``results`` 里该知识点那一项（dict）；非 Mapping 视作缺失。
+        settings: 阈值配置（读 ``priority_wrong_rate_floor``）。
+
+    Returns:
+        ``(attempts, wrong, triggered)``。``attempts <= 0`` 时恒为
+        ``(0, 0, False)``——没有近窗口数据就不参与修正。
+    """
+    if not isinstance(metrics, Mapping):
+        return 0, 0, False
+
+    attempts = max(0, to_int(_field(metrics, _RESULT_ATTEMPTS_KEYS), 0))
+    if attempts <= 0:
+        return 0, 0, False
+
+    correct = clamp(
+        to_float(_field(metrics, _RESULT_CORRECT_KEYS), 0.0), 0.0, float(attempts)
+    )
+    wrong = int(clamp(float(attempts) - correct, 0.0, float(attempts)))
+    floor = clamp(
+        to_float(
+            getattr(settings, "priority_wrong_rate_floor", PRIORITY_WRONG_RATE_FLOOR),
+            PRIORITY_WRONG_RATE_FLOOR,
+        ),
+        0.0,
+        1.0,
+    )
+    triggered = wrong >= 1 and (wrong / float(attempts)) >= floor
+    return attempts, wrong, triggered
+
+
+def _result_boost(
+    metrics: Any,
+    cfg: AdaptiveConfig,
+    *,
+    recent: float = 1.0,
+) -> Tuple[float, float, float]:
+    """按近窗口作答结果给出三个后处理修正因子 ``(RECENT, SATURATION, BOOST)``。
+
+    T07 裁决① 的落地：``raw = (BASE + STALE) × RECENT × SATURATION + BOOST``。
+    三个返回值**只在真的触发时**才偏离中立项（``RECENT`` 原值 / ``1.0`` / ``0.0``），
+    因此 ``metrics`` 缺失时输出与改造前逐位一致。
+
+    Args:
+        metrics: ``results`` 里该知识点那一项（dict）；缺失时三因子全为中立项。
+        cfg: 阈值配置（读五个 ``priority_*`` 项，缺属性回退模块缺省值）。
+        recent: 由 R6 算出的「近期练过」降权系数，作为 ``RECENT`` 的初值。
+
+    Returns:
+        ``(recent_factor, saturation, boost)``。
+    """
+    attempts, wrong, triggered = _wrong_metrics(metrics, cfg)
+    factor = clamp(to_float(recent, 1.0), 0.0, 1.0)
+    if attempts <= 0:
+        return factor, 1.0, 0.0
+
+    boost_cap = _non_negative(
+        getattr(cfg, "priority_wrong_boost", PRIORITY_WRONG_BOOST),
+        PRIORITY_WRONG_BOOST,
+    )
+    saturation_divisor = _divisor(
+        getattr(cfg, "priority_wrong_saturation", PRIORITY_WRONG_SATURATION),
+        PRIORITY_WRONG_SATURATION,
+    )
+    cap = max(
+        0,
+        to_int(
+            getattr(cfg, "priority_recent_attempts_cap", PRIORITY_RECENT_ATTEMPTS_CAP),
+            PRIORITY_RECENT_ATTEMPTS_CAP,
+        ),
+    )
+    penalty = clamp(
+        to_float(
+            getattr(cfg, "priority_saturation_penalty", PRIORITY_SATURATION_PENALTY),
+            PRIORITY_SATURATION_PENALTY,
+        ),
+        0.0,
+        1.0,
+    )
+
+    # C1 错题回炉：取消 R6 的近期降权，并按错题量加分（近 3 次错即打满）
+    boost = 0.0
+    if triggered:
+        factor = 1.0
+        boost = boost_cap * min(1.0, wrong / saturation_divisor)
+
+    # C2 题量饱和：单点刷太多就整体压一档，避免一天全砸在同一个知识点上
+    saturation = penalty if attempts > cap else 1.0
+    return factor, saturation, boost
 
 
 def _score(
@@ -271,32 +438,61 @@ def _score(
     degree_divisor: float,
     recent_window: int,
     stale_after: int,
+    metrics: Any = None,
+    settings: Optional[AdaptiveConfig] = None,
 ) -> Tuple[float, bool, bool]:
     """算单个知识点的优先级得分。
+
+    先把原本 ``if/elif`` 互斥的两个分支拆成正交量 ``STALE`` / ``RECENT``
+    （数学上与原写法等价），**再**插入 ``results`` 的三个修正因子::
+
+        BASE  = 四项加权和
+        STALE = days > stale_after ? (days - stale_after)/stale_after : 0
+        RECENT= 窗口内 ? (days+1)/(recent_window+1) : 1
+        raw   = (BASE + STALE) × RECENT × SATURATION + BOOST
+
+    Args:
+        mastery: 掌握度（已夹紧到 0~1）。
+        confidence: 置信度（已夹紧到 0~1）。
+        gap_count: 前置缺口被点名次数。
+        degree: 图谱出度。
+        days: 距上次练习天数；``None`` 表示无时间数据。
+        weights: 四项权重。
+        gap_divisor: 缺口归一化除数。
+        degree_divisor: 出度归一化除数。
+        recent_window: 近期窗口（天）。
+        stale_after: 陈旧阈值（天）。
+        metrics: 该知识点在 ``results`` 里的指标项；``None`` 时不参与修正。
+        settings: 阈值配置；``None`` 时用缺省配置。
 
     Returns:
         ``(score, is_stale, is_recent)``——后两个布尔值供理由文案使用。
     """
     gap_ratio = min(float(gap_count), gap_divisor) / gap_divisor
     degree_ratio = min(float(degree), degree_divisor) / degree_divisor
-    score = (
+    base = (
         (1.0 - mastery) * weights.get("mastery", 0.0)
         + (1.0 - confidence) * weights.get("confidence", 0.0)
         + gap_ratio * weights.get("gap", 0.0)
         + degree_ratio * weights.get("degree", 0.0)
     )
 
-    is_stale = False
-    is_recent = False
-    if days is not None:
-        if days > stale_after:
-            is_stale = True
-            score += (days - stale_after) / stale_after
-        elif days <= recent_window and recent_window > 0:
-            is_recent = True
-            score *= (days + 1.0) / (recent_window + 1.0)
+    is_stale = days is not None and days > stale_after
+    is_recent = (
+        days is not None and not is_stale and recent_window > 0 and days <= recent_window
+    )
+    stale = (days - stale_after) / stale_after if is_stale else 0.0
+    recent_factor = (days + 1.0) / (recent_window + 1.0) if is_recent else 1.0
 
-    return round(clamp(score, 0.0, 1.0), 4), is_stale, is_recent
+    cfg: AdaptiveConfig = (
+        settings if isinstance(settings, AdaptiveConfig) else DEFAULT_ADAPTIVE_CONFIG
+    )
+    recent_factor, saturation, boost = _result_boost(
+        metrics, cfg, recent=recent_factor
+    )
+
+    raw = (base + stale) * recent_factor * saturation + boost
+    return round(clamp(raw, 0.0, 1.0), 4), is_stale, is_recent
 
 
 def rank_priorities(
@@ -365,7 +561,12 @@ def rank_priorities(
         extra = result_map.get(kp_id)
         stamp = _field(item, _LAST_PRACTICED_KEYS)
         if extra is not None:
-            stamp = _field(extra, _LAST_PRACTICED_KEYS, stamp)
+            override = _field(extra, _LAST_PRACTICED_KEYS)
+            if override is None and stamp is None:
+                # results.last_result_at 只是兜底：掌握度行有时间时以它为准
+                override = _field(extra, _LAST_RESULT_KEYS)
+            if override is not None:
+                stamp = override
         days = _days_between(now, stamp)
 
         gap_count = gap_counts.get(kp_id, 0)
@@ -381,7 +582,11 @@ def rank_priorities(
             degree_divisor=degree_divisor,
             recent_window=recent_window,
             stale_after=stale_after,
+            metrics=extra,
+            settings=settings,
         )
+        # 错题回炉文案只在 C1 真的触发时才给（wrong=0 → 走原有分支，文案不变）
+        hint_attempts, hint_wrong, hint_triggered = _wrong_metrics(extra, settings)
         ranked.append(
             PriorityItem(
                 knowledge_point_id=kp_id,
@@ -389,7 +594,15 @@ def rank_priorities(
                 score=score,
                 mastery=mastery,
                 level=int(clamp(to_float(_field(item, ("level", "mastery_level")), 0.0), 0.0, 3.0)),
-                reason=_reason(kp_name, mastery, gap_count, is_stale, is_recent),
+                reason=_reason(
+                    kp_name,
+                    mastery,
+                    gap_count,
+                    is_stale,
+                    is_recent,
+                    wrong=hint_wrong if hint_triggered else 0,
+                    attempts=hint_attempts if hint_triggered else 0,
+                ),
             )
         )
 
@@ -410,8 +623,13 @@ __all__ = [
     "PRIORITY_LOW_MASTERY",
     "PRIORITY_OUTDEG_DIVISOR",
     "PRIORITY_RECENT_WINDOW",
+    "PRIORITY_RECENT_ATTEMPTS_CAP",
+    "PRIORITY_SATURATION_PENALTY",
     "PRIORITY_STALE_AFTER",
     "PRIORITY_TOP_N_DEFAULT",
     "PRIORITY_WEIGHTS_DEFAULT",
+    "PRIORITY_WRONG_BOOST",
+    "PRIORITY_WRONG_RATE_FLOOR",
+    "PRIORITY_WRONG_SATURATION",
     "rank_priorities",
 ]
