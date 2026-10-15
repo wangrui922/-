@@ -1,15 +1,37 @@
 # -*- coding: utf-8 -*-
-"""Paramiko 部署脚本：上传游戏化后端 + 前端构建产物，执行数据库迁移，重启容器。"""
+"""Paramiko 部署脚本：上传游戏化后端 + 前端构建产物，执行数据库迁移，重启容器。
+
+凭据一律走环境变量，禁止硬编码（T02 安全整改，对齐 deploy/check_server.py 惯例）：
+    set COACH_SSH_PASSWORD=xxxx        (Windows)
+    export COACH_SSH_PASSWORD=xxxx     (Linux/macOS)
+可选覆盖：COACH_SSH_HOST / COACH_SSH_USER / COACH_SSH_KEY（私钥文件路径）
+
+本地源目录已随仓库迁移全部失效（旧路径 D:\\制作网页\\错题教练 已删除），
+现改为环境变量注入、缺失即报错，不再有指向旧磁盘位置的硬编码：
+    COACH_SRC_BACKEND   后端 app 目录（待上传的 backend/app）
+    COACH_SRC_WEBDIST   前端构建产物目录（student-web/dist）
+    COACH_SRC_SCRIPT    generate_scenario_bank.py 路径
+"""
 import os
 import sys
 import io
 import zipfile
 import paramiko
 
-HOST = "118.25.44.126"
-USER = "ubuntu"
-KEY_PATH = r"D:\制作网页\错题教练\AIjiaolian.pem"
+HOST = os.environ.get("COACH_SSH_HOST", "118.25.44.126")
+USER = os.environ.get("COACH_SSH_USER", "ubuntu")
+KEY_PATH = os.environ.get("COACH_SSH_KEY", "")
+if not KEY_PATH:
+    raise SystemExit(
+        "缺少环境变量 COACH_SSH_KEY（SSH 私钥路径，凭据不得写入代码；"
+        "原硬编码路径 D:\\制作网页\\错题教练\\AIjiaolian.pem 已随旧副本删除，"
+        "私钥现由用户保管在仓库外）"
+    )
 DEPLOY_DIR = "/home/ubuntu/coach"
+
+SRC_BACKEND = os.environ.get("COACH_SRC_BACKEND", "")
+SRC_WEBDIST = os.environ.get("COACH_SRC_WEBDIST", "")
+SRC_SCRIPT = os.environ.get("COACH_SRC_SCRIPT", "")
 
 
 def get_client():
@@ -46,6 +68,11 @@ def exec_cmd(c, cmd):
 
 
 def main():
+    if not (SRC_BACKEND and SRC_WEBDIST and SRC_SCRIPT):
+        raise SystemExit(
+            "缺少本地源目录环境变量：COACH_SRC_BACKEND / COACH_SRC_WEBDIST / "
+            "COACH_SRC_SCRIPT（旧硬编码路径已失效，见模块 docstring）"
+        )
     print("connecting...")
     client = get_client()
     sftp = client.open_sftp()
@@ -53,12 +80,12 @@ def main():
 
     # 1. 上传后端增量
     print("=== backend zip ===")
-    upload_zip(sftp, r"D:\制作网页\错题教练\cuotixiaolaoshi\deploy-package\backend\app", "/tmp/gamify_backend.zip")
+    upload_zip(sftp, SRC_BACKEND, "/tmp/gamify_backend.zip")
     exec_cmd(client, f"cd {DEPLOY_DIR} && unzip -o /tmp/gamify_backend.zip -d backend/app/")
 
     # 2. 上传前端构建产物
     print("=== frontend dist zip ===")
-    upload_zip(sftp, r"D:\制作网页\错题教练\cuotixiaolaoshi\student-web\dist", "/tmp/gamify_web.zip")
+    upload_zip(sftp, SRC_WEBDIST, "/tmp/gamify_web.zip")
     exec_cmd(client, f"cd {DEPLOY_DIR} && unzip -o /tmp/gamify_web.zip -d deploy/student-web/")
 
     # 3. 数据库迁移
@@ -77,8 +104,7 @@ def main():
 
     # 5. 上传场景题脚本并执行
     print("=== scenario questions ===")
-    local_script = r"D:\制作网页\错题教练\cuotixiaolaoshi\backend\scripts\generate_scenario_bank.py"
-    sftp.put(local_script, "/tmp/generate_scenario_bank.py")
+    sftp.put(SRC_SCRIPT, "/tmp/generate_scenario_bank.py")
     exec_cmd(client, f"cd {DEPLOY_DIR} && python3 /tmp/generate_scenario_bank.py {db_path}")
 
     # 6. 重启后端容器
