@@ -3,6 +3,7 @@
 职责（全部同步函数，sync 路由可直接调；async 路由须 ``run_in_threadpool`` 包裹）：
 
 * ``draw_questions``  抽题（A+B 两级回退池，诚实披露 ``unmapped_count``）；
+* ``draw_questions_by_plan`` 按 T07 自适应计划的题量/档位逐条捞题（薄包装）；
 * ``create_session``  落 ``LearningTask`` 练习会话（复用，不建表）；
 * ``submit_answer``   L1 判分 + ``attempts`` 落库（幂等）+ 回填 items 快照；
 * ``reveal_answer``   Q3 分级解锁：只对做错的题返回参考答案 + 解析；
@@ -50,6 +51,12 @@ from app.ai import ark_client
 from app.ai.agents._json_utils import extract_json
 from app.ai.prompts import practice_guide
 from app.core.error_categories import error_label
+from app.engines.generation import (
+    FALLBACK_KNOWLEDGE_POINT_ID,
+    FALLBACK_LEVEL,
+    STRATEGY_DIAGNOSTIC_FALLBACK,
+)
+from app.engines.types import DIFFICULTY_LEVELS
 from app.core.response import (
     ApiError,
     CODE_BAD_REQUEST,
@@ -840,6 +847,154 @@ def draw_questions(
         "adaptive_used": adaptive_used,
         "adaptive_difficulty": adaptive_difficulty,
     }
+
+
+def draw_questions_by_plan(
+    db: Session,
+    *,
+    student_id: Any,
+    plans: Sequence[Any],
+    grade: Optional[int] = None,
+    grade_band: Optional[str] = None,
+    edition: Optional[str] = None,
+    section: Optional[str] = None,
+    recent_days: int = RECENT_DAYS,
+) -> Dict[str, Any]:
+    """按 ``plan_exercises`` 产出的题量计划逐条捞题（T07-S3，**薄包装**）。
+
+    ⚠️ **不重复实现放宽与去重**：逐条 ``ExercisePlan`` 直接复调
+    ``_draw_with_relaxation``（含它的三档 fallback 语义），回避集用现成的
+    ``_recent_question_ids``；本函数只负责「计划 → 多次抽题」的编排与汇总。
+
+    逐计划执行口径：
+
+    * ``kp_id`` 恒定为计划里的知识点；``strategy == "diagnostic_fallback"``
+      （队列为空的综合摸底）时置 ``None`` 走综合题池；
+    * ``difficulty`` 逐档取 ``plan.difficulty_levels``，凑不满再换下一档，
+      **少给不凑数**（继承 ``_sample_and_meta`` 的 ``miss_count`` 语义）；
+    * 已抽到的题跨计划、跨档位全局去重，保证一次计划里不出现重复题。
+
+    Args:
+        db: 数据库会话（本函数不 commit——抽题是只读操作）。
+        student_id: 学生 ID。
+        plans: ``ExercisePlan`` 序列（也可以是带同名字段的对象/字典）。
+        grade: 年级。
+        grade_band: 学段（小学/初中/高中）。
+        edition: 教材版本。
+        section: 册内分区。
+        recent_days: 回避窗口天数。
+
+    Returns:
+        ``{"question_ids", "relaxation_steps", "total", "actual_count",
+        "miss_count"}``，其中 ``total`` 是计划题数之和，``miss_count`` 是
+        各计划缺口之和。**一道题都抽不到也不抛异常**（``actual_count=0``），
+        由上层决定是否降级。
+    """
+    sid = to_uuid(student_id, "student_id")
+    recent = _recent_question_ids(db, sid, days=recent_days)
+
+    picked: List[uuid.UUID] = []
+    seen: set = set()
+    steps: List[Dict[str, Any]] = []
+    total_requested = 0
+    miss_count = 0
+
+    for plan in _as_plans(plans):
+        want = max(0, int(getattr(plan, "question_count", 0) or 0))
+        if want <= 0:
+            continue
+        total_requested += want
+
+        target_kp = _plan_kp_id(plan)
+        plan_picked: List[uuid.UUID] = []
+        for level in _plan_levels(plan):
+            need = want - len(plan_picked)
+            if need <= 0:
+                break
+            level_ids, level_steps, _meta = _draw_with_relaxation(
+                db,
+                common={
+                    "grade": grade,
+                    "grade_band": grade_band,
+                    "edition": edition,
+                    "section": section,
+                    "kp_id": target_kp,
+                    "difficulty": int(level),
+                },
+                # 回避：最近做过的 + 前面计划已抽的 + 本计划已抽的
+                recent=list(recent) + picked + plan_picked,
+                want=need,
+            )
+            steps.extend(level_steps)
+            for qid in level_ids:
+                if qid not in seen:
+                    seen.add(qid)
+                    plan_picked.append(qid)
+
+        picked.extend(plan_picked)
+        miss_count += max(0, want - len(plan_picked))
+
+    return {
+        "question_ids": [str(qid) for qid in picked],
+        "relaxation_steps": steps,
+        "total": total_requested,
+        "actual_count": len(picked),
+        "miss_count": miss_count,
+    }
+
+
+def _as_plans(plans: Any) -> List[Any]:
+    """把入参归一成计划列表；``None`` / 单个计划都按列表处理。"""
+    if plans is None:
+        return []
+    if isinstance(plans, (list, tuple)):
+        return list(plans)
+    return [plans]
+
+
+def _plan_field(plan: Any, names: Sequence[str], default: Any = None) -> Any:
+    """从 ``ExercisePlan`` 数据类（或兼容对象/字典）里取一个字段。"""
+    for name in names:
+        try:
+            if hasattr(plan, name):
+                return getattr(plan, name)
+        except Exception:  # noqa: BLE001 - 脏对象的属性访问可能抛异常
+            continue
+    if isinstance(plan, dict):
+        for name in names:
+            if name in plan:
+                return plan[name]
+    return default
+
+
+def _plan_kp_id(plan: Any) -> Optional[uuid.UUID]:
+    """取计划的知识点 ID；兜底计划（综合摸底）返回 ``None`` 走综合题池。"""
+    strategy = _clean(_plan_field(plan, ("strategy",), ""))
+    if strategy == STRATEGY_DIAGNOSTIC_FALLBACK:
+        return None
+    raw = _plan_field(plan, ("knowledge_point_id", "kp_id"))
+    if not raw or _clean(raw) == FALLBACK_KNOWLEDGE_POINT_ID:
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except (TypeError, ValueError):
+        logger.warning("自适应计划里有非法知识点 ID，已按综合题池处理: %r", raw)
+        return None
+
+
+def _plan_levels(plan: Any) -> List[int]:
+    """取计划的难度档序列；脏值回退 ``[3]``。"""
+    raw = _plan_field(plan, ("difficulty_levels", "levels"))
+    values = raw if isinstance(raw, (list, tuple, set, frozenset)) else [raw]
+    levels: List[int] = []
+    for value in values:
+        try:
+            level = int(value)
+        except (TypeError, ValueError):
+            continue
+        if level in DIFFICULTY_LEVELS and level not in levels:
+            levels.append(level)
+    return levels or [FALLBACK_LEVEL]
 
 
 def create_session(
@@ -1708,6 +1863,7 @@ async def guide_question_async(
 
 __all__ = [
     "draw_questions",
+    "draw_questions_by_plan",
     "create_session",
     "submit_answer",
     "reveal_answer",
