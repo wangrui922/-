@@ -9,16 +9,23 @@
 --------------
 ::
 
-    L0  SymPy 精确判  ──→  代数/方程/化简/求值/积分/导数
-    L1  规则引擎判   ──→  选择题键位比对 / 判断题布尔比对（原有 judge_engine）
-    L2  LLM 语义判   ──→  应用题/证明题/开放题/复杂多步推理
-    L3  人工兜底     ──→  几何题（规则引擎 + 图像匹配）/ 无法自动判定
+    L0  SymPy 精确判   ──→  代数/方程/化简/求值/积分/导数（level=0）
+    L1  规则引擎判     ──→  选择题键位比对 / 判断题布尔比对（原有 judge_engine，level=1）
+    L2  LLM 语义判     ──→  应用题/证明题/开放题/复杂多步推理（由 practice_service 调用）
+    L3  数学等价判     ──→  math_verify：``1/2``≡``0.5``、``x+1``≡``1+x``、
+                            ``\\frac{1}{2}``≡``0.5``、``50%``≡``0.5`` 等**等价形式**
+                            （本模块新增，level=3；详见 docs/judge-l3-math-verify.md）
+    L4  人工兜底       ──→  无法自动判定（level=4）
+
+⚠️ **L3 的角色是「只救不杀」**：它只在 L0 判错 / 判不出时尝试把答案**救回判对**，
+**永远不会把「判对」改成「判错」，也永远不会抢在 L1/L2 之前给出判错结论**。
+这样即使 math_verify 未安装、超时或解析失败，行为也等价于原来的两层路径。
 
 集成方式
 --------
 ``sympy_judge.judge()`` 与原有 ``judge_engine.judge()`` 接口兼容，
 返回同构的 ``JudgeOutcome``。调用方（``practice_service.submit_answer``）
-先尝试 L0，L0 无法处理时回退到 L1/L2。
+先尝试 L0，L0 无法处理时回退到 L3/L1/L2。
 
 支持的题型
 ----------
@@ -39,7 +46,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+import threading
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.services.judge_engine import JudgeOutcome, LEVEL_FALLBACK, LEVEL_RULE
 
@@ -49,11 +57,26 @@ logger = logging.getLogger("app.services.sympy_judge")
 #: L0 精确判分层级
 LEVEL_SYMPY: int = 0
 
+#: L3 数学等价判定层级（math_verify）
+LEVEL_MATH_VERIFY: int = 3
+
 #: 支持 SymPy 精确判分的题型关键词
 SYMPY_SUPPORTED_TYPES: frozenset[str] = frozenset({
     "计算", "化简", "求值", "解方程", "因式分解", "展开",
     "求导", "积分", "极限", "解不等式", "代数", "方程",
 })
+
+#: 允许走 L3 数学等价判定的题型 = SymPy 题型 + 填空类。
+#: 刻意**不含** ``选择``/``判断``/``解答``：那三类由 L1 规则引擎 / L2 LLM 负责，
+#: L3 抢在他们前面给结论会把「键位比对」「布尔比对」挤掉。
+MATH_VERIFY_SUPPORTED_TYPES: frozenset[str] = SYMPY_SUPPORTED_TYPES | frozenset({
+    "填空", "填空题",
+})
+
+#: L3 开关默认值（配置读取失败时的兜底，与 Settings.judge_l3 默认 "on" 一致）
+DEFAULT_L3_ENABLED: bool = True
+#: L3 单次判定超时（毫秒），超时强制降级回 L0/L1 结论
+DEFAULT_L3_TIMEOUT_MS: int = 500
 
 #: 从题干中抽取数学表达式的正则模式
 _EXPRESSION_PATTERNS: List[re.Pattern] = [
@@ -493,6 +516,264 @@ def _sympy_equal(a: Any, b: Any) -> bool:
         return False
 
 
+# ------------------------------------------------------------------ L3 数学等价判定（math_verify）
+#: 单位白名单（**长词必须排在前面**：``平方米`` 要先于 ``米``，否则只剥掉半个单位）。
+#: 只用于「一侧带单位、另一侧不带」时的安全剥离（见 :func:`_strip_unit_pair`）。
+_UNIT_TOKENS: Tuple[str, ...] = (
+    "平方千米", "平方公里", "平方厘米", "立方厘米", "平方米", "立方米",
+    "千米", "公里", "分米", "厘米", "毫米", "毫升", "千克", "分钟", "小时", "秒钟",
+    "米", "克", "吨", "升", "秒", "分", "元", "角",
+    "个", "只", "棵", "颗", "本", "页", "次", "人", "件", "块", "盒", "条", "辆",
+    "台", "张", "支", "道", "题", "组", "份", "双", "排", "行", "列", "班", "名",
+    "位", "把", "根", "朵", "头", "匹", "封", "首", "幅", "间", "层", "倍", "步",
+    "周", "月", "年", "天", "点", "边",
+    "cm", "mm", "km", "dm", "kg", "ml", "m2", "m3", "m", "g", "t", "l", "s",
+)
+
+#: 结尾单位匹配（忽略大小写，兼容 ``5CM`` / ``5cm``）
+_TRAILING_UNIT_RE: re.Pattern = re.compile(
+    r"\s*(?:" + "|".join(re.escape(token) for token in _UNIT_TOKENS) + r")\s*$",
+    re.IGNORECASE,
+)
+
+#: 百分号 → 百分数（``50%`` → ``(50/100)``）：math_verify 对 ``%`` 的处理不确定，
+#: 这里自己归一，保证「百分号 vs 小数」的判定结果稳定可预期。
+_PERCENT_RE: re.Pattern = re.compile(r"(-?\d+(?:\.\d+)?)\s*%")
+
+
+def _run_with_timeout(
+    func: Callable[[], Any],
+    timeout_sec: float,
+) -> Tuple[bool, Any, Optional[BaseException]]:
+    """在**守护线程**里执行 ``func``，超时立即放弃并返回 ``(False, None, None)``。
+
+    为什么用线程而不是 ``signal.alarm`` / ``asyncio.wait_for``：
+
+    * ``signal.alarm`` 在 Windows 上没有 ``SIGALRM``，跨平台不可用；
+    * ``asyncio.wait_for`` 要求调用方在事件循环里，而 :func:`layered_judge` 是
+      **同步**函数（可能被 FastAPI 的线程池执行），拿不到 running loop；
+    * 守护线程 + ``join(timeout)`` 不阻塞事件循环，也不会拖住进程退出
+      （``concurrent.futures`` 的线程池会在解释器退出时 join 工作线程，反而有挂死风险）。
+
+    Args:
+        func: 无参可调用对象（数学等价判定本体）。
+        timeout_sec: 超时秒数。
+
+    Returns:
+        ``(completed, value, error)``：``completed=False`` 表示超时（``value``/
+        ``error`` 均为 ``None``）；``completed=True`` 时 ``error`` 为该线程内抛出的异常
+        （正常返回时为 ``None``）。
+    """
+    box: Dict[str, Any] = {"done": False, "value": None, "error": None}
+
+    def _target() -> None:
+        try:
+            box["value"] = func()
+        except BaseException as exc:  # noqa: BLE001 —— 必须兜住，绝不污染判题主流程
+            box["error"] = exc
+        finally:
+            box["done"] = True
+
+    worker = threading.Thread(target=_target, name="judge-l3-verify", daemon=True)
+    worker.start()
+    worker.join(timeout_sec)
+    if not box["done"]:
+        return False, None, None
+    return True, box["value"], box["error"]
+
+
+def _normalize_percent(text: str) -> str:
+    """把 ``50%`` 归一成 ``(50/100)``（无百分号时原样返回）。"""
+    if "%" not in text:
+        return text
+    return _PERCENT_RE.sub(r"(\1/100)", text)
+
+
+def _strip_unit_pair(correct_text: str, selected_text: str) -> Tuple[str, str]:
+    """**只在「一侧带单位、另一侧不带」时**剥离单位，返回待比较的两个文本。
+
+    三条规则：
+
+    1. **单侧带单位**（``5cm`` vs ``5``）：剥掉那一侧 —— 孩子按题面要求写了单位，
+       不该被判错；
+    2. **两侧带相同单位**（``5CM`` vs ``5cm``）：一起剥 —— 单位大小写不该影响判定；
+    3. **两侧带不同单位**（``5cm`` vs ``5m``）：**一律不剥** —— 否则会被抹成
+       ``5`` vs ``5`` 而误判成对，单位对不对必须真比。
+
+    Args:
+        correct_text: 标准答案原文。
+        selected_text: 学生作答原文。
+
+    Returns:
+        剥离后的 ``(correct, selected)``；不满足上述条件时原样返回。
+    """
+    gold_match = _TRAILING_UNIT_RE.search(correct_text)
+    user_match = _TRAILING_UNIT_RE.search(selected_text)
+
+    if gold_match and user_match:
+        gold_unit = gold_match.group(0).strip().lower()
+        user_unit = user_match.group(0).strip().lower()
+        if gold_unit != user_unit:
+            return correct_text, selected_text  # 单位不同：保留，交判定层真比
+        return (
+            correct_text[: gold_match.start()].strip(),
+            selected_text[: user_match.start()].strip(),
+        )
+    if gold_match:
+        return correct_text[: gold_match.start()].strip(), selected_text
+    if user_match:
+        return correct_text, selected_text[: user_match.start()].strip()
+    return correct_text, selected_text
+
+
+def _math_verify_parse(parse_fn: Callable[..., Any], text: str) -> Any:
+    """调用 ``math_verify.parse``，兼容不同版本的可选参数名。
+
+    ``extraction_config`` 是 0.6.x 的可选关键字；老版本没有这个名字，
+    退化成 ``parse(text)`` 用默认抽取配置（LaTeX + 纯文本表达式）。
+    """
+    try:
+        from math_verify import ExprExtractionConfig, LatexExtractionConfig
+
+        return parse_fn(
+            text,
+            extraction_config=[LatexExtractionConfig(), ExprExtractionConfig()],
+        )
+    except TypeError:
+        return parse_fn(text)
+    except Exception:  # noqa: BLE001 —— 老版本没有这两个配置类，退回默认抽取配置
+        return parse_fn(text)
+
+
+def _is_empty_extraction(parsed: Any) -> bool:
+    """``math_verify.parse`` 的结果是否为空（``None`` / 空列表 / 空串）。
+
+    空结果意味着「没抽到任何数学表达式」，此时**不能拿去做等价比较**——
+    两边都空时 ``verify([], [])`` 有可能给出 True，那是最危险的一类误判。
+    """
+    if parsed is None:
+        return True
+    if isinstance(parsed, (list, tuple, set)):
+        return len(parsed) == 0
+    if isinstance(parsed, str):
+        return not parsed.strip()
+    return False
+
+
+def _math_verify_equivalent(
+    correct_answer: str,
+    selected_answer: str,
+    timeout_ms: int = DEFAULT_L3_TIMEOUT_MS,
+) -> Optional[bool]:
+    """用 math_verify 判定两个答案在数学上是否等价。
+
+    **lazy import**：``math_verify`` 写在函数内部导入，库未安装时捕获
+    ``ImportError`` 并返回 ``None``（调用方降级回 L0/L1），绝不让应用启动失败。
+
+    **超时**：parse + verify 整体受 ``timeout_ms`` 约束，超时返回 ``None``。
+
+    Args:
+        correct_answer: 标准答案文本。
+        selected_answer: 学生作答文本。
+        timeout_ms: 超时毫秒数（默认 500ms）。
+
+    Returns:
+        ``True`` 等价 / ``False`` 不等价；**不可用（未安装/超时/解析异常）时返回
+        ``None``**，由调用方按「未证明等价」处理。
+    """
+    if not correct_answer or not selected_answer:
+        return None
+
+    # ⚠️ lazy import：math_verify 是可选依赖，缺了只降级，不允许拖垮启动
+    try:
+        from math_verify import parse, verify
+    except ImportError as exc:
+        logger.info("math_verify 未安装，L3 层不可用，降级回 L0/L1 两层：%s", exc)
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("math_verify 导入异常，L3 层不可用，降级回 L0/L1：%s", exc)
+        return None
+
+    # 只做两件自己可控的归一：百分号 → 百分数、单侧单位剥离。
+    # 其余（LaTeX / 全角 / 空格）交给 math_verify 原生处理，避免二次转换引入新的歧义。
+    gold_text = _normalize_percent(correct_answer.strip())
+    target_text = _normalize_percent(selected_answer.strip())
+    gold_text, target_text = _strip_unit_pair(gold_text, target_text)
+
+    def _verify() -> bool:
+        gold = _math_verify_parse(parse, gold_text)
+        target = _math_verify_parse(parse, target_text)
+        # ⚠️ 抽取不到表达式 = 判不了，必须拒绝判定（抛异常 → 外层降级）。
+        # 否则两边都抽成空列表时 ``verify([], [])`` 有可能返回 True，
+        # 那会把「解析不出来的答案」一律误判成对，是最危险的一类误判。
+        if _is_empty_extraction(gold) or _is_empty_extraction(target):
+            raise ValueError(
+                f"math_verify 抽取失败（判不了即降级）：gold={gold!r} target={target!r}"
+            )
+        try:
+            return bool(verify(gold, target))
+        except TypeError:
+            # 老版本 verify 直接吃字符串，不接受 parse 后的列表
+            return bool(verify(gold_text, target_text))
+
+    completed, value, error = _run_with_timeout(_verify, max(int(timeout_ms), 1) / 1000.0)
+    if not completed:
+        logger.warning(
+            "L3 math_verify 判定超时（%sms），强制降级回 L0/L1：%s vs %s",
+            timeout_ms, correct_answer, selected_answer,
+        )
+        return None
+    if error is not None:
+        logger.debug(
+            "L3 math_verify 判定异常，降级回 L0/L1：%s | %s vs %s",
+            error, correct_answer, selected_answer,
+        )
+        return None
+    return bool(value)
+
+
+def _load_l3_config() -> Tuple[bool, int]:
+    """读取 L3 开关与超时（走 pydantic-settings，**不读裸 os.environ**）。
+
+    Returns:
+        ``(enabled, timeout_ms)``；配置读取失败时回落到模块默认值
+        （``DEFAULT_L3_ENABLED`` / ``DEFAULT_L3_TIMEOUT_MS``）。
+    """
+    try:
+        from app.core.config import get_settings
+
+        cfg = get_settings()
+        return bool(cfg.judge_l3_enabled), int(cfg.judge_l3_timeout_ms)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("L3 配置读取失败，回落默认值：%s", exc)
+        return DEFAULT_L3_ENABLED, DEFAULT_L3_TIMEOUT_MS
+
+
+def _l3_enabled_for(q_type: Optional[str]) -> bool:
+    """该题是否允许走 L3（题型闸门，防止挤掉 L1 规则判分）。"""
+    if not q_type:
+        return False
+    return q_type.strip() in MATH_VERIFY_SUPPORTED_TYPES
+
+
+def _l3_equivalent(
+    q_type: Optional[str],
+    correct_answer: Optional[str],
+    selected_answer: Optional[str],
+) -> Optional[bool]:
+    """按开关 + 题型闸门调用 L3 等价判定。
+
+    Returns:
+        ``True`` / ``False`` / ``None``（关闭、题型不符、库缺失、超时都返回 ``None``）。
+    """
+    enabled, timeout_ms = _load_l3_config()
+    if not enabled:
+        return None
+    if not _l3_enabled_for(q_type):
+        return None
+    return _math_verify_equivalent(correct_answer or "", selected_answer or "", timeout_ms)
+
+
 # ------------------------------------------------------------------ 主入口
 def judge(
     q_type: Optional[str],
@@ -580,10 +861,19 @@ def layered_judge(
     """分层判题策略主入口。
 
     判题优先级：
-    1. L0 SymPy 精确判（计算/化简/求值/解方程等纯数学题型）
-    2. L1 规则引擎判（选择题键位 / 判断题布尔）
-    3. L2 LLM 语义判（应用题/开放题/复杂推理）—— 由 practice_service 在 L1 兜底后调用
-    4. L3 人工兜底（L4）—— 无法自动判定时
+    1. L0 SymPy 精确判（计算/化简/求值/解方程等纯数学题型）—— 判对即返回
+    2. L3 math_verify 数学等价判（``1/2``≡``0.5``、``x+1``≡``1+x`` 等**等价形式**）
+       —— **只救不杀**：只在 L0 判错 / 判不出时尝试救回判对，绝不新增判错结论
+    3. L1 规则引擎判（选择题键位 / 判断题布尔）
+    4. L2 LLM 语义判（应用题/开放题/复杂推理）—— 由 practice_service 在 L1 兜底后调用
+    5. L4 人工兜底 —— 无法自动判定时
+
+    降级路径（任一命中即等价于原来的两层路径，行为不变）：
+    * ``judge_l3=off``（配置开关）→ 完全不进 L3；
+    * ``math_verify`` 未安装 → lazy import 捕获 ``ImportError`` → 跳过 L3；
+    * 单题判定超过 ``judge_l3_timeout_ms``（默认 500ms）→ 强制放弃 → 跳过 L3；
+    * 题型不在 :data:`MATH_VERIFY_SUPPORTED_TYPES`（如选择/判断）→ 跳过 L3；
+    * math_verify 解析异常 → 跳过 L3。
 
     Args:
         q_type: 题型。
@@ -593,10 +883,25 @@ def layered_judge(
         selected_answer: 学生作答。
 
     Returns:
-        JudgeOutcome，level 字段标识判题层级（0=SymPy, 1=规则, 4=兜底）。
+        JudgeOutcome，level 字段标识判题层级（0=SymPy, 1=规则, 3=math_verify, 4=兜底）。
     """
     # L0: SymPy 精确判
     outcome = judge(q_type, content, correct_answer, selected_answer)
+    if outcome is not None and outcome.is_correct:
+        logger.info("L0 SymPy judge: type=%s correct=%s", q_type, outcome.is_correct)
+        return outcome
+
+    # L3: math_verify 数学等价判定（只可能把结论改成「判对」，不可能改成「判错」）
+    if _l3_equivalent(q_type, correct_answer, selected_answer) is True:
+        logger.info("L3 math_verify judge: type=%s → 判对（等价形式）", q_type)
+        return JudgeOutcome(
+            is_correct=True,
+            level=LEVEL_MATH_VERIFY,
+            reason="计算正确，结果和标准答案一致",
+            audit_reason=f"L3 math_verify 判对：{selected_answer} ≡ {correct_answer}",
+        )
+
+    # L0 判错结论保留（L3 未证明等价，不推翻 L0）
     if outcome is not None:
         logger.info("L0 SymPy judge: type=%s correct=%s", q_type, outcome.is_correct)
         return outcome
@@ -610,11 +915,23 @@ def layered_judge(
 
 __all__ = [
     "LEVEL_SYMPY",
+    "LEVEL_MATH_VERIFY",
     "SYMPY_SUPPORTED_TYPES",
+    "MATH_VERIFY_SUPPORTED_TYPES",
+    "DEFAULT_L3_ENABLED",
+    "DEFAULT_L3_TIMEOUT_MS",
     "judge",
     "can_judge",
     "layered_judge",
     "_normalize_math_text",
     "_parse_and_evaluate",
     "_sympy_equal",
+    "_run_with_timeout",
+    "_normalize_percent",
+    "_strip_unit_pair",
+    "_math_verify_equivalent",
+    "_is_empty_extraction",
+    "_load_l3_config",
+    "_l3_enabled_for",
+    "_l3_equivalent",
 ]

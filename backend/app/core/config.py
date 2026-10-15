@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import List
+from typing import Any, List
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/app/core/config.py -> parents: [core, app, backend, <项目根>]
@@ -91,6 +91,30 @@ class Settings(BaseSettings):
     explanation_quality_gate_enabled: bool = True
     explanation_quality_gate_threshold: int = Field(default=3, ge=1, le=5)
 
+    # ---------- 判题层（L3 数学等价判定）----------
+    # L3 = math_verify 数学等价判定层：把 ``1/2``≡``0.5``、``x+1``≡``1+x``、
+    # ``\frac{1}{2}``≡``0.5`` 这类「等价但字面不同」的答案救回判对
+    # （详见 docs/judge-l3-math-verify.md）。
+    # ``on``（默认）启用；``off`` 时**完全走原来的 L0 SymPy + L1 规则两层路径**。
+    judge_l3: str = "on"
+    # 单题 L3 判定的超时（毫秒），超时强制降级回 L0/L1，防止第三方库卡住判题主流程
+    judge_l3_timeout_ms: int = Field(default=500, ge=50, le=5000)
+
+    @field_validator("judge_l3", mode="before")
+    @classmethod
+    def _normalize_judge_l3(cls, value: Any) -> str:
+        """把开关归一成 ``"on"`` / ``"off"``，兼容 1/0/true/false/yes/no 写法。
+
+        未知写法一律按 ``"on"`` 处理（保持默认开），但不静默吞错——记录下来便于排查。
+        """
+        text = str(value).strip().lower()
+        if text in {"off", "0", "false", "no", "n", "disabled", "关闭"}:
+            return "off"
+        if text in {"on", "1", "true", "yes", "y", "enabled", "开启"}:
+            return "on"
+        # 未识别的写法：保持默认开（与字段默认值一致），避免误关判题增强层
+        return "on"
+
     # ---------- 短信 ----------
     sms_provider: str = "mock"
     # dev_sms_code 已废弃：验证码改为随机生成，不再使用固定万能码
@@ -128,6 +152,11 @@ class Settings(BaseSettings):
         if not self.is_prod:
             return True
         return self.jwt_secret != "dev-secret-change-me" and len(self.jwt_secret) >= 16
+
+    @property
+    def judge_l3_enabled(self) -> bool:
+        """L3 数学等价判定层是否启用（``JUDGE_L3=off`` 关闭）。"""
+        return str(self.judge_l3).strip().lower() == "on"
 
     @property
     def storage_path(self) -> Path:
