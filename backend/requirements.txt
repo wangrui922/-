@@ -51,7 +51,11 @@ math-verify==0.9.*
 # 自动回退到内置 SM-2 内核，只打一条 WARNING，应用照常启动（只是退化成 SM-2）。
 # 启用方式：装包后设环境变量 SCHEDULER=fsrs_py（默认 sm2），
 # 并用 SCHEDULER_FSRS_ROLLOUT_RATIO（0~1）按学生稳定哈希灰度放量。
-fsrs==6.3.*
+# ⚠️ 必须 6.x（不要写成 5.x）：6.x 砍掉了 State.New / Card.scheduled_days /
+# Card.reps / Card.lapses / Card.elapsed_days，且 stability/difficulty 初值由
+# 0.0 变成 None —— 调度层的适配是按 6.x 实测校准的（偏差校准 2.239% 也在
+# 6.3.2 上做的），换到 5.x 会走一条没被校准过的代码路径。
+fsrs>=6.0,<7
 
 
 # ---------------------------------------------------------------- 测试工具
