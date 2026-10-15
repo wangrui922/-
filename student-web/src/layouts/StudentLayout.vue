@@ -4,6 +4,7 @@
  * + 底部毛玻璃 Tab 栏（4 大入口，激活高亮）。
  *
  * 去掉原左导航，整体更像「真 App」，更适合中小学生单手使用。
+ * 底部 Tab 栏 5 大入口：小玥老师 / 练习 / 今日计划 / 错题宝藏 / 学习画像。
  */
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -32,6 +33,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     to: { name: 'practice' },
     label: '练习',
     icon: 'M12 6.5v11m0-11a5.5 5.5 0 00-4-1.7H5a1 1 0 00-1 1v10a1 1 0 001 1h3a5.5 5.5 0 014 1.7m0-13a5.5 5.5 0 014-1.7h3a1 1 0 011 1v10a1 1 0 01-1 1h-3a5.5 5.5 0 00-4 1.7',
+  },
+  {
+    name: 'today-plan',
+    to: { name: 'today-plan' },
+    label: '今日计划',
+    icon: 'M8 2v3m8-3v3M3.5 8.5h17M6 5.5h12a2.5 2.5 0 012.5 2.5v10a2.5 2.5 0 01-2.5 2.5H6A2.5 2.5 0 013.5 18V8A2.5 2.5 0 016 5.5zM8 13h2m2 0h4M8 16.5h4',
   },
   {
     name: 'mistakes',
