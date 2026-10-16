@@ -27,7 +27,7 @@
      - 无 token → 403
      - 错 token → 403
      - 对 token → 200 `{"code":0,"data":{"mastery_updated":0,...}}`
-2. **`.env.production` 已注入**：`CRON_TOKEN=***REMOVED***`
+2. **`.env.production` 已注入**：`CRON_TOKEN`（值从服务器 `.env.production` 读取，勿写入任何文档/代码）
    （`CRON_URL` 是 SCF 函数侧的环境变量，配置在腾讯云控制台，见下方步骤 3）
 3. **SCF 部署包**：`deploy/scf/scf-daily-sync.zip`（纯标准库，Python3.9，入口 `main_handler`，无需 requirements）
 
@@ -41,7 +41,7 @@
 2. 函数代码上传 `deploy/scf/scf-daily-sync.zip`
 3. 环境变量（函数配置 → 环境变量）：
    - `CRON_URL` = `https://118.25.44.126/api/cron/daily-sync`
-   - `CRON_TOKEN` = `***REMOVED***`
+   - `CRON_TOKEN` = `<从服务器 .env.production 读取，勿写入文档>`
 4. 创建定时触发器：
    - 触发方式：**定时触发**
    - 周期：**自定义** cron 表达式
@@ -53,7 +53,7 @@
 ```bash
 # 服务器侧（任一）
 curl -s -X POST https://118.25.44.126/api/cron/daily-sync \
-  -H "X-Cron-Token: ***REMOVED***"
+  -H "X-Cron-Token: <从服务器 .env.production 读取>"
 # → {"code":0,"msg":"ok","data":{...}}
 
 # 错误 token（应 403）
