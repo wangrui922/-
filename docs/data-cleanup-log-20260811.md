@@ -4428,3 +4428,16 @@
 - 导出 CSV：（已跳过 dry-run）
 - 内置关键词数：16
 
+
+## 2026-10-16 · A 类残缺题物理删除（用户指令「A 类全删」）
+
+- 分类澄清：项目有两个"A 类"——①《清理处置表》文件类（10-15 已删完，本次复验无残留）②题库清洗 A 类「真残缺」（选项空/题干占位符/截断/过短）。用户指令经确认指②。
+- 删除前引用核查：292 条归档题在 answers 有 292 条 1:1 随题答案；mistakes/attempts/review_cards 引用数均为 0（学生错题本/练习记录零影响）；practice_progress 空表。按 08-12 零孤儿先例，答案随题同删。
+- 执行（冷母版 _wt/_master_dev.db，事务内）：
+  - 备份表 questions_a_class_backup_20261016：292 条（删除前全量）
+  - 备份表 answers_a_class_backup_20261016：292 条
+  - DELETE answers 292 行 → DELETE questions 292 行；PRAGMA integrity_check = ok
+- 结果：questions 4458 → 4166（全部 active，archived 归零）；answers 4458 → 4166；母版表数 39 → 41。
+- 同步：reset_dev_db.py EXPECTED_QUESTIONS 4458→4166（develop `114ffa1`）；`--ensure` 重建 integrate 与主仓库两个 dev.db（内容指纹 5d30c192240c8a76 一致）。主仓库 dev.db 原为 37 表旧 schema，顺带升级。
+- 回归：全量 pytest 1312 collected / 1310 passed / 2 skipped / 0 failed / 0 error（退出码 0），与删除前基线一致。
+- 恢复路径：两张备份表保留在母版与全部快照中，按原 id/uuid INSERT 回 questions/answers 即可完整还原。
