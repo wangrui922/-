@@ -48,7 +48,7 @@
                                    --target ../_wt/other/backend/dev.db
 
     # 5) 期望题目数可按需覆盖（比如换了新母版）
-    python scripts/reset_dev_db.py --expect-questions 4458
+    python scripts/reset_dev_db.py --expect-questions 4166
 
 退出码：
     0 成功（含 --check 通过）；1 母版/目标异常；2 校验未通过（questions 数不符等）。
@@ -82,7 +82,10 @@ _DEFAULT_MASTER_CANDIDATES: Tuple[Path, ...] = (
 DEFAULT_TARGET: Path = _BACKEND_DIR / "dev.db"
 
 #: 母版应有的题目数（团队约定的干净母版口径）
-EXPECTED_QUESTIONS: int = 4458
+#: 2026-10-16：A 类残缺题 292 条物理删除后由 4458 调整为 4166（全部 active）。
+#: 删除前已建备份表 questions_a_class_backup_20261016 /
+#: answers_a_class_backup_20261016（母版与各 dev.db 快照内均保留）。
+EXPECTED_QUESTIONS: int = 4166
 
 #: 母版应有的表数
 EXPECTED_TABLES: int = 38
