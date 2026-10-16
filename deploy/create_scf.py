@@ -3,11 +3,17 @@
 
 用法：
     pip install tencentcloud-sdk-python
+    set COACH_TC_SECRET_ID=xxxx        (Windows)
+    set COACH_TC_SECRET_KEY=xxxx
+    set COACH_CRON_TOKEN=xxxx
     python create_scf.py
 
 前提：
     * 当前 AK/SK 已关联 QcloudSCFFullAccess 策略（否则报 UnauthorizedOperation）
     * scf-daily-sync.zip 与本脚本在同一目录
+
+凭据一律走环境变量，禁止硬编码（T02 安全整改，2026-10-16 补漏）：
+原文件曾硬编码腾讯云 SecretId/SecretKey 与 cron 令牌，已全部收敛为环境变量注入。
 """
 
 import base64
@@ -21,9 +27,13 @@ from tencentcloud.common.profile.http_profile import HttpProfile
 from tencentcloud.common.profile.client_profile import ClientProfile
 
 # --------------------------------------------------------------------------- 配置
-SECRET_ID = "***REMOVED***"
-SECRET_KEY = "***REMOVED***"
-REGION = "ap-beijing"
+SECRET_ID = os.environ.get("COACH_TC_SECRET_ID", "")
+SECRET_KEY = os.environ.get("COACH_TC_SECRET_KEY", "")
+CRON_TOKEN = os.environ.get("COACH_CRON_TOKEN", "")
+for _name, _val in (("COACH_TC_SECRET_ID", SECRET_ID), ("COACH_TC_SECRET_KEY", SECRET_KEY), ("COACH_CRON_TOKEN", CRON_TOKEN)):
+    if not _val:
+        raise SystemExit(f"缺少环境变量 {_name}（凭据不得写入代码；对齐 deploy_gamification.py 惯例）")
+REGION = os.environ.get("COACH_TC_REGION", "ap-beijing")
 
 FUNCTION_NAME = "coach-daily-sync"
 RUNTIME = "Python3.9"
@@ -33,8 +43,8 @@ TIMEOUT = 60
 DESCRIPTION = "错题教练每日同步触发器：调用服务器 cron 端点执行掌握度刷新+周报+会话清理"
 
 ENV_VARIABLES = {
-    "CRON_URL": "https://118.25.44.126/api/cron/daily-sync",
-    "CRON_TOKEN": "***REMOVED***",
+    "CRON_URL": os.environ.get("COACH_CRON_URL", "https://118.25.44.126/api/cron/daily-sync"),
+    "CRON_TOKEN": CRON_TOKEN,
 }
 
 TRIGGER_NAME = "daily-sync"
