@@ -108,7 +108,7 @@ curl http://localhost:8000/api/tts/providers
     "provider": "edge",
     "fallbackEnabled": true,
     "fallbackProvider": "edge",
-    "voice": "zh-CN-XiaoxiaoNeural",
+    "voice": "xiaoxiao",
     "maxTextLength": 2000,
     "providers": [
       { "name": "edge",  "available": true,  "reason": "免 Key，内测期默认与最终兜底" },
@@ -118,6 +118,8 @@ curl http://localhost:8000/api/tts/providers
   }
 }
 ```
+
+`voice` 为当前 provider 的默认音色，取前端可回传的别名形态：`edge` 为 `xiaoxiao`；`volc` 为 `settings.tts_volc_voice_type`（默认 `BV001_streaming`），可直接作为 `POST /api/tts` 的 `voice` 入参回传。
 
 该接口**只读、不发起任何网络请求**，可放心给运维与前端做健康检查。
 
