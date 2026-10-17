@@ -12,6 +12,9 @@
 
 硬约定：
     * 需要登录且 ``user.sid`` 非空（``require_student_id`` 返 400，沿用 T03 口径）；
+    * 全部 POST 路由挂 ``require_guardian_consent`` 监护人同意门控
+      （``CONSENT_GATE_ENABLED`` 默认关，开启后无当前版本同意返 403）；
+      GET 一律不挂（读操作不锁，练习历史 / 复习清单保持可浏览）；
     * 出参一律 **snake_case**，由 ``app.core.response.ok()`` 包裹（C10）；
     * ``session``/``answer``/``reveal``/``finish`` 是纯本地计算，用 sync ``def`` 路由，
       FastAPI 会自动丢线程池执行，不阻塞事件循环；
@@ -30,7 +33,7 @@ from fastapi import APIRouter, Body, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.deps import CurrentUser, get_current_user
+from app.core.deps import CurrentUser, get_current_user, require_guardian_consent
 from app.core.response import ok
 from app.db import get_db
 from app.models.content import KnowledgePoint
@@ -50,7 +53,7 @@ logger = logging.getLogger("app.api.practice")
 router = APIRouter(prefix="/practice", tags=["practice"])
 
 
-@router.post("/session")
+@router.post("/session", dependencies=[Depends(require_guardian_consent)])
 def create_practice_session(
     body: DrawRequest = Body(default_factory=DrawRequest),
     current: CurrentUser = Depends(get_current_user),
@@ -80,7 +83,7 @@ def create_practice_session(
     return ok(data)
 
 
-@router.post("/answer")
+@router.post("/answer", dependencies=[Depends(require_guardian_consent)])
 def answer(
     body: SubmitRequest = Body(...),
     current: CurrentUser = Depends(get_current_user),
@@ -107,7 +110,7 @@ def answer(
     return ok(data)
 
 
-@router.post("/reveal")
+@router.post("/reveal", dependencies=[Depends(require_guardian_consent)])
 def reveal(
     body: QuestionRefRequest = Body(...),
     current: CurrentUser = Depends(get_current_user),
@@ -131,7 +134,7 @@ def reveal(
     return ok(data)
 
 
-@router.post("/finish")
+@router.post("/finish", dependencies=[Depends(require_guardian_consent)])
 def finish(
     body: SessionRequest = Body(...),
     current: CurrentUser = Depends(get_current_user),
@@ -155,7 +158,7 @@ def finish(
     return ok(data)
 
 
-@router.post("/guide")
+@router.post("/guide", dependencies=[Depends(require_guardian_consent)])
 async def guide(
     body: GuideRequest = Body(...),
     current: CurrentUser = Depends(get_current_user),
@@ -223,7 +226,7 @@ def review_today(
     return ok({"items": items, "total": len(items)})
 
 
-@router.post("/review/record")
+@router.post("/review/record", dependencies=[Depends(require_guardian_consent)])
 def review_record(
     body: ReviewRecordRequest,
     current: CurrentUser = Depends(get_current_user),

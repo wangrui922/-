@@ -3,6 +3,11 @@
 前端流程：
     1. POST 到 /api/tasks/async/{task_name} 提交任务 → 返回 {task_id}
     2. 轮询 GET /api/tasks/{task_id} → {status: pending|ok|error, result?, error?}
+
+合规约定：
+    * 全部 POST 路由（异步提交）挂 ``require_guardian_consent`` 监护人同意门控
+      （``CONSENT_GATE_ENABLED`` 默认关，开启后无当前版本同意返 403）；
+      GET ``/{task_id}`` 是纯轮询读，不挂门控。
 """
 
 from __future__ import annotations
@@ -15,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.celery_app import celery_app
-from app.core.deps import CurrentUser, get_current_user
+from app.core.deps import CurrentUser, get_current_user, require_guardian_consent
 from app.core.response import ok
 from app.db import get_db
 from app.services.learning_service import require_student_id, to_uuid
@@ -106,7 +111,7 @@ def async_chat_message(
     return ok({"task_id": task.id})
 
 
-@router.post("/async/exercise-gen")
+@router.post("/async/exercise-gen", dependencies=[Depends(require_guardian_consent)])
 def async_exercise_gen(
     body: AsyncExerciseGen,
     current: CurrentUser = Depends(get_current_user),
@@ -117,7 +122,7 @@ def async_exercise_gen(
     return ok({"task_id": task.id})
 
 
-@router.post("/async/exercise-guide")
+@router.post("/async/exercise-guide", dependencies=[Depends(require_guardian_consent)])
 def async_exercise_guide(
     body: AsyncExerciseGuide,
     current: CurrentUser = Depends(get_current_user),
@@ -136,7 +141,7 @@ def async_exercise_guide(
     return ok({"task_id": task.id})
 
 
-@router.post("/async/exercise-judge")
+@router.post("/async/exercise-judge", dependencies=[Depends(require_guardian_consent)])
 def async_exercise_judge(
     body: AsyncExerciseJudge,
     current: CurrentUser = Depends(get_current_user),
@@ -161,7 +166,7 @@ def async_exercise_judge(
     return ok({"task_id": task.id})
 
 
-@router.post("/async/exercise-summary")
+@router.post("/async/exercise-summary", dependencies=[Depends(require_guardian_consent)])
 def async_exercise_summary(
     body: AsyncExerciseSummary,
     current: CurrentUser = Depends(get_current_user),

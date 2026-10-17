@@ -14,6 +14,9 @@
 
 硬约定：
     * 需要登录且 ``user.sid`` 非空（``require_student_id`` 返 400）；
+    * 全部 POST 路由挂 ``require_guardian_consent`` 监护人同意门控
+      （``CONSENT_GATE_ENABLED`` 默认关，开启后无当前版本同意返 403）；
+      GET 一律不挂（大厅 / 徽章墙 / 排行榜 / 历史保持可浏览）；
     * 出参一律 snake_case，由 ``app.core.response.ok()`` 包裹（C10）；
     * 纯本地计算，用 sync ``def`` 路由（FastAPI 自动丢线程池）；
     * 他人会话按 404 处理。
@@ -28,7 +31,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.deps import CurrentUser, get_current_user
+from app.core.deps import CurrentUser, get_current_user, require_guardian_consent
 from app.core.response import ok
 from app.db import get_db
 from app.schemas.game import (
@@ -98,7 +101,7 @@ def game_hub(
 
 # ------------------------------------------------------------------ 限时挑战
 
-@router.post("/speed/start")
+@router.post("/speed/start", dependencies=[Depends(require_guardian_consent)])
 def speed_start(
     body: SpeedStartRequest = Body(default_factory=SpeedStartRequest),
     current: CurrentUser = Depends(get_current_user),
@@ -121,7 +124,7 @@ def speed_start(
     )
 
 
-@router.post("/speed/answer")
+@router.post("/speed/answer", dependencies=[Depends(require_guardian_consent)])
 def speed_answer(
     body: SpeedAnswerRequest = Body(...),
     current: CurrentUser = Depends(get_current_user),
@@ -139,7 +142,7 @@ def speed_answer(
     return ok(result)
 
 
-@router.post("/speed/finish")
+@router.post("/speed/finish", dependencies=[Depends(require_guardian_consent)])
 def speed_finish(
     body: SpeedFinishRequest = Body(...),
     current: CurrentUser = Depends(get_current_user),
@@ -176,7 +179,7 @@ def speed_finish(
 
 # ------------------------------------------------------------------ 回合战斗
 
-@router.post("/battle/start")
+@router.post("/battle/start", dependencies=[Depends(require_guardian_consent)])
 def battle_start(
     body: BattleStartRequest = Body(default_factory=BattleStartRequest),
     current: CurrentUser = Depends(get_current_user),
@@ -197,7 +200,7 @@ def battle_start(
     )
 
 
-@router.post("/battle/answer")
+@router.post("/battle/answer", dependencies=[Depends(require_guardian_consent)])
 def battle_answer(
     body: BattleAnswerRequest = Body(...),
     current: CurrentUser = Depends(get_current_user),
@@ -214,7 +217,7 @@ def battle_answer(
     return ok(result)
 
 
-@router.post("/battle/finish")
+@router.post("/battle/finish", dependencies=[Depends(require_guardian_consent)])
 def battle_finish(
     body: BattleFinishRequest = Body(...),
     current: CurrentUser = Depends(get_current_user),

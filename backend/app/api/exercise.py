@@ -6,6 +6,8 @@
 
 硬约定：
     * 需要登录且 ``user.sid`` 非空；
+    * 全部 POST 路由挂 ``require_guardian_consent`` 监护人同意门控
+      （``CONSENT_GATE_ENABLED`` 默认关，开启后无当前版本同意返 403）；
     * ``orchestrator`` / ``ai_exercise_service`` 的 ``*_async`` 版本均为**纯 async**
       （内部 await async Agent），路由直接 ``await``，不再包 ``run_in_threadpool``；
     * 生成结果按 D1 落成 ``status='archived'`` + ``source_doc='ai_gen'`` 的归档题
@@ -23,7 +25,7 @@ from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app.ai import orchestrator
-from app.core.deps import CurrentUser, get_current_user
+from app.core.deps import CurrentUser, get_current_user, require_guardian_consent
 from app.core.response import ApiError, CODE_BAD_REQUEST, ok
 from app.db import get_db
 from app.schemas.common import BaseSchema
@@ -98,7 +100,7 @@ def _strip_data_url(raw: Optional[str]) -> Optional[str]:
     return value.strip() or None
 
 
-@router.post("/exercise/gen")
+@router.post("/exercise/gen", dependencies=[Depends(require_guardian_consent)])
 async def gen_exercise(
     body: ExerciseGen = Body(...),
     current: CurrentUser = Depends(get_current_user),
@@ -128,7 +130,7 @@ async def gen_exercise(
     return ok(result)
 
 
-@router.post("/exercise/guide")
+@router.post("/exercise/guide", dependencies=[Depends(require_guardian_consent)])
 async def guide_exercise(
     body: ExerciseGuide = Body(...),
     current: CurrentUser = Depends(get_current_user),
@@ -159,7 +161,7 @@ async def guide_exercise(
     return ok(result)
 
 
-@router.post("/exercise/judge")
+@router.post("/exercise/judge", dependencies=[Depends(require_guardian_consent)])
 async def judge_exercise(
     body: ExerciseJudge = Body(...),
     current: CurrentUser = Depends(get_current_user),
@@ -195,7 +197,7 @@ async def judge_exercise(
     return ok(result)
 
 
-@router.post("/exercise/summary")
+@router.post("/exercise/summary", dependencies=[Depends(require_guardian_consent)])
 async def summarize_exercise(
     body: ExerciseSummary = Body(...),
     current: CurrentUser = Depends(get_current_user),

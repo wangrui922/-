@@ -13,6 +13,17 @@ from sqlalchemy import select
 
 logger = logging.getLogger("app.core.system_config")
 
+
+def _to_bool(raw: Any) -> bool:
+    """把配置字符串转成 bool（``1/true/yes/on`` 为真，忽略大小写与空白）。
+
+    为什么不能直接用内置 ``bool``：``bool("false")`` / ``bool("0")`` 都是
+    ``True``——字符串配置一旦交给内置 bool，「关闭」会被误读成「开启」。
+    开关类配置（如 ``CONSENT_GATE_ENABLED``）必须走本函数。
+    """
+    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
+
 #: 默认值表（key -> (default_value, cast_func)）
 DEFAULTS: Dict[str, tuple] = {
     "REPEAT_SIMILARITY": ("0.7", float),
@@ -25,6 +36,12 @@ DEFAULTS: Dict[str, tuple] = {
     "NOPROGRESS_TO_L4": ("3", int),
     "TURNS_TO_L4": ("5", int),
     "HAS_SUBSTANCE_MIN_LEN": ("12", int),
+    # V6.5 合规闸门（监护人同意门控）：
+    #   * CONSENT_GATE_ENABLED —— 门控总开关，默认关（灰度放量，见 deps.require_guardian_consent）；
+    #   * CONSENT_VERSION      —— 当前规则版本号，变更后旧版本同意记录一律失效需重新同意。
+    # 开关的 cast 用 _to_bool 而非 bool，原因见 _to_bool 文档字符串。
+    "CONSENT_GATE_ENABLED": ("false", _to_bool),
+    "CONSENT_VERSION": ("v1", str),
 }
 
 # 进程内缓存

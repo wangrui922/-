@@ -17,6 +17,9 @@
 
 硬约定：
     * 需要登录且 ``user.sid`` 非空（``require_student_id`` 返 400，沿用 T03 口径）；
+    * POST 路由（``/submit`` / ``/sync``）挂 ``require_guardian_consent``
+      监护人同意门控（``CONSENT_GATE_ENABLED`` 默认关，开启后无当前版本同意返 403）；
+      GET 一律不挂（今日卡片 / 统计保持可浏览）；
     * 出参一律 **snake_case**，由 ``app.core.response.ok()`` 包裹（C10）；
     * 全部为纯本地计算（FSRS 调度），用 sync ``def`` 路由不进事件循环；
     * 他人卡片一律按 404 处理（不泄露资源存在性）。
@@ -31,7 +34,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.deps import CurrentUser, get_current_user
+from app.core.deps import CurrentUser, get_current_user, require_guardian_consent
 from app.core.response import ApiError, CODE_NOT_FOUND, ok
 from app.db import get_db
 from app.schemas.review import ReviewSubmitRequest, ReviewSyncRequest
@@ -86,7 +89,7 @@ def review_daily(
     })
 
 
-@router.post("/submit")
+@router.post("/submit", dependencies=[Depends(require_guardian_consent)])
 def review_submit(
     body: ReviewSubmitRequest,
     current: CurrentUser = Depends(get_current_user),
@@ -134,7 +137,7 @@ def review_stats(
     return ok(svc.get_review_stats(str(student_id), days=days))
 
 
-@router.post("/sync")
+@router.post("/sync", dependencies=[Depends(require_guardian_consent)])
 def review_sync(
     body: ReviewSyncRequest,
     current: CurrentUser = Depends(get_current_user),

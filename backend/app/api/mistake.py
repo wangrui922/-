@@ -11,6 +11,9 @@
 
 硬约定：
     * 需要登录且 ``user.sid`` 非空；
+    * ``POST /api/mistake`` 挂 ``require_guardian_consent`` 监护人同意门控
+      （``CONSENT_GATE_ENABLED`` 默认关，开启后无当前版本同意返 403）；
+      GET 列表 / PUT 攻克不在门控范围（读与既有写路径保持原样）；
     * 出参 camelCase，时间 ISO 8601（UTC 存储）——
       本文件是 T03 既有接口，**沿用 camelCase 不改**，
       仅 T04 的 ``/api/profile/*`` 新接口用 snake_case；
@@ -25,7 +28,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Body, Depends, Path, Query
 from sqlalchemy.orm import Session
 
-from app.core.deps import CurrentUser, get_current_user
+from app.core.deps import CurrentUser, get_current_user, require_guardian_consent
 from app.core.response import ok
 from app.db import get_db
 from app.models.learning import Mistake
@@ -88,7 +91,7 @@ def _to_item(mistake: Mistake) -> Dict[str, Any]:
     }
 
 
-@router.post("/mistake")
+@router.post("/mistake", dependencies=[Depends(require_guardian_consent)])
 def create_mistake(
     body: MistakeCreate = Body(...),
     current: CurrentUser = Depends(get_current_user),
