@@ -33,9 +33,13 @@ _ALLOWED_ROLES = ("student", "parent")
 
 
 def _assert_allowed(current: CurrentUser) -> None:
-    """仅学生本人或家长角色可操作监护人同意，其余 403。"""
+    """仅学生本人或家长角色可操作监护人同意，其余 403。
+
+    话术刻意避开连续「监护人同意」四字：前端 ``api/http.ts`` 的 403
+    兜底按该关键词拉同意引导弹窗，角色拒绝属于另一类错误，不能误弹。
+    """
     if current.role not in _ALLOWED_ROLES:
-        raise ApiError(CODE_FORBIDDEN, "仅学生或家长账号可提交监护人同意")
+        raise ApiError(CODE_FORBIDDEN, "仅学生或家长账号可提交同意")
 
 
 def _current_user_id(current: CurrentUser) -> uuid.UUID:

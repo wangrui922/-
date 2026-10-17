@@ -320,6 +320,12 @@ def test_admin_role_forbidden(client, make_token) -> None:
     token = make_token(sub=str(uuid.uuid4()), role="admin", sid=None)
     r = _post_consent(client, token)
     assert r.status_code == 403, r.text
+    # 话术收窄为「仅学生或家长账号可提交同意」：不得含连续「监护人同意」，
+    # 否则会误触发前端 http.ts 的 403 兜底弹窗（见 test_consent_gate 契约测试）
+    assert r.json()["msg"] == "仅学生或家长账号可提交同意"
+    assert "监护人同意" not in r.json()["msg"]
 
     r = client.get("/api/compliance/guardian-consent", headers=_auth(token))
     assert r.status_code == 403, r.text
+    assert r.json()["msg"] == "仅学生或家长账号可提交同意"
+    assert "监护人同意" not in r.json()["msg"]

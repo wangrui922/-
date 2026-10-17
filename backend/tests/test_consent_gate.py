@@ -10,7 +10,9 @@
     * 他人同意不顶用：门控按 ``user_id`` 逐账号校验；
     * 读操作不挂门控：错题本列表 / 今日复习清单 / 游戏历史保持可浏览；
     * 依赖链顺序：未登录 401 先行；门控放行后 ``require_student_id`` 的
-      400 行为不被破坏。
+      400 行为不被破坏；
+    * 跨端契约：前端 ``CONSENT_GATE_HINT`` / ``CONSENT_VERSION`` 常量与
+      后端话术 / 配置默认值逐字对齐（防前端兜底静默失效）。
 
 测试铁律：**绝不设置 DATABASE_URL 环境变量**（conftest 默认 :memory:，
 设了会触发文件库闸门报错退出）。门控开关用 monkeypatch 替换
@@ -20,6 +22,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any, Dict
 
 import pytest
@@ -319,3 +322,79 @@ def test_gate_preserves_dependency_chain(
     r = client.post("/api/practice/session", json={}, headers=_auth(unbound))
     assert_fail(r, 400)
     assert r.json()["msg"] == "未绑定学生"
+
+
+# ====================================================================  跨端契约
+def test_frontend_backend_contract_strings() -> None:
+    """跨端契约：前端兜底识别的关键词 / 版本号必须与后端常量一致。
+
+    用途：前端 student-web 无单测框架、后端 pytest 也不校验前端文本，
+    一旦后端改 ``CONSENT_GATE_DENIED_MSG`` 话术或 ``CONSENT_VERSION``
+    默认值，前端 403 兜底弹窗 / 同意提交版本会**静默失效**——本测试把
+    这条隐性契约变成显式断言，话术 / 版本漂移即红。
+
+    校验（student-web 目录定位：``tests/`` 上两级即仓库根）：
+        1. ``src/api/http.ts`` 的 ``CONSENT_GATE_HINT`` 常量必须是后端
+           ``app.core.deps.CONSENT_GATE_DENIED_MSG`` 的子串（前端按
+           ``msg.includes(关键词)`` 识别，是子串才命中）；
+        2. ``src/api/compliance.ts`` 的 ``CONSENT_VERSION`` 常量必须等于
+           ``system_config.DEFAULTS["CONSENT_VERSION"][0]``（前端提交 /
+           预查用的就是它，漂移会导致同意记录对不上门控版本）；
+        3. ``src/stores/consent.ts`` 必须从 ``@/api/compliance`` 引入
+           ``CONSENT_VERSION``（不得在 store 里另存一份会漂移的副本）。
+
+    文件读取失败一律 FAIL 并给出清晰原因（**不 skip**）：文件缺失 /
+    常量消失本身就是契约破坏。
+    """
+    import re
+
+    from app.core import deps
+
+    repo_root = Path(__file__).resolve().parents[2]
+    student_web = repo_root / "student-web"
+
+    def _read(rel: str) -> str:
+        """读 student-web 下的源文件文本；缺失 / 读失败即 FAIL（不 skip）。"""
+        path = student_web / rel
+        assert path.is_file(), f"跨端契约：找不到前端文件 {path}，契约无从校验"
+        try:
+            return path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise AssertionError(f"跨端契约：读取 {path} 失败：{exc}") from exc
+
+    def _extract_const(source: str, name: str, path: Path) -> str:
+        """从 TS 源里正则提取 ``const NAME = '...'`` 的字符串值。"""
+        match = re.search(
+            rf"{re.escape(name)}\s*=\s*['\"]([^'\"]+)['\"]", source
+        )
+        assert match, f"跨端契约：{path} 中未找到常量 {name} 的字符串定义"
+        return match.group(1)
+
+    # ① 前端兜底关键词 ⊆ 后端门控话术（后端改话术不含该词即红）
+    http_ts = student_web / "src" / "api" / "http.ts"
+    hint = _extract_const(_read("src/api/http.ts"), "CONSENT_GATE_HINT", http_ts)
+    assert hint in deps.CONSENT_GATE_DENIED_MSG, (
+        f"前端 CONSENT_GATE_HINT={hint!r} 不再是后端 "
+        f"CONSENT_GATE_DENIED_MSG={deps.CONSENT_GATE_DENIED_MSG!r} 的子串，"
+        "403 兜底弹窗将静默失效——请同步两端话术"
+    )
+
+    # ② 前端同意版本号 == 后端配置默认值（常量定义在 api/compliance.ts）
+    compliance_ts = student_web / "src" / "api" / "compliance.ts"
+    fe_version = _extract_const(
+        _read("src/api/compliance.ts"), "CONSENT_VERSION", compliance_ts
+    )
+    be_version = DEFAULTS["CONSENT_VERSION"][0]
+    assert fe_version == be_version, (
+        f"前端 CONSENT_VERSION={fe_version!r} 与后端 "
+        f"DEFAULTS['CONSENT_VERSION']={be_version!r} 不一致，"
+        "同意提交 / 门控校验将版本错配"
+    )
+
+    # ③ store 复用 api/compliance.ts 的版本常量，不得自带副本
+    consent_ts = student_web / "src" / "stores" / "consent.ts"
+    store_src = _read("src/stores/consent.ts")
+    assert re.search(
+        r"import\s*\{[^}]*\bCONSENT_VERSION\b[^}]*\}\s*from\s*'@/api/compliance'",
+        store_src,
+    ), f"跨端契约：{consent_ts} 未从 @/api/compliance 引入 CONSENT_VERSION"
