@@ -58,6 +58,7 @@ import {
   unmappedInSession,
   wrongCount,
 } from '@/stores/practice'
+import { checkStatus, consentState } from '@/stores/consent'
 
 const router = useRouter()
 const route = useRoute()
@@ -433,8 +434,23 @@ function handleExitDeepLink(): void {
 }
 
 onMounted(() => {
-  consumeDeepLink()
+  void bootstrapConsent()
 })
+
+/**
+ * 挂载启动顺序：监护人同意态未知时，先补一次预查再放行深链开练。
+ *
+ * 路由守卫通常已在导航前异步查过（绝大多数情况到这里已拿到结论）；
+ * 这里是刷新页面 / 守卫未覆盖路径的兜底。预查**不阻塞渲染**——筛选态
+ * 页面照常可见，只是深链自动开练等这一个快查落地：未同意时 store 会
+ * 主动弹引导窗，不用孩子先撞一次 403 再弹窗。
+ */
+async function bootstrapConsent(): Promise<void> {
+  if (consentState.status === 'unknown') {
+    await checkStatus()
+  }
+  consumeDeepLink()
+}
 
 // 离开页面时把抽屉收掉，避免遮罩残留在别的页面上
 onBeforeUnmount(() => {

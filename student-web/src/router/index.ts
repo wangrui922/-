@@ -16,6 +16,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 import { isLoggedIn } from '@/stores/auth'
+import { checkStatus, consentState, resetConsent } from '@/stores/consent'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -150,16 +151,28 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const isPublic = Boolean(to.meta.public)
+  // 家长专区（/parent/*）不掺和学生的同意态：家长角色在合规接口查到的
+  // 是家长自己账号的记录（恒为未同意），预查会误弹孩子的同意引导窗
+  const isParentArea = to.path.startsWith('/parent')
 
   if (!isPublic && !isLoggedIn()) {
+    // 未登录：先清掉同意态再跳登录——换账号登录后要重新预查，
+    // 不继承上一个账号的 granted / required 结论
+    if (!isParentArea) resetConsent()
     // 家长专区未登录 -> 家长登录页；其余 -> 学生登录页
-    if (to.path.startsWith('/parent')) {
+    if (isParentArea) {
       return { name: 'parent-login', query: { redirect: to.fullPath } }
     }
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.name === 'login' && isLoggedIn()) {
     return { name: 'dashboard' }
+  }
+  // 监护人同意预查（V6.5 合规闸门）：已登录态异步查一次，**不阻塞导航**。
+  // 查不到（网络 / 5xx）保持 unknown 不误弹；未同意由 store 主动弹窗，
+  // 绕过预查的入口（深链 / 游戏页）由 http.ts 的 403 兜底接住。
+  if (!isPublic && !isParentArea && consentState.status === 'unknown') {
+    void checkStatus()
   }
   return true
 })

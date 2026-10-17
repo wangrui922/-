@@ -5,7 +5,9 @@
  *   1. 所有后端调用走 /api/*（Vite dev server 代理到 http://localhost:8000）；
  *   2. 后端响应恒为 { code, msg, data }（见 backend/app/core/response.py），
  *      code === 0 时本层直接把 data 交给业务，code !== 0 抛 ApiError；
- *   3. 401（HTTP 401 或 body.code === 401）清空 token 并跳 /login。
+ *   3. 401（HTTP 401 或 body.code === 401）清空 token 并跳 /login；
+ *   4. 403 且 msg 含「监护人同意」→ 拉起监护人同意弹窗（V6.5 门控兜底，
+ *      接住深链 / 游戏页等绕过预查的入口），不影响其他错误分支行为。
  */
 import axios, {
   type AxiosInstance,
@@ -15,6 +17,7 @@ import axios, {
 
 import router from '@/router'
 import { getToken, logout, getRefreshToken, refreshAccessToken } from '@/stores/auth'
+import { openDialog } from '@/stores/consent'
 
 /** 后端统一响应外壳。 */
 export interface ApiEnvelope<T = unknown> {
@@ -35,6 +38,15 @@ export class ApiError extends Error {
 }
 
 const HTTP_TIMEOUT = 90_000 // AI 生成较慢，给 90s
+
+/**
+ * 监护人同意门控的固定拒绝话术关键词。
+ *
+ * 与 backend/app/core/deps.py 的 CONSENT_GATE_DENIED_MSG
+ * （「使用练习功能需要监护人同意」）对齐，**勿漂移**——后端改话术
+ * 这里必须同步，否则 403 兜底弹窗失效。
+ */
+const CONSENT_GATE_HINT = '监护人同意'
 
 export const http: AxiosInstance = axios.create({
   // 本地/开发：走 Vite 代理到 localhost:8000（VITE_API_BASE 未设置时）；
@@ -125,6 +137,18 @@ http.interceptors.response.use(
 
     if (status === 401 || code === 401) {
       return recoverOrLogout(error.config)
+    }
+
+    // 监护人同意门控兜底（V6.5）：403 且话术含「监护人同意」→ 拉同意弹窗。
+    // 深链 / 游戏页等绕过前端预查的入口开练时，由这里接住。
+    // 只额外弹窗，**不改**后续拒绝路径——调用方既有的错误提示行为不变，
+    // 其他 403 / 错误分支一律不受影响。
+    if (
+      code === 403 &&
+      typeof body?.msg === 'string' &&
+      body.msg.includes(CONSENT_GATE_HINT)
+    ) {
+      openDialog()
     }
 
     const msg =
