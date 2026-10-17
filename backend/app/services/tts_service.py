@@ -64,6 +64,11 @@ FALLBACK_PROVIDER: str = PROVIDER_EDGE
 #: edge-tts 默认嗓音：甜美「小云朵」女声，最适合低年级小朋友
 DEFAULT_VOICE: str = "zh-CN-XiaoxiaoNeural"
 
+#: 前端默认音色别名：``DEFAULT_VOICE`` 对应的简短写法。
+#: 供 ``GET /api/tts/providers`` 下发与前端回落使用——前端拿它回传
+#: ``POST /api/tts`` 时，各 provider 的 ``resolve_voice`` 都能正确解析。
+DEFAULT_VOICE_ALIAS: str = "xiaoxiao"
+
 #: 前端可传的简短别名 -> edge-tts 完整嗓音名（保持与原实现一致）
 VOICE_ALIASES: Dict[str, str] = {
     "xiaoxiao": "zh-CN-XiaoxiaoNeural",  # 甜美小云朵（默认）
@@ -222,6 +227,9 @@ class VolcTtsProvider(TtsProvider):
         token = (settings.tts_volc_access_token or "").strip()
         if not token:
             # 同一个火山账号下，方舟 Key 也可作为语音接口的 access token
+            logger.warning(
+                "未配 TTS_VOLC_ACCESS_TOKEN，复用方舟 Key 作语音 Token；若鉴权失败请配置该项"
+            )
             token = (settings.ark_api_key or "").strip()
 
         if not app_id:
@@ -398,6 +406,34 @@ def resolve_voice(provider: str, voice: Optional[str]) -> str:
     if provider == PROVIDER_PIPER and not raw:
         return configured or DEFAULT_VOICE
     return configured or DEFAULT_VOICE
+
+
+def default_voice(provider: Optional[str] = None) -> str:
+    """当前生效 provider 的默认音色（**前端可直接回传**的形态）。
+
+    与 ``resolve_voice`` 的分工：
+        * ``resolve_voice`` 返回 provider **原生音色名**（如 edge 的
+          ``zh-CN-XiaoxiaoNeural``），供合成链路使用；
+        * 本函数返回「前端回传给 ``POST /api/tts`` 的 ``voice`` 也能被
+          正确解析」的标识，供 ``GET /api/tts/providers`` 下发给前端：
+
+          * ``edge`` / ``piper`` -> 简短别名 ``xiaoxiao``
+            （与前端历史行为一致，零感知切换）；
+          * ``volc`` -> ``settings.tts_volc_voice_type``
+            （运营改配置即对前端默认路径生效，不再被别名写死）。
+
+    Args:
+        provider: provider 名；为空读 ``settings.tts_provider``。
+
+    Returns:
+        前端可安全回传的默认音色标识。
+    """
+    name = resolve_provider_name(provider)
+    if name == PROVIDER_VOLC:
+        return (settings.tts_volc_voice_type or "").strip() or VOLC_DEFAULT_VOICE_TYPE
+    # edge（内测期默认 + 最终兜底）与 piper（未实现，选中会降级 edge）：
+    # 沿用前端别名，保持默认路径与改造前完全一致
+    return DEFAULT_VOICE_ALIAS
 
 
 def normalize_rate(rate: Optional[str]) -> Optional[str]:
@@ -592,7 +628,7 @@ def describe() -> Dict[str, Any]:
         "provider": current,
         "fallbackEnabled": bool(settings.tts_fallback_enabled),
         "fallbackProvider": FALLBACK_PROVIDER,
-        "voice": resolve_voice(current, None),
+        "voice": default_voice(current),
         "maxTextLength": MAX_TEXT_LEN,
         "providers": provider_status(),
     }
@@ -609,6 +645,7 @@ __all__ = [
     "get_provider",
     "resolve_provider_name",
     "resolve_voice",
+    "default_voice",
     "normalize_rate",
     "normalize_text",
     "provider_status",
@@ -619,6 +656,7 @@ __all__ = [
     "SUPPORTED_PROVIDERS",
     "FALLBACK_PROVIDER",
     "DEFAULT_VOICE",
+    "DEFAULT_VOICE_ALIAS",
     "VOICE_ALIASES",
     "VOLC_VOICE_ALIASES",
     "MAX_TEXT_LEN",

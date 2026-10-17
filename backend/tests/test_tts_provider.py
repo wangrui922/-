@@ -390,4 +390,33 @@ def test_get_providers_contract(client) -> None:
         assert isinstance(item["reason"], str)
 
 
+def test_get_providers_voice_default_edge(client) -> None:
+    """GET /api/tts/providers 的 voice 字段：edge 生效时下发前端别名 'xiaoxiao'。
+
+    前端拿它回传 POST /api/tts 可被 resolve_voice 正确解析，且与改造前
+    前端硬编码的值一致——默认路径零感知。
+    """
+    r = client.get("/api/tts/providers")
+    assert r.status_code == 200
+    assert r.json()["data"]["voice"] == "xiaoxiao"
+
+
+def test_get_providers_voice_follows_volc_voice_type(client, monkeypatch) -> None:
+    """volc 生效时 voice 跟随 TTS_VOLC_VOICE_TYPE：运营改配置即对前端默认路径生效。
+
+    这条正是本次要修的陷阱的反面：前端不再硬编码 'xiaoxiao'（别名命中会
+    优先映射到 BV001_streaming），而是用后端下发的配置值。
+    """
+    monkeypatch.setattr(settings, "tts_provider", "volc")
+    monkeypatch.setattr(settings, "tts_volc_app_id", "app-1")
+    monkeypatch.setattr(settings, "tts_volc_access_token", "token-1")
+    monkeypatch.setattr(settings, "tts_volc_voice_type", "BV002_streaming")
+
+    r = client.get("/api/tts/providers")
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["provider"] == "volc"
+    assert data["voice"] == "BV002_streaming"
+
+
 __all__ = ["FAKE_AUDIO", "FAKE_MIME"]

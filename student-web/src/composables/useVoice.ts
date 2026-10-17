@@ -121,16 +121,48 @@ function stopCloud(): void {
 }
 
 /**
- * 云端朗读：调后端 /api/tts（微软「小云朵」甜美中文女声，免 key、国内可达）。
+ * 云端朗读默认音色（模块级缓存）。
+ *
+ * 为什么不再写死 'xiaoxiao'：前端曾经在 playCloud 里硬编码别名 'xiaoxiao'，
+ * 导致运营改 TTS_VOLC_VOICE_TYPE 对默认路径完全失效（别名命中优先）。
+ * 现在初始值仅作回落（与历史行为一致），真正的取值由 initVoice() 从
+ * 后端 GET /api/tts/providers 的 voice 字段刷新（edge->'xiaoxiao'；
+ * volc->TTS_VOLC_VOICE_TYPE 的值），运营改配置即生效。
+ */
+let defaultVoice = 'xiaoxiao'
+
+/** 从后端拉取当前生效 provider 的默认音色，更新模块级缓存；失败静默保持回落值。 */
+export async function initVoice(): Promise<void> {
+  try {
+    const base = (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE || '/api'
+    const resp = await fetch(`${base}/tts/providers`)
+    if (!resp.ok) return
+    const body = (await resp.json()) as { data?: { voice?: unknown } }
+    const voice = body?.data?.voice
+    if (typeof voice === 'string' && voice.trim()) {
+      defaultVoice = voice.trim()
+    }
+  } catch {
+    /* 后端暂不可达：保持 'xiaoxiao' 回落，朗读链路零影响 */
+  }
+}
+
+// 模块加载即后台刷新默认音色（fire-and-forget，失败不影响朗读）；
+// 后续如切换账号 / 运营改配置，也可显式再调 initVoice() 主动刷新。
+void initVoice()
+
+/**
+ * 云端朗读：调后端 /api/tts（甜美中文女声，免 key、国内可达）。
+ * 音色取默认缓存 defaultVoice（后端下发的当前生效音色），调用方可用 voice 参数覆盖。
  * 成功播放 resolve；网络/后端抖动则 reject，交由 speak 回退浏览器嗓音。
  */
-async function playCloud(clean: string, key: string): Promise<void> {
+async function playCloud(clean: string, key: string, voice?: string): Promise<void> {
   const base = (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE || '/api'
   cloudAbort = new AbortController()
   const resp = await fetch(`${base}/tts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: clean, voice: 'xiaoxiao' }),
+    body: JSON.stringify({ text: clean, voice: voice || defaultVoice }),
     signal: cloudAbort.signal,
   })
   if (!resp.ok) throw new Error(`tts http ${resp.status}`)
@@ -165,14 +197,15 @@ async function playCloud(clean: string, key: string): Promise<void> {
 /**
  * 朗读一段文字：云端甜美嗓音优先（读题/讲题更甜，适合小朋友）；
  * 云端不可用时自动回退到浏览器自带嗓音。返回是否成功发起朗读。
+ * voice 可显式指定音色（别名或 provider 原生音色名）；缺省用后端下发的默认音色缓存。
  */
-export async function speak(text: string, key = ''): Promise<boolean> {
+export async function speak(text: string, key = '', voice?: string): Promise<boolean> {
   const clean = cleanForSpeech(text)
   if (!clean) return false
   stopSpeaking()
   // 云端优先：更甜的「小云朵」小朋友嗓音
   try {
-    await playCloud(clean, key)
+    await playCloud(clean, key, voice)
     return true
   } catch {
     /* 云端不可用，回退浏览器 */
