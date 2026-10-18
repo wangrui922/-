@@ -31,6 +31,16 @@ export interface StartChatResult {
   sessionId: string
   analysis: ChatAnalysis
   firstQuestion: string
+  /**
+   * 低置信度重拍（后端 `CONFIDENCE_RETHRESHOLD` 灰度开启时）：
+   * 模型自评「没看清」，不创建会话、不硬答，引导重新拍照。
+   * 此时 sessionId 为空串，firstQuestion 为空串。
+   */
+  needRePhoto?: boolean
+  /** 重拍引导话术（后端给，温和无 emoji）；needRePhoto 时非空 */
+  rephotoMessage?: string
+  /** 模型自评置信度 0~1（needRePhoto 时透出，便于后续展示/排查） */
+  confidence?: number
 }
 
 /**
@@ -186,6 +196,11 @@ interface RawStartChat {
   firstQuestion?: string
   next_question?: string
   analysis?: Record<string, unknown>
+  /** 低置信度重拍：正常业务结果（HTTP 200 + code 0），不是错误码 */
+  need_rephoto?: boolean
+  needRePhoto?: boolean
+  confidence?: number
+  message?: string
 }
 
 /** POST /api/chat/{id}/message 的后端原始返回。 */
@@ -324,6 +339,10 @@ function normalizeStartChat(raw: RawStartChat): StartChatResult {
     },
     // 后端当前给 first_question；文档里叫 next_question，一并兼容
     firstQuestion: String(raw.first_question ?? raw.firstQuestion ?? raw.next_question ?? ''),
+    // 低置信度重拍：双命名兼容，缺省 false（旧后端零感知）
+    needRePhoto: Boolean(raw.need_rephoto ?? raw.needRePhoto ?? false),
+    rephotoMessage: String(raw.message ?? ''),
+    confidence: raw.confidence === undefined ? undefined : Number(raw.confidence),
   }
 }
 

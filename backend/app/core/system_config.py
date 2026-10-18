@@ -42,6 +42,13 @@ DEFAULTS: Dict[str, tuple] = {
     # 开关的 cast 用 _to_bool 而非 bool，原因见 _to_bool 文档字符串。
     "CONSENT_GATE_ENABLED": ("false", _to_bool),
     "CONSENT_VERSION": ("v1", str),
+    # V6.5 低置信度重拍（灰度开关，默认关闭）：
+    #   * CONFIDENCE_RETHRESHOLD —— 拍题分析自评置信度低于该阈值时，引导重新拍照
+    #     而不硬答（orchestrator._confidence_gate）；取值 0~1，-1 表示关闭。
+    # 默认关闭的理由：模型自评置信度的可靠性尚未在内测中验证（模型可能对没把握的
+    # 题也给高置信度），按「不确定性默认不挡用户」灰度——运营/内测验证后按需开启
+    # （建议 0.6）。与 CONSENT_GATE_ENABLED 同一灰度思路。
+    "CONFIDENCE_RETHRESHOLD": ("-1", float),
 }
 
 # 进程内缓存

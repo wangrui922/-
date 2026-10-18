@@ -2,6 +2,10 @@
 
 链路：``图片 → OCR(ocr.PROMPT) → 题目文字`` → ``分析(tutor.PROMPT) → JSON``。
 本模块只做"读题+定性"，不做诊断、不做引导。
+
+分析 JSON 除知识点/难度/题型/答案/解答外，还要求模型输出 ``confidence``
+（0~1 自评置信度：识别是否正确、分析是否可靠）——供编排层低置信度重拍闸门
+使用，没把握时不硬答（灰度开关见 ``system_config.CONFIDENCE_RETHRESHOLD``）。
 """
 
 from __future__ import annotations
@@ -28,10 +32,14 @@ DEFAULT_TYPE: str = "计算"
 _ANALYZE_INSTRUCTION: str = (
     "请分析并完整解答以下题目，只输出JSON，不要任何解释、前后缀或代码块标记。\n"
     '格式严格为：{"knowledge":"知识点名称","difficulty":3,"type":"计算",'
-    '"correct_answer":"标准答案","solution":"完整但简洁的解题过程"}\n'
+    '"correct_answer":"标准答案","solution":"完整但简洁的解题过程",'
+    '"confidence":0.95}\n'
     "其中 difficulty 只能取 1(易)/3(中)/5(难) 三个整数之一；"
     "type 只能取 计算/应用/几何/函数/证明 之一；knowledge 用不超过 12 个字的知识点名；"
-    "correct_answer 必须包含最终答案和必要单位；solution 要覆盖关键推理步骤。\n\n"
+    "correct_answer 必须包含最终答案和必要单位；solution 要覆盖关键推理步骤；"
+    "confidence 是 0~1 之间的小数，表示你对「题目识别是否正确、分析是否可靠」的自我评估——"
+    "图像模糊、字迹不清、条件有歧义或无法确认某个数字/符号时，必须给出低置信度"
+    "（如 0.3 甚至更低）；识别与分析都很有把握时，才可以给 0.9 以上。宁可低报也不要高估。\n\n"
     "题目：\n"
 )
 
@@ -57,6 +65,23 @@ def _normalize_type(raw: Any) -> str:
         if item and item in value:
             return item
     return DEFAULT_TYPE
+
+
+def _normalize_confidence(raw: Any) -> Optional[float]:
+    """把模型自评置信度收敛到 0~1；缺失 / 无法解析时返回 ``None``（按放行处理）。
+
+    为什么缺失返回 ``None`` 而不是低分：模型没给（或给了脏值）不等于"没看清"，
+    闸门对 ``None`` 一律放行，避免把解析失败误伤成拦截用户重新拍照。
+    """
+    if raw is None:
+        return None
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    if value != value:  # NaN 自我保护
+        return None
+    return min(1.0, max(0.0, value))
 
 
 def ocr_image(image_b64: str) -> str:
@@ -110,7 +135,11 @@ def _merge_question_text(ocr_text: str, typed_text: str) -> str:
 
 
 def _build_analysis(raw: str, question_text: str) -> Dict[str, Any]:
-    """把方舟分析响应收敛成统一的返回结构。"""
+    """把方舟分析响应收敛成统一的返回结构。
+
+    ``confidence`` 为模型自评置信度（0~1），缺失 / 解析失败时为 ``None``——
+    由编排层低置信度重拍闸门按「放行」处理。
+    """
     data = _extract_json(raw)
     if not isinstance(data, dict):
         data = {}
@@ -122,6 +151,7 @@ def _build_analysis(raw: str, question_text: str) -> Dict[str, Any]:
         "question_text": question_text,
         "correct_answer": str(data.get("correct_answer") or "").strip(),
         "solution": str(data.get("solution") or "").strip(),
+        "confidence": _normalize_confidence(data.get("confidence")),
     }
 
 
@@ -133,8 +163,10 @@ def analyze_question(*, text: Optional[str], image_b64: Optional[str]) -> Dict[s
         image_b64: 题目照片 base64 或 data URL，可为空；非空时先做 OCR 并与 ``text`` 合并。
 
     Returns:
-        ``{"knowledge", "difficulty", "type", "question_text", "correct_answer", "solution"}``。
-        ``question_text`` 是合并后的完整题面，供编排层写入会话上下文。
+        ``{"knowledge", "difficulty", "type", "question_text", "correct_answer",
+        "solution", "confidence"}``。
+        ``question_text`` 是合并后的完整题面，供编排层写入会话上下文；
+        ``confidence`` 是模型自评置信度（0~1），缺失时为 ``None``。
 
     Raises:
         ApiError: code=400，文字与图片同时为空。
@@ -166,7 +198,7 @@ async def analyze_question_async(*, text: Optional[str], image_b64: Optional[str
         image_b64: 题目照片 base64 或 data URL，可为空；非空时先做 OCR 并与 ``text`` 合并。
 
     Returns:
-        与 ``analyze_question`` 完全相同的返回结构。
+        与 ``analyze_question`` 完全相同的返回结构（含 ``confidence``）。
 
     Raises:
         ApiError: code=400，文字与图片同时为空。

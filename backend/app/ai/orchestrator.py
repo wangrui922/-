@@ -30,10 +30,12 @@ from app.ai.state_machine import (  # T04B 状态机
     SESSION_STATE_GUIDING,
     SESSION_STATE_INTRO,
     SESSION_STATE_PRACTICING,
+    is_strict_guard,
 )
 from app.core.config import settings
 from app.core.error_categories import normalize_error  # 方向八：错因 → 诊断话术
 from app.core.response import ApiError, CODE_BAD_REQUEST
+from app.core.system_config import get_config  # 低置信度重拍阈值（灰度开关）
 from app.db import SessionLocal  # noqa: F401  (只读脚本按需自建会话，写操作一律用传入的 db)
 from app.models.ai import AiMessage, AiSession
 from app.models.content import (
@@ -65,6 +67,52 @@ DEFAULT_DIFFICULTY: int = 3
 DEFAULT_ERROR_TYPE: str = "概念混淆"
 PHOTO_SOURCE_DOC: str = "ai_wrong"
 STUDENT_QUESTION_SOURCE_DOC: str = "student_asked"
+
+#: 低置信度重拍引导话术（``need_rephoto`` 时回给前端；温和、无 emoji，语义=引导重拍）
+REPHOTO_MESSAGE: str = "这道题有些地方我没看清，重新拍一张给我看看好吗？"
+
+
+def _confidence_gate(analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """低置信度闸门：模型自评置信度低于阈值时，返回「引导重拍」代替硬答。
+
+    阈值读 ``system_config`` 的 ``CONFIDENCE_RETHRESHOLD``（默认 -1 = 关闭，
+    灰度开关）：值 <0 表示机制关闭；``confidence`` 缺失（模型没给 / 解析失败）
+    或无法转 float 时一律放行——不拿「没有自评」当「没看清」，避免误伤。
+
+    Args:
+        analysis: ``question.analyze_question`` 的分析结论。
+
+    Returns:
+        需要重拍时返回 ``{"need_rephoto": True, "confidence": float, "message": str}``；
+        放行时返回 ``None``。
+    """
+    try:
+        threshold = float(get_config("CONFIDENCE_RETHRESHOLD"))
+    except (TypeError, ValueError):
+        return None
+    if threshold < 0:
+        return None
+
+    raw = analysis.get("confidence")
+    if raw is None:
+        return None
+    try:
+        confidence = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if confidence >= threshold:
+        return None
+
+    logger.info(
+        "confidence gate blocked: confidence=%.2f < threshold=%.2f，引导重新拍照",
+        confidence,
+        threshold,
+    )
+    return {
+        "need_rephoto": True,
+        "confidence": confidence,
+        "message": REPHOTO_MESSAGE,
+    }
 
 
 def _emit_chat_dna_event(
@@ -100,6 +148,90 @@ def _emit_chat_dna_event(
     except Exception:  # noqa: BLE001 - 埋点失败不影响辅导主流程
         logger.warning(
             "chat DNA 埋点失败 event=%s session=%s", event_type, meta, exc_info=True
+        )
+
+
+def _emit_answer_leak_trace(
+    db: Session,
+    *,
+    student_id: uuid.UUID,
+    session_id: uuid.UUID,
+    question_id: Optional[uuid.UUID],
+    reply: str,
+    mode: Optional[str],
+    state: Optional[str],
+) -> None:
+    """Benchmark 维度一（教学行为）：学生面回复命中答案泄漏特征 → 落 trace。
+
+    检测口径与 ``app.ai.answer_guard`` **完全一致**：同一
+    ``has_answer_leak``、同一严格度 ``is_strict_guard(state, mode)``
+    （引导/开场严格，讲解/评判宽松只拦露骨宣告）。引导类模式下 guard 会
+    重生成/兜底拦截，学生面回复不会命中，故天然不落；讲解（DEMO/JUDGE）
+    模式下 guard 直通，若讲解仍出现露骨的「答案：x」宣告即落一条
+    ``answer_leak`` trace（severity=warning）。
+
+    旁路语义与 ``_emit_chat_dna_event`` 一致：任何异常只记 warning，绝不
+    拖垮辅导主流程；只 ``flush``，由调用方现有 ``db.commit()`` 收口。
+    """
+    try:
+        from app.ai.answer_guard import has_answer_leak
+        from app.services import quality_metrics_service
+
+        strict = is_strict_guard(state or SESSION_STATE_GUIDING, mode=mode)
+        text = (reply or "").strip()
+        if not text or not has_answer_leak(text, strict=strict):
+            return
+        quality_metrics_service.record_answer_leak_trace(
+            db,
+            student_id=student_id,
+            session_id=session_id,
+            question_id=question_id,
+            payload={
+                "mode": mode,
+                "strict": strict,
+                "excerpt": text[:200],
+            },
+        )
+    except Exception:  # noqa: BLE001 - 指标埋点失败不影响辅导主流程
+        logger.warning(
+            "answer_leak trace 埋点失败 session=%s mode=%s",
+            session_id,
+            mode,
+            exc_info=True,
+        )
+
+
+def _emit_explanation_quality_trace(
+    db: Session,
+    *,
+    student_id: uuid.UUID,
+    session_id: uuid.UUID,
+    quality: Any,
+    threshold: Optional[int] = None,
+) -> None:
+    """Benchmark 维度一（教学行为）：DEMO 讲解质量评分 → 落 trace。
+
+    只在评分**解析成功**（``quality.parsed_ok=True``）时落库，携带 5 维
+    分数 + overall + 阈值 + 是否达标；解析失败（裁判超时 / JSON 脏）不落
+    ——默认 3 分不是真实评分，落进去会污染均分趋势。
+
+    旁路语义同 ``_emit_answer_leak_trace``：异常只 warning 不拖垮主流程。
+    """
+    try:
+        from app.services import quality_metrics_service
+
+        if quality is None or not bool(getattr(quality, "parsed_ok", False)):
+            return
+        quality_metrics_service.record_explanation_quality_trace(
+            db,
+            student_id=student_id,
+            session_id=session_id,
+            quality=quality,
+            threshold=threshold,
+        )
+    except Exception:  # noqa: BLE001 - 指标埋点失败不影响辅导主流程
+        logger.warning(
+            "explanation_quality trace 埋点失败 session=%s", session_id, exc_info=True
         )
 
 
@@ -303,7 +435,10 @@ def start_session(
         db: 调用方传入的 SQLAlchemy 会话（本函数内 ``commit``）。
 
     Returns:
-        ``{"session_id": str, "analysis": dict, "first_question": str}``。
+        ``{"session_id": str, "analysis": dict, "first_question": str}``；
+        分析自评置信度低于 ``CONFIDENCE_RETHRESHOLD`` 阈值时改为返回
+        ``{"need_rephoto": True, "confidence": float, "message": str}``，
+        且不创建任何会话 / 错题 / 题目记录（没看清就不硬答，引导重新拍照）。
 
     Raises:
         ApiError: 400 题目为空 / 参数非法；429 今日额度已用完。
@@ -313,6 +448,11 @@ def start_session(
     check_ai_quota(sid, db)
 
     analysis = question.analyze_question(text=text, image_b64=image_b64)
+
+    # 低置信度重拍：没把握就不硬答——不建 ai_sessions / mistakes / questions，直接引导重拍
+    gate = _confidence_gate(analysis)
+    if gate is not None:
+        return gate
 
     source_image_url = _file_url(image_key)
     source_question = _archive_student_question(
@@ -395,11 +535,18 @@ async def start_session_async(
 
     Args、Returns、Raises 与 ``start_session`` 完全一致（DB 写操作为了保持与同步
     版共享 Session 语义，仍是同步调用；耗尽时间集中在网络 I/O，已被异步化）。
+    低置信度重拍语义一致：置信度低于 ``CONFIDENCE_RETHRESHOLD`` 阈值时返回
+    ``need_rephoto`` 结果，不创建任何记录。
     """
     sid = _to_uuid(student_id, "student_id")
     check_ai_quota(sid, db)
 
     analysis = await question.analyze_question_async(text=text, image_b64=image_b64)
+
+    # 低置信度重拍：没把握就不硬答——不建 ai_sessions / mistakes / questions，直接引导重拍
+    gate = _confidence_gate(analysis)
+    if gate is not None:
+        return gate
 
     source_image_url = _file_url(image_key)
     source_question = _archive_student_question(
@@ -559,6 +706,16 @@ def continue_session(
     # 知识点；取不到时 meta 标 unknown（见 _attribution_markers）。
     chat_question_id, chat_kp_id = _session_question_attribution(db, session)
     attribution = _attribution_markers(chat_question_id, chat_kp_id)
+    # Benchmark 维度一（教学行为）：学生面回复仍命中答案泄漏特征 → 落 trace
+    _emit_answer_leak_trace(
+        db,
+        student_id=session.student_id,
+        session_id=session.id,
+        question_id=chat_question_id,
+        reply=reply,
+        mode=active_mode,
+        state=state,
+    )
     if active_mode == MODE_HINT:
         _emit_chat_dna_event(
             db,
@@ -661,6 +818,16 @@ async def continue_session_async(
     # 知识点；取不到时 meta 标 unknown（见 _attribution_markers）。
     chat_question_id, chat_kp_id = _session_question_attribution(db, session)
     attribution = _attribution_markers(chat_question_id, chat_kp_id)
+    # Benchmark 维度一（教学行为）：学生面回复仍命中答案泄漏特征 → 落 trace
+    _emit_answer_leak_trace(
+        db,
+        student_id=session.student_id,
+        session_id=session.id,
+        question_id=chat_question_id,
+        reply=reply,
+        mode=active_mode,
+        state=state,
+    )
     if active_mode == MODE_HINT:
         _emit_chat_dna_event(
             db,
@@ -731,7 +898,7 @@ def _apply_demo_quality_gate(
             mode=MODE_DEMO,
         )
 
-    final_text, _quality = explanation_quality.ensure_explanation_quality(
+    final_text, quality = explanation_quality.ensure_explanation_quality(
         question=first_user,
         student_attempt=student_text,
         ai_explanation=reply,
@@ -739,6 +906,14 @@ def _apply_demo_quality_gate(
         regenerate=_regenerate,
         threshold=threshold,
         max_retries=1,
+    )
+    # Benchmark 维度一（教学行为）：讲解质量评分落 trace（解析失败不落分）
+    _emit_explanation_quality_trace(
+        db,
+        student_id=session.student_id,
+        session_id=session.id,
+        quality=quality,
+        threshold=threshold,
     )
     return final_text
 
@@ -770,7 +945,7 @@ async def _apply_demo_quality_gate_async(
             mode=MODE_DEMO,
         )
 
-    final_text, _quality = await explanation_quality.ensure_explanation_quality_async(
+    final_text, quality = await explanation_quality.ensure_explanation_quality_async(
         question=first_user,
         student_attempt=student_text,
         ai_explanation=reply,
@@ -778,6 +953,14 @@ async def _apply_demo_quality_gate_async(
         regenerate=_regenerate,
         threshold=threshold,
         max_retries=1,
+    )
+    # Benchmark 维度一（教学行为）：讲解质量评分落 trace（解析失败不落分）
+    _emit_explanation_quality_trace(
+        db,
+        student_id=session.student_id,
+        session_id=session.id,
+        quality=quality,
+        threshold=threshold,
     )
     return final_text
 

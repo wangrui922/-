@@ -89,6 +89,7 @@ class FakeArk:
         correct_answer: str = "x = 2",
         solution: str = "先移项得 2x = 4，再两边同除以 2。",
         exercises: Optional[List[Dict[str, Any]]] = None,
+        confidence: Optional[float] = None,
     ) -> None:
         self.knowledge = knowledge
         self.difficulty = difficulty
@@ -97,6 +98,8 @@ class FakeArk:
         self.correct_answer = correct_answer
         self.solution = solution
         self.exercises = DEFAULT_EXERCISES if exercises is None else exercises
+        #: 低置信度重拍机制：None = 分析 JSON 不带 confidence 字段（验证缺失放行）
+        self.confidence = confidence
         self.calls: List[Dict[str, Any]] = []
 
     # ---------------------------------------------------------------- 调用
@@ -160,18 +163,19 @@ class FakeArk:
         if kind == "summary":
             return "【今天学习】\n题型：分数应用题\n老师先看：先找总量和分率关系。\n关键条件：题目中的总数和两个分率。\n解题推进：先求第一种量，再按关系求第二种量。\n最容易错：把‘少’看成直接相减。\n下次这样做：先圈出数量关系，再写每一步。\n理解情况：基本掌握。"
         if kind == "analyze":
-            payload = json.dumps(
-                {
-                    "knowledge": self.knowledge,
-                    "difficulty": self.difficulty,
-                    "type": self.qtype,
-                    "correct_answer": self.correct_answer,
-                    "solution": self.solution,
-                },
-                ensure_ascii=False,
-            )
+            payload: Dict[str, Any] = {
+                "knowledge": self.knowledge,
+                "difficulty": self.difficulty,
+                "type": self.qtype,
+                "correct_answer": self.correct_answer,
+                "solution": self.solution,
+            }
+            # 低置信度重拍机制：显式设置了 confidence 才带该字段（缺省不带，
+            # 供「confidence 缺失 → 放行」用例复用）
+            if self.confidence is not None:
+                payload["confidence"] = self.confidence
             # 故意套上代码块围栏，顺带验证 _json_utils 的脏格式兜底
-            return f"```json\n{payload}\n```"
+            return f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
         if kind == "diagnose":
             return json.dumps(
                 {"error": "方法错", "reason": "移项时忘了变号", "gap": "等式性质"},

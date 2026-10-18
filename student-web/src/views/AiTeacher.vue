@@ -108,6 +108,9 @@ const STATUS_LABEL: Record<ExerciseThread['status'], string> = {
   done: '已完成',
 }
 
+/** 低置信度重拍引导话术兜底（后端 message 缺失时用；与后端 orchestrator.REPHOTO_MESSAGE 一致）。 */
+const DEFAULT_REPHOTO_MESSAGE = '这道题有些地方我没看清，重新拍一张给我看看好吗？'
+
 /** 主对话区的快捷按钮：一句话说清「我现在要什么」，省得孩子组织语言。 */
 const CHAT_QUICK_ACTIONS: readonly QuickAction[] = [
   { label: '不会做，给我讲', text: '我不会做，你给我讲一遍吧', mode: 'DEMO' },
@@ -167,6 +170,11 @@ const sending = ref<boolean>(false)
 const uploading = ref<boolean>(false)
 const generating = ref<boolean>(false)
 const errorMsg = ref<string>('')
+/**
+ * 低置信度重拍引导：后端自评「没看清」时不建会话、不进引导态，
+ * 改为展示重拍卡片（引导话术 + 「重新拍照」按钮），AI 不硬猜。
+ */
+const rephoto = ref<{ message: string; confidence: number | null } | null>(null)
 
 /** 做对一道题时弹出的「攻克庆祝」横幅（纯视觉，2.6s 自动消失）。 */
 const celebrate = ref<boolean>(false)
@@ -451,6 +459,7 @@ async function handleSend(mode?: TutorMode): Promise<void> {
   const image = imageDataUrl.value
   sending.value = true
   errorMsg.value = ''
+  rephoto.value = null
 
   try {
     if (!started.value) {
@@ -462,6 +471,18 @@ async function handleSend(mode?: TutorMode): Promise<void> {
         imageKey: sourceImageKey.value || undefined,
         text: text || undefined,
       })
+      // 低置信度重拍：没看清就不硬答——不建会话、不进引导态，展示重拍引导卡片
+      if (result.needRePhoto) {
+        rephoto.value = {
+          message: result.rephotoMessage || DEFAULT_REPHOTO_MESSAGE,
+          confidence: result.confidence ?? null,
+        }
+        // 清掉这次没拍清的照片与 OCR，避免原样重发同一张
+        clearImage()
+        ocrText.value = ''
+        if (autoRead.value) speak(rephoto.value.message, 'rephoto')
+        return
+      }
       sessionId.value = result.sessionId
       analysisText.value = `这道题考：${result.analysis.knowledge} · ${result.analysis.type} · 难度 ${result.analysis.difficulty}`
       push('ai', analysisText.value)
@@ -762,6 +783,7 @@ function handleReset(): void {
   analysisText.value = ''
   inputText.value = ''
   errorMsg.value = ''
+  rephoto.value = null
   guideError.value = ''
   currentMode.value = DEFAULT_TUTOR_MODE
   nextMode.value = DEFAULT_TUTOR_MODE
@@ -845,6 +867,22 @@ restoreAiTeacherProgress()
         />
         <ChatBubble v-if="sending" key="__sending__" role="ai" :content="busyHint" pending />
       </TransitionGroup>
+
+      <!-- 低置信度重拍引导：没看清就引导重拍，不让 AI 硬猜（家长信任的基石） -->
+      <div
+        v-if="rephoto"
+        class="rounded-2xl border border-amber-100 bg-amber-50/80 px-4 py-3"
+      >
+        <p class="text-sm leading-relaxed text-amber-700">{{ rephoto.message }}</p>
+        <button
+          type="button"
+          class="mt-2 rounded-full bg-amber-500 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition active:bg-amber-600 disabled:opacity-50"
+          :disabled="sending"
+          @click="fileInput?.click()"
+        >
+          重新拍照
+        </button>
+      </div>
 
       <!-- 生成练习 -->
       <section v-if="canGenerate || exercises.length" class="space-y-3 pt-2">

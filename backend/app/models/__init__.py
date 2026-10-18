@@ -44,6 +44,7 @@ from app.models.progress import PracticeProgress
 from app.models.manim_task import ManimTask
 from app.models.geogebra_task import GeoGebraTask
 from app.models.compliance import GuardianConsent
+from app.models.quality_trace import QualityTrace
 
 #: 声明式元数据（供建表 / 迁移使用）
 metadata = Base.metadata
@@ -93,4 +94,6 @@ __all__ = [
     "GeoGebraTask",
     # 合规域（V6.5 T13：监护人同意留痕）
     "GuardianConsent",
+    # Benchmark 维度一（教学行为质量事件流水）
+    "QualityTrace",
 ]

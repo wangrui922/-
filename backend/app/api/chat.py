@@ -8,7 +8,10 @@
     * ``orchestrator`` 的 ``*_async`` 编排是**纯 async**（内部 await async Agent），
       路由直接 ``await``，不再包 ``run_in_threadpool``；
     * 响应恒为 ``{"code":0,"msg":"ok","data":{}}``，data 直接透传编排器结果
-      （``session_id`` / ``analysis`` / ``first_question``，见 docs/v4-db-api.md §B.2）。
+      （``session_id`` / ``analysis`` / ``first_question``，见 docs/v4-db-api.md §B.2）；
+    * 低置信度重拍（``CONFIDENCE_RETHRESHOLD`` 灰度开启时）：data 为
+      ``{"need_rephoto":true,"confidence","message"}``，仍是 HTTP 200 + code 0
+      的正常业务结果（不是错误码），前端据此引导重新拍照、不创建会话。
 """
 
 from __future__ import annotations
@@ -88,7 +91,9 @@ async def create_chat(
     """拍题开场：读题分析 + 首轮引导，并落库 ``ai_sessions`` / ``ai_messages``。
 
     Returns:
-        ``{"code":0,"msg":"ok","data":{"session_id","analysis","first_question"}}``。
+        ``{"code":0,"msg":"ok","data":{"session_id","analysis","first_question"}}``；
+        低置信度重拍时 data 为 ``{"need_rephoto":true,"confidence","message"}``
+        （HTTP 200 + code 0，前端引导重新拍照，不创建会话）。
 
     Raises:
         ApiError: 400 未绑定学生 / 题目为空；429 今日 AI 额度已用完。
