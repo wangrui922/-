@@ -277,14 +277,21 @@ def make_review_log(
     db.flush()
 
 
-def count_traces(db, *, event_type: str) -> int:
-    return int(
-        db.execute(
-            select(QualityTrace).where(QualityTrace.event_type == event_type)
-        )
-        .scalars()
-        .all().__len__()
-    )
+def count_traces(
+    db,
+    *,
+    event_type: str,
+    student_id: Optional[uuid.UUID] = None,
+    session_id: Optional[uuid.UUID] = None,
+) -> int:
+    """按隔离键数 trace（**不假设全表为 0**——测试库是会话级共享内存库，
+    跨用例数据会堆积，全局计数会让用例互相拖垮）。"""
+    stmt = select(QualityTrace).where(QualityTrace.event_type == event_type)
+    if student_id is not None:
+        stmt = stmt.where(QualityTrace.student_id == student_id)
+    if session_id is not None:
+        stmt = stmt.where(QualityTrace.session_id == session_id)
+    return len(db.execute(stmt).scalars().all())
 
 
 # ==================================================================== 模型
@@ -331,7 +338,8 @@ def test_record_answer_leak_trace_persists(db):
     assert trace.severity == "warning"
     assert trace.student_id == student_id
     assert trace.payload["excerpt"] == "答案：12"
-    assert count_traces(db, event_type="answer_leak") == 1
+    # 按本用例的学生隔离键计数（共享内存库，不假设全表只有 1 条）
+    assert count_traces(db, event_type="answer_leak", student_id=student_id) == 1
 
 
 def test_record_explanation_quality_trace_skips_unparsed(db):
@@ -344,11 +352,15 @@ def test_record_explanation_quality_trace_skips_unparsed(db):
         grade = "合格"
         suggestion = ""
 
+    # 用一个本用例独有的 session 哨兵键计数：record 返回 None 且该键下无行
+    sentinel_session = make_session(db, student_id=make_student(db))
     result = qms.record_explanation_quality_trace(
-        db, quality=_Unparsed(), threshold=3
+        db, session_id=sentinel_session, quality=_Unparsed(), threshold=3
     )
     assert result is None
-    assert count_traces(db, event_type="explanation_quality") == 0
+    assert count_traces(
+        db, event_type="explanation_quality", session_id=sentinel_session
+    ) == 0
 
 
 def test_record_explanation_quality_trace_persists_scores(db):
