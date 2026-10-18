@@ -169,11 +169,28 @@ def record_learning_event(
     question_id: Optional[uuid.UUID] = None,
     knowledge_point_id: Optional[uuid.UUID] = None,
     meta: Optional[Dict[str, Any]] = None,
+    mastery_meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """记录一条学习行为事件。
 
     事件类型八类枚举硬校验（QUESTIONVIEW/ANSWER/HINT/ERROR/CORRECT/
     REVIEW/SESSIONSTART/SESSIONEND），非法值抛 ``ApiError(400)``。
+
+    Args:
+        db: 数据库会话（只 ``flush``，``commit`` 由调用方收口）。
+        student_id: 学生 ID。
+        event_type: 八类事件之一。
+        question_id: 关联题目（可为空）。
+        knowledge_point_id: 关联知识点（可为空）。
+        meta: 事件上下文，原样落库到 ``student_learning_events.meta``。
+        mastery_meta: 传给 ``update_mastery_from_event`` 的 meta **视图**；
+            缺省（``None``）时与 ``meta`` 相同。存在的原因：判分事件 meta 里的
+            ``independent`` 是**作答级**独立标志（无提示且未看答案且非引导，
+            服务于「独立完成率」指标），而 ``mastery_delta_for_event`` 把顶层
+            ``independent`` 读成**迁移题标记**（+0.12 档，M-002「独立迁移题」）。
+            两种语义不同，调用方（practice_service.submit_answer）用本参数
+            剔除作答级标志，保住「基础题独立正确 +0.10」口径，同时事件 meta
+            仍带全量字段供指标侧消费。
 
     Returns:
         落库事件的 dict（含 created_at，便于埋点冒烟断言）。
@@ -201,7 +218,7 @@ def record_learning_event(
         student_id=student_id,
         event_type=event_type,
         knowledge_point_id=knowledge_point_id,
-        meta=meta,
+        meta=meta if mastery_meta is None else mastery_meta,
     )
 
     return {

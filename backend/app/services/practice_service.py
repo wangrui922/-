@@ -149,12 +149,25 @@ def _emit_dna_event(
     question_id: Optional[uuid.UUID] = None,
     knowledge_point_id: Optional[uuid.UUID] = None,
     meta: Optional[Dict[str, Any]] = None,
+    mastery_meta: Optional[Dict[str, Any]] = None,
 ) -> None:
     """DNA-004 行为事件埋点（Sprint 2 T2）。
 
     ⚠️ 埋点是**旁路**：任何异常（含事件枚举/落库失败）只记日志，绝不
     拖垮判分主流程。本函数内部 ``commit``（与 ``_patch_item`` 同风格），
     调用方拿到结果时事件已独立落库。
+
+    Args:
+        db: 数据库会话。
+        student_id: 学生 ID。
+        event_type: 八类学习事件之一。
+        question_id: 关联题目（QUESTIONVIEW/ANSWER/CORRECT/ERROR 等带归因）。
+        knowledge_point_id: 关联知识点。
+        meta: 事件上下文，原样落库（指标侧消费的口径）。
+        mastery_meta: 掌握度引擎视图；缺省同 ``meta``。判分事件用它剔除
+            作答级 ``independent`` 标志，避免被 ``mastery_delta_for_event``
+            误读成迁移题标记（+0.12 档）——详见
+            ``student_dna_service.record_learning_event`` 的 Args 说明。
     """
     try:
         record_learning_event(
@@ -164,6 +177,7 @@ def _emit_dna_event(
             question_id=question_id,
             knowledge_point_id=knowledge_point_id,
             meta=meta,
+            mastery_meta=mastery_meta,
         )
         db.commit()
     except Exception:  # noqa: BLE001 - 埋点失败不影响主流程
@@ -173,6 +187,73 @@ def _emit_dna_event(
             question_id,
             exc_info=True,
         )
+
+
+#: 判分事件 meta 里的 hint 上下文字段名（独立完成率口径，只增不改）
+META_HINT_COUNT: str = "hint_count"
+META_ANSWER_PEEKED: str = "answer_peeked"
+META_GUIDED: str = "guided"
+META_INDEPENDENT: str = "independent"
+META_HINT_CONTEXT_UNKNOWN: str = "hint_context_unknown"
+
+
+def _hint_context(item: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """提炼本题作答的 hint 上下文（「独立完成率」口径的事实源）。
+
+    数据全部来自 ``LearningTask.items`` 快照（零编造）：
+
+    * ``guide_history``：引导链路 ``_save_guide_turn`` 逐轮追加的列表，
+      长度即本题用过的**提示次数**（快照从无该键 = 零提示，引导链路
+      只追加、不预建）；
+    * ``revealed``：``reveal_answer`` 看答案后置 ``True``，即**是否看过
+      参考答案**。
+
+    派生口径（与内测指标定义逐字对齐）：
+
+    * ``guided``：本题是否进入过引导（提示次数 ≥ 1）；
+    * ``independent``：**无提示 且 未看答案 且 非引导**。
+
+    Args:
+        item: items 快照里本题那一条；``None`` 表示快照缺失。
+
+    Returns:
+        ``{"hint_count", "answer_peeked", "guided", "independent",
+        "hint_context_unknown"}``。任何一项无法判定（快照缺失 / 脏数据 /
+        旧快照无 ``revealed`` 键）时对应字段为 ``None`` 且
+        ``hint_context_unknown=True``——指标侧按「未知」剔除，**绝不猜**。
+    """
+    unknown: Dict[str, Any] = {
+        META_HINT_COUNT: None,
+        META_ANSWER_PEEKED: None,
+        META_GUIDED: None,
+        META_INDEPENDENT: None,
+        META_HINT_CONTEXT_UNKNOWN: True,
+    }
+    if item is None:
+        return unknown
+
+    raw_history = item.get(GUIDE_HISTORY_KEY)
+    if raw_history is None:
+        hint_count = 0  # 无引导轮次记录 = 本题零提示
+    elif isinstance(raw_history, list):
+        hint_count = sum(1 for turn in raw_history if isinstance(turn, dict))
+    else:
+        return unknown  # 脏数据：无法计数，按未知处理
+
+    revealed = item.get("revealed")
+    if revealed is None:
+        return unknown  # 旧快照没有 revealed 键：是否看过答案不可考
+    answer_peeked = bool(revealed)
+
+    guided = hint_count > 0
+    independent = (hint_count == 0) and (not answer_peeked) and (not guided)
+    return {
+        META_HINT_COUNT: hint_count,
+        META_ANSWER_PEEKED: answer_peeked,
+        META_GUIDED: guided,
+        META_INDEPENDENT: independent,
+        META_HINT_CONTEXT_UNKNOWN: False,
+    }
 
 
 # ================================================================== 内部工具
@@ -830,6 +911,21 @@ def draw_questions(
     by_id = {q.id: q for q in questions}
     payload = [_question_payload(by_id[qid]) for qid in picked_ids if qid in by_id]
 
+    # ---- DNA-004 行为事件埋点：题目展示 = QUESTIONVIEW（学习次数口径）----
+    # 挂点理由：``/api/practice/session``（draw_questions）是题库链路**唯一**
+    # 的题目展示路径——抽题出参 questions 原样渲染成练习页，每题一次
+    # QUESTIONVIEW，带 question_id/kp_id 归因。「学习次数」= 该事件计数。
+    for qid in picked_ids:
+        question_row = by_id.get(qid)
+        _emit_dna_event(
+            db,
+            student_id=sid,
+            event_type="QUESTIONVIEW",
+            question_id=qid,
+            knowledge_point_id=question_row.kp_id if question_row is not None else None,
+            meta={"session_id": str(task.id), "channel": "practice"},
+        )
+
     return {
         "session_id": str(task.id),
         "questions": payload,
@@ -1026,6 +1122,21 @@ def create_session(
     db.add(task)
     db.commit()
     db.refresh(task)
+
+    # ---- DNA-004 行为事件埋点：会话创建 = SESSIONSTART（留存率口径）----
+    # 挂点选 create_session 而不是 draw_questions：它是练习会话的**唯一**
+    # 创建出口（draw_questions 也走这里），daily/exam 任务将来若复用同一
+    # 出口，埋点自动覆盖，无需二次改动。
+    _emit_dna_event(
+        db,
+        student_id=sid,
+        event_type="SESSIONSTART",
+        meta={
+            "channel": "practice",
+            "task_type": PRACTICE_TASK_TYPE,
+            "question_count": len(question_ids),
+        },
+    )
     return task
 
 
@@ -1088,7 +1199,7 @@ def submit_answer(
         client_event_id=client_event_id,
     )
 
-    _patch_item(
+    patched_items = _patch_item(
         db,
         task,
         qid,
@@ -1141,13 +1252,32 @@ def submit_answer(
             "duration_sec": safe_duration,
         },
     )
+    # 判分事件补 hint 上下文（内测指标「独立完成率」的事实源）：
+    #   hint_count     本题引导轮次（提示次数）
+    #   answer_peeked  是否看过参考答案（reveal 链路）
+    #   guided         是否进入过引导
+    #   independent    无提示 且 未看答案 且 非引导
+    # meta schema 向后兼容：只新增键，旧键（session_id/level）语义不变；
+    # 无法判定的字段传 None 并置 hint_context_unknown，指标侧按未知剔除。
+    judge_meta: Dict[str, Any] = {
+        "session_id": str(task.id),
+        "level": outcome.level,
+        **_hint_context(_find_item(patched_items, qid)),
+    }
+    # 掌握度引擎视图：剔除作答级 independent 标志。mastery_delta_for_event
+    # 把顶层 independent 读成「迁移题标记」（+0.12 档），而这里的 independent
+    # 是作答级事实；混用会把每道独立答对的题抬进迁移档，违背 M-002
+    # 「基础题独立正确 +0.10 / 提示后 +0.05」的口径（student_dna_service
+    # 的 record_learning_event 用 mastery_meta 参数承接该视图）。
+    engine_meta = {k: v for k, v in judge_meta.items() if k != META_INDEPENDENT}
     _emit_dna_event(
         db,
         student_id=sid,
         event_type="CORRECT" if outcome.is_correct else "ERROR",
         question_id=qid,
         knowledge_point_id=question.kp_id if question is not None else None,
-        meta={"session_id": str(task.id), "level": outcome.level},
+        meta=judge_meta,
+        mastery_meta=engine_meta,
     )
 
     return result
@@ -1540,6 +1670,9 @@ def finish_session(db: Session, *, student_id: Any, session_id: Any) -> Dict[str
     )
 
     # ---- 会话收尾 ---------------------------------------------------------
+    # 重复 finish 的幂等口径：SESSIONEND 只在**首次**结算时发一次，
+    # 否则「重试一次 finish」会把会话数/留存口径刷虚（错题入本本就幂等）。
+    was_done = task.status == SESSION_DONE
     task.status = SESSION_DONE
     task.finished_at = stamp
     db.add(task)
@@ -1560,6 +1693,23 @@ def finish_session(db: Session, *, student_id: Any, session_id: Any) -> Dict[str
     correct = len(correct_ids)
     wrong = len(wrong_ids)
     answered = correct + wrong
+
+    # ---- DNA-004 行为事件埋点：会话完成 = SESSIONEND（留存率口径）----
+    if not was_done:
+        _emit_dna_event(
+            db,
+            student_id=sid,
+            event_type="SESSIONEND",
+            meta={
+                "channel": "practice",
+                "session_id": str(task.id),
+                "total": total,
+                "correct": correct,
+                "wrong": wrong,
+                "answered": answered,
+                "accuracy": round(correct / answered, 4) if answered else 0.0,
+            },
+        )
 
     detail: List[Dict[str, Any]] = []
     for item in items:
@@ -1889,6 +2039,12 @@ __all__ = [
     "_draw_with_relaxation",
     "_sample_and_meta",
     "_human_error_text",
+    # 判分事件 hint 上下文字段名（独立完成率口径，测试与指标侧共用）
+    "META_HINT_COUNT",
+    "META_ANSWER_PEEKED",
+    "META_GUIDED",
+    "META_INDEPENDENT",
+    "META_HINT_CONTEXT_UNKNOWN",
     "OPTIONS_STATUS_COMPLETE",
     "OPTIONS_STATUS_PARTIAL",
     "OPTIONS_STATUS_MISSING",

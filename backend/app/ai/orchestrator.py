@@ -15,7 +15,7 @@ import logging
 import unicodedata
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -68,23 +68,73 @@ STUDENT_QUESTION_SOURCE_DOC: str = "student_asked"
 
 
 def _emit_chat_dna_event(
-    db: Session, *, student_id: uuid.UUID, event_type: str, meta: Dict[str, Any]
+    db: Session,
+    *,
+    student_id: uuid.UUID,
+    event_type: str,
+    meta: Dict[str, Any],
+    question_id: Optional[uuid.UUID] = None,
+    knowledge_point_id: Optional[uuid.UUID] = None,
 ) -> None:
     """DNA-004 行为事件埋点（Sprint 2 T2，chat 侧旁路）。
 
     与 practice 侧一致：任何异常只记日志，绝不拖垮辅导主流程；只 ``flush``，
     由调用方现有 ``db.commit()`` 一并收口（本模块统一约定）。
+
+    断点2 修复：HINT/REVIEW 事件原先**不带任何题目归因**，提示依赖无法
+    落到知识点上。本函数新增 ``question_id`` / ``knowledge_point_id`` 归参
+    （写入事件表专用列）；取不到时传 ``None``，由调用方在 meta 里标
+    ``*_unknown``，指标侧按「未知」处理，绝不编造。
     """
     try:
         from app.services.student_dna_service import record_learning_event
 
         record_learning_event(
-            db, student_id=student_id, event_type=event_type, meta=meta
+            db,
+            student_id=student_id,
+            event_type=event_type,
+            question_id=question_id,
+            knowledge_point_id=knowledge_point_id,
+            meta=meta,
         )
     except Exception:  # noqa: BLE001 - 埋点失败不影响辅导主流程
         logger.warning(
             "chat DNA 埋点失败 event=%s session=%s", event_type, meta, exc_info=True
         )
+
+
+def _session_question_attribution(
+    db: Session, session: AiSession
+) -> Tuple[Optional[uuid.UUID], Optional[uuid.UUID]]:
+    """取 AI 会话绑定题目及其知识点（chat 侧事件归参用）。
+
+    会话可能未绑定题目（早期数据 / 外键 ``ON DELETE SET NULL``），此时返回
+    ``(None, None)``，调用方据此在 meta 里标 ``question_id_unknown``。
+
+    Args:
+        db: 调用方传入的数据库会话。
+        session: 当前 AI 会话 ORM 对象。
+
+    Returns:
+        ``(question_id, knowledge_point_id)``；未绑定题目时为 ``(None, None)``。
+    """
+    if session.question_id is None:
+        return None, None
+    kp_id = db.execute(
+        select(Question.kp_id).where(Question.id == session.question_id)
+    ).scalar_one_or_none()
+    return session.question_id, kp_id
+
+
+def _attribution_markers(
+    question_id: Optional[uuid.UUID], knowledge_point_id: Optional[uuid.UUID]
+) -> Dict[str, Any]:
+    """归参缺失时生成 meta 标记（question_id_unknown / kp_id_unknown）。"""
+    if question_id is None:
+        return {"question_id_unknown": True}
+    if knowledge_point_id is None:
+        return {"kp_id_unknown": True}
+    return {}
 
 
 def _file_url(image_key: Optional[str]) -> Optional[str]:
@@ -308,6 +358,22 @@ def start_session(
     session.session_state = SESSION_STATE_GUIDING
     session.step = 1
     session.state_updated_at = datetime.now(timezone.utc)
+
+    # DNA-004 埋点（旁路）：AI 会话创建 = SESSIONSTART（留存率口径）。
+    # 必须在既有 commit 之前 emit——本模块埋点只 flush，由该 commit 收口。
+    _emit_chat_dna_event(
+        db,
+        student_id=sid,
+        event_type="SESSIONSTART",
+        question_id=source_question_id,
+        knowledge_point_id=source_question.kp_id,
+        meta={
+            "channel": "ai_chat",
+            "state": session.session_state,
+            "knowledge": str(analysis.get("knowledge") or "").strip() or None,
+            **_attribution_markers(source_question_id, source_question.kp_id),
+        },
+    )
     db.commit()
 
     return {
@@ -379,6 +445,22 @@ async def start_session_async(
     session.session_state = SESSION_STATE_GUIDING
     session.step = 1
     session.state_updated_at = datetime.now(timezone.utc)
+
+    # DNA-004 埋点（旁路）：AI 会话创建 = SESSIONSTART（留存率口径）。
+    # 必须在既有 commit 之前 emit——本模块埋点只 flush，由该 commit 收口。
+    _emit_chat_dna_event(
+        db,
+        student_id=sid,
+        event_type="SESSIONSTART",
+        question_id=source_question_id,
+        knowledge_point_id=source_question.kp_id,
+        meta={
+            "channel": "ai_chat",
+            "state": session.session_state,
+            "knowledge": str(analysis.get("knowledge") or "").strip() or None,
+            **_attribution_markers(source_question_id, source_question.kp_id),
+        },
+    )
     db.commit()
 
     return {
@@ -473,19 +555,32 @@ def continue_session(
     session.state_updated_at = datetime.now(timezone.utc)
 
     # DNA-004 埋点（旁路不拖垮主流程）：HINT=学生要提示，DEMO=讲解复习
+    # 断点2 修复：HINT/REVIEW 带 question_id/kp_id 归参，提示依赖可归因到
+    # 知识点；取不到时 meta 标 unknown（见 _attribution_markers）。
+    chat_question_id, chat_kp_id = _session_question_attribution(db, session)
+    attribution = _attribution_markers(chat_question_id, chat_kp_id)
     if active_mode == MODE_HINT:
         _emit_chat_dna_event(
             db,
             student_id=session.student_id,
             event_type="HINT",
-            meta={"session_id": str(session.id), "step": step + 1},
+            question_id=chat_question_id,
+            knowledge_point_id=chat_kp_id,
+            meta={"session_id": str(session.id), "step": step + 1, **attribution},
         )
     elif active_mode == MODE_DEMO:
         _emit_chat_dna_event(
             db,
             student_id=session.student_id,
             event_type="REVIEW",
-            meta={"session_id": str(session.id), "step": step + 1, "mode": "DEMO"},
+            question_id=chat_question_id,
+            knowledge_point_id=chat_kp_id,
+            meta={
+                "session_id": str(session.id),
+                "step": step + 1,
+                "mode": "DEMO",
+                **attribution,
+            },
         )
     db.commit()
 
@@ -562,19 +657,32 @@ async def continue_session_async(
     session.state_updated_at = datetime.now(timezone.utc)
 
     # DNA-004 埋点（旁路不拖垮主流程）：HINT=学生要提示，DEMO=讲解复习
+    # 断点2 修复：HINT/REVIEW 带 question_id/kp_id 归参，提示依赖可归因到
+    # 知识点；取不到时 meta 标 unknown（见 _attribution_markers）。
+    chat_question_id, chat_kp_id = _session_question_attribution(db, session)
+    attribution = _attribution_markers(chat_question_id, chat_kp_id)
     if active_mode == MODE_HINT:
         _emit_chat_dna_event(
             db,
             student_id=session.student_id,
             event_type="HINT",
-            meta={"session_id": str(session.id), "step": step + 1},
+            question_id=chat_question_id,
+            knowledge_point_id=chat_kp_id,
+            meta={"session_id": str(session.id), "step": step + 1, **attribution},
         )
     elif active_mode == MODE_DEMO:
         _emit_chat_dna_event(
             db,
             student_id=session.student_id,
             event_type="REVIEW",
-            meta={"session_id": str(session.id), "step": step + 1, "mode": "DEMO"},
+            question_id=chat_question_id,
+            knowledge_point_id=chat_kp_id,
+            meta={
+                "session_id": str(session.id),
+                "step": step + 1,
+                "mode": "DEMO",
+                **attribution,
+            },
         )
     db.commit()
 
@@ -753,12 +861,15 @@ def generate_exercise(*, session_id: Any, db: Session) -> Dict[str, Any]:
 
     # AI 侧元数据（role/tag/原始 type）不入 questions 表，单独落一条消息，
     # 既是审计痕迹，也是 ``guide_exercise`` 校验「这道题属不属于本会话」的依据。
+    # ``answer_check`` 是落库前轻量合法性检查的结论（见
+    # ``ai_exercise_service.persist_exercises``），只做审计标记，不影响出题。
     meta = [
         {
             "question_id": item.get("question_id"),
             "role": item.get("role"),
             "tag": item.get("tag"),
             "type": item.get("type"),
+            "answer_check": item.get(ai_exercise_service.ANSWER_CHECK_KEY),
         }
         for item in exercises
     ]
@@ -769,6 +880,36 @@ def generate_exercise(*, session_id: Any, db: Session) -> Dict[str, Any]:
             content=f"{EXERCISE_PREFIX}{json.dumps(meta, ensure_ascii=False)}",
         )
     )
+
+    # ---- DNA-004 行为事件埋点：AI 练习题展示 = QUESTIONVIEW（学习次数口径）----
+    # 挂点理由：本函数出参 exercises 由前端原样渲染成练习卡，是 AI 链路唯一
+    # 的题目展示路径。只对**落库成功**的题埋点——question_id 为 None 时无实体
+    # 可归因，跳过而非编造（对齐 persist_exercises 的降级口径）。
+    view_ids = [qid for qid in question_ids if qid is not None]
+    view_kp: Dict[uuid.UUID, Optional[uuid.UUID]] = {}
+    if view_ids:
+        view_kp = {
+            qid: kp
+            for qid, kp in db.execute(
+                select(Question.id, Question.kp_id).where(Question.id.in_(view_ids))
+            ).all()
+        }
+    for item, qid in zip(exercises, question_ids):
+        if qid is None:
+            continue
+        _emit_chat_dna_event(
+            db,
+            student_id=session.student_id,
+            event_type="QUESTIONVIEW",
+            question_id=qid,
+            knowledge_point_id=view_kp.get(qid),
+            meta={
+                "session_id": str(session.id),
+                "channel": "ai_exercise",
+                "role": item.get("role"),
+                "tag": item.get("tag"),
+            },
+        )
 
     # T04B 状态机：已出题进入练习阶段
     session.session_state = SESSION_STATE_PRACTICING
@@ -838,6 +979,7 @@ async def generate_exercise_async(*, session_id: Any, db: Session) -> Dict[str, 
             "role": item.get("role"),
             "tag": item.get("tag"),
             "type": item.get("type"),
+            "answer_check": item.get(ai_exercise_service.ANSWER_CHECK_KEY),
         }
         for item in exercises
     ]
@@ -848,6 +990,36 @@ async def generate_exercise_async(*, session_id: Any, db: Session) -> Dict[str, 
             content=f"{EXERCISE_PREFIX}{json.dumps(meta, ensure_ascii=False)}",
         )
     )
+
+    # ---- DNA-004 行为事件埋点：AI 练习题展示 = QUESTIONVIEW（学习次数口径）----
+    # 挂点理由：本函数出参 exercises 由前端原样渲染成练习卡，是 AI 链路唯一
+    # 的题目展示路径。只对**落库成功**的题埋点——question_id 为 None 时无实体
+    # 可归因，跳过而非编造（对齐 persist_exercises 的降级口径）。
+    view_ids = [qid for qid in question_ids if qid is not None]
+    view_kp: Dict[uuid.UUID, Optional[uuid.UUID]] = {}
+    if view_ids:
+        view_kp = {
+            qid: kp
+            for qid, kp in db.execute(
+                select(Question.id, Question.kp_id).where(Question.id.in_(view_ids))
+            ).all()
+        }
+    for item, qid in zip(exercises, question_ids):
+        if qid is None:
+            continue
+        _emit_chat_dna_event(
+            db,
+            student_id=session.student_id,
+            event_type="QUESTIONVIEW",
+            question_id=qid,
+            knowledge_point_id=view_kp.get(qid),
+            meta={
+                "session_id": str(session.id),
+                "channel": "ai_exercise",
+                "role": item.get("role"),
+                "tag": item.get("tag"),
+            },
+        )
 
     # T04B 状态机：已出题进入练习阶段
     session.session_state = SESSION_STATE_PRACTICING

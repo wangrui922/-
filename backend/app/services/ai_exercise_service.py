@@ -68,7 +68,7 @@ from app.models.content import (
 )
 from app.models.learning import Mistake
 from app.models.user import Student
-from app.services import learning_service, profile_service
+from app.services import learning_service, profile_service, sympy_judge
 from app.services.learning_service import to_uuid
 from app.services.practice_service import GUIDE_FALLBACK_REPLY, sanitize_guide_reply
 
@@ -93,6 +93,20 @@ _TYPE_MAP: Dict[str, str] = {
 
 #: 判错入本时写进 ``mistakes.error_reason`` 的前缀
 MISTAKE_REASON_PREFIX: str = "AI 练习作答错误"
+
+# ------------------------------------------------------------------ 合法性检查
+#: AI 生成题落库前轻量合法性检查的结果标记，写进出题事件 meta（``EXERCISE_PREFIX``
+#: 消息）供审计回溯——**只标记不拦截**，避免误杀 LLM 的合理出题。
+ANSWER_CHECK_KEY: str = "answer_check"
+
+#: 标准答案非空，且（SymPy 覆盖题型）可被 SymPy 解析
+ANSWER_CHECK_OK: str = "ok"
+#: 标准答案为空——判题将失去文本比对信号，只能靠模型 verdict
+ANSWER_CHECK_EMPTY: str = "empty"
+#: SymPy 覆盖题型但标准答案不可解析——判题时 SymPy 仲裁层会静默降级
+ANSWER_CHECK_UNPARSEABLE: str = "unparseable"
+#: 非 SymPy 覆盖题型（应用题/图形题等主观题）——不做解析校验，属预期形态
+ANSWER_CHECK_SKIPPED: str = "skipped"
 
 #: 模型没给出可用点评时的兜底判词
 DEFAULT_WRONG_TEXT: str = "这道题的答案还不对，我们回头一起把过程再走一遍。"
@@ -158,7 +172,77 @@ def _student_grade(db: Session, student_id: Any) -> Optional[int]:
     return db.execute(select(Student.grade).where(Student.id == sid)).scalar_one_or_none()
 
 
+def _check_answer_legality(answer_text: str, db_q_type: Optional[str]) -> str:
+    """AI 生成题落库前的**轻量**合法性检查（只记录，不拦截出题主链路）。
+
+    检查项：
+
+    1. ``correct_answer`` 非空——空答案会让判题失去文本比对信号，只能靠
+       模型 ``verdict`` 兜底；
+    2. 题型落在 SymPy 精确判覆盖范围（``sympy_judge.SYMPY_SUPPORTED_TYPES``）内时，
+       标准答案必须可被 SymPy 解析——不可解析意味着判题链路的 SymPy 仲裁层会
+       静默降级，值得留痕告警。
+
+    应用题/图形题等主观题型**不做**解析校验：它们的答案本就是文字/式子混合，
+    SymPy 解析失败是常态，记 warning 只会制造日志噪音。这正对应「SymPy 是仲裁层
+    不是替代层——只覆盖可安全解析的数值/表达式题型」的定位。
+
+    Args:
+        answer_text: 清洗后的标准答案文本（``_clean(item["a"])``）。
+        db_q_type: 映射后的 DB 题型（``Question.type_`` 口径，可为 ``None``）。
+
+    Returns:
+        ``ANSWER_CHECK_OK`` / ``ANSWER_CHECK_EMPTY`` /
+        ``ANSWER_CHECK_UNPARSEABLE`` / ``ANSWER_CHECK_SKIPPED`` 之一。
+    """
+    if not answer_text:
+        return ANSWER_CHECK_EMPTY
+    if db_q_type is None or db_q_type not in sympy_judge.SYMPY_SUPPORTED_TYPES:
+        return ANSWER_CHECK_SKIPPED
+    try:
+        # ``_normalize_answer`` 是 sympy_judge 对「答案文本 → SymPy 对象」归一化的
+        # 唯一入口，已列入其 ``__all__`` 供跨模块复用；返回 None 即不可解析。
+        parsed = sympy_judge._normalize_answer(answer_text)
+    except Exception:  # noqa: BLE001 —— 校验层异常按「不可解析」留痕，绝不拦截落库
+        logger.warning("标准答案 SymPy 解析校验异常：%r", answer_text[:120], exc_info=True)
+        return ANSWER_CHECK_UNPARSEABLE
+    return ANSWER_CHECK_OK if parsed is not None else ANSWER_CHECK_UNPARSEABLE
+
+
 # ============================================================ T6 落库
+def _emit_dna_event(
+    db: Session,
+    *,
+    student_id: Any,
+    event_type: str,
+    question_id: Optional[uuid.UUID] = None,
+    knowledge_point_id: Optional[uuid.UUID] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> None:
+    """DNA-004 行为事件埋点（旁路，容错模式与 practice_service 对齐）。
+
+    任何异常只记 warning，绝不拖垮小结主流程。延迟导入
+    ``student_dna_service``：与 orchestrator 同款约定，规避 ``app.services``
+    内部模块级 import 环。本函数只 ``flush``，由调用方现有 ``db.commit()``
+    收口。
+    """
+    try:
+        from app.services.student_dna_service import record_learning_event
+
+        record_learning_event(
+            db,
+            student_id=student_id,
+            event_type=event_type,
+            question_id=question_id,
+            knowledge_point_id=knowledge_point_id,
+            meta=meta,
+        )
+    except Exception:  # noqa: BLE001 - 埋点失败不影响主流程
+        logger.warning(
+            "chat DNA 埋点失败 event=%s meta=%s", event_type, meta, exc_info=True
+        )
+
+
 def persist_exercises(
     db: Session,
     *,
@@ -195,6 +279,25 @@ def persist_exercises(
     try:
         pending: List[Optional[Question]] = []
         for index, item in enumerate(items):
+            # ★ 落库前轻量合法性检查：先算并写回事件 meta，保证每道题都有标记；
+            #   只记 warning，不拦截——LLM 的合理出题绝不被校验层误杀。
+            answer_text = _clean(item.get("a"))
+            answer_check = _check_answer_legality(answer_text, _map_question_type(item.get("type")))
+            item[ANSWER_CHECK_KEY] = answer_check
+            if answer_check == ANSWER_CHECK_EMPTY:
+                logger.warning(
+                    "AI 练习题第 %d 道标准答案为空，判题将回落到模型 verdict session=%s",
+                    index,
+                    session.id,
+                )
+            elif answer_check == ANSWER_CHECK_UNPARSEABLE:
+                logger.warning(
+                    "AI 练习题第 %d 道标准答案无法被 SymPy 解析（%r），SymPy 仲裁层将降级 session=%s",
+                    index,
+                    answer_text[:120],
+                    session.id,
+                )
+
             content = _clean(item.get("q"))
             if not content:
                 logger.warning("AI 练习题第 %d 道题干为空，跳过落库 session=%s", index, session.id)
@@ -716,6 +819,57 @@ def _answers_match(student_answer: Any, correct_answer: Any) -> Optional[bool]:
     return False
 
 
+def _sympy_arbitration(
+    *,
+    q_type: Optional[str],
+    content: Optional[str],
+    correct_answer: Optional[str],
+    selected_answer: Optional[str],
+) -> Optional[bool]:
+    """判题前先过 SymPy 精确判（**仲裁层**，不是替代层）。
+
+    定位与题库链路（``practice_service``）完全一致：纯本地符号计算，零 LLM
+    调用、零幻觉。AI 生成题的标准答案由 LLM 自产、无第三方校验，模型自判又存在
+    「幻觉判对」风险，所以这一层专门在最终判定前兜底。
+
+    覆盖口径刻意收敛：
+
+    * 题型必须在 ``sympy_judge.SYMPY_SUPPORTED_TYPES``（计算/化简/解方程等）内，
+      应用题/图形题等主观题直接不可判（``judge`` 内置闸门），正则与黑名单
+      **不放开**；
+    * 标准答案与学生作答都必须能被 SymPy 解析，否则不可判。
+
+    Args:
+        q_type: 题目在库的题型（``Question.type_``，已按 DB 白名单映射）。
+        content: 题干（供 SymPy 抽取表达式，可为空）。
+        correct_answer: 标准答案文本。
+        selected_answer: 学生最终作答文本。
+
+    Returns:
+        ``True`` / ``False``：SymPy 判定结论，调用方应**按它判**；
+        ``None``：不可判（题型不符 / 任一侧答案不可解析 / 执行异常），
+        调用方回落现有 ``_answers_match`` + 模型 verdict 逻辑，保留
+        「冲突时以模型为准 + warning」的兜底行为。
+    """
+    if not correct_answer or not selected_answer:
+        return None
+    try:
+        outcome = sympy_judge.judge(q_type, content, correct_answer, selected_answer)
+    except Exception:  # noqa: BLE001 —— 判题主链路绝不能被校验层异常拖垮
+        logger.warning("SymPy 仲裁层执行异常，回落现有判题逻辑", exc_info=True)
+        return None
+    if outcome is None:
+        return None
+    logger.info(
+        "SymPy 仲裁层生效：type=%s correct=%s selected=%r standard=%r",
+        q_type,
+        outcome.is_correct,
+        selected_answer,
+        correct_answer,
+    )
+    return bool(outcome.is_correct)
+
+
 def judge_and_record(
     db: Session,
     *,
@@ -729,10 +883,19 @@ def judge_and_record(
 ) -> Dict[str, Any]:
     """学生提交最终答案：判对错 + **判错即时入本**（D3-b）。
 
-    对错判定用**双信号**（裁决 A3）：``answers.correct_answer`` 的归一化文本比对
-    与模型 ``verdict``。AI 生成题多为主观计算题，不走 ``judge_engine``（那是给
-    题库选择/填空题设计的）；**两者冲突时以模型 ``verdict`` 为准**，因为它看得到
-    孩子的整个解题过程，而文本比对只看最后一个数。
+    对错判定用**三信号**（仲裁层级联）：
+
+    1. **SymPy 精确判**（仲裁层，``sympy_judge.judge``）：题型落在
+       ``SYMPY_SUPPORTED_TYPES``（计算/化简/解方程等）且两侧答案均可解析时，
+       按 SymPy 结果判——AI 题的标准答案由 LLM 自产、无第三方校验，这一层
+       专防「模型幻觉判对」与文本比对误判；主观题 / 任一侧不可解析时 SymPy
+       返回不可判，自动跳过，绝不抢判；
+    2. ``answers.correct_answer`` 的归一化文本比对（信号①）；
+    3. 模型 ``verdict``（信号②）。
+
+    AI 生成题多为主观计算题，不走 ``judge_engine``（那是给题库选择/填空题
+    设计的）；SymPy 不可判时沿用**裁决 A3：两者冲突以模型 ``verdict`` 为准**，
+    因为它看得到孩子的整个解题过程，而文本比对只看最后一个数。
 
     判错后立刻 ``record_mistake()``——孩子此刻关掉页面也不丢数据，这正是
     「练完才结算」最容易漏掉的一段。
@@ -761,6 +924,14 @@ def judge_and_record(
     process = _clean(work)
     context = f"session={session.id} question={question.id}"
 
+    # ---- 信号⓪：SymPy 精确判（仲裁层；不可判时返回 None 回落下方逻辑）--------
+    sympy_correct = _sympy_arbitration(
+        q_type=question.type_,
+        content=question.content,
+        correct_answer=std_answer.correct_answer if std_answer else None,
+        selected_answer=submitted,
+    )
+
     # ---- 信号①：文本 / 数值归一化比对 -------------------------------------
     text_match = _answers_match(submitted, std_answer.correct_answer if std_answer else None)
 
@@ -775,15 +946,30 @@ def judge_and_record(
     )
     verdict = outcome["verdict"]
 
-    # ---- 裁决 A3：冲突时以模型为准；模型 pending 时退回文本比对 -------------
-    if verdict == "correct":
+    # ---- 裁决：SymPy 仲裁优先；不可判时走原 A3（冲突时以模型为准）------------
+    if sympy_correct is not None:
+        # SymPy 能判定 → 按它的结果判（LLM 幻觉 / 文本比对误判的最终防线）
+        correct = sympy_correct
+        if verdict in ("correct", "wrong") and (verdict == "correct") != correct:
+            logger.info(
+                "AI 练习判定冲突（以 SymPy 为准）%s sympy=%s verdict=%s",
+                context,
+                sympy_correct,
+                verdict,
+            )
+    elif verdict == "correct":
         correct = True
     elif verdict == "wrong":
         correct = False
     else:
         correct = bool(text_match) if text_match is not None else False
 
-    if text_match is not None and verdict in ("correct", "wrong") and bool(text_match) != correct:
+    if (
+        sympy_correct is None
+        and text_match is not None
+        and verdict in ("correct", "wrong")
+        and bool(text_match) != correct
+    ):
         logger.info(
             "AI 练习判定冲突（以模型为准）%s text_match=%s verdict=%s",
             context,
@@ -896,6 +1082,14 @@ async def judge_and_record_async(
     process = _clean(work)
     context = f"session={session.id} question={question.id}"
 
+    # ---- 信号⓪：SymPy 精确判（仲裁层；不可判时返回 None 回落下方逻辑）--------
+    sympy_correct = _sympy_arbitration(
+        q_type=question.type_,
+        content=question.content,
+        correct_answer=std_answer.correct_answer if std_answer else None,
+        selected_answer=submitted,
+    )
+
     # ---- 信号①：文本 / 数值归一化比对 -------------------------------------
     text_match = _answers_match(submitted, std_answer.correct_answer if std_answer else None)
 
@@ -910,15 +1104,30 @@ async def judge_and_record_async(
     )
     verdict = outcome["verdict"]
 
-    # ---- 裁决 A3：冲突时以模型为准；模型 pending 时退回文本比对 -------------
-    if verdict == "correct":
+    # ---- 裁决：SymPy 仲裁优先；不可判时走原 A3（冲突时以模型为准）------------
+    if sympy_correct is not None:
+        # SymPy 能判定 → 按它的结果判（LLM 幻觉 / 文本比对误判的最终防线）
+        correct = sympy_correct
+        if verdict in ("correct", "wrong") and (verdict == "correct") != correct:
+            logger.info(
+                "AI 练习判定冲突（以 SymPy 为准）%s sympy=%s verdict=%s",
+                context,
+                sympy_correct,
+                verdict,
+            )
+    elif verdict == "correct":
         correct = True
     elif verdict == "wrong":
         correct = False
     else:
         correct = bool(text_match) if text_match is not None else False
 
-    if text_match is not None and verdict in ("correct", "wrong") and bool(text_match) != correct:
+    if (
+        sympy_correct is None
+        and text_match is not None
+        and verdict in ("correct", "wrong")
+        and bool(text_match) != correct
+    ):
         logger.info(
             "AI 练习判定冲突（以模型为准）%s text_match=%s verdict=%s",
             context,
@@ -1087,6 +1296,29 @@ def generate_summary(
     session.session_state = "summarizing"
     session.state_updated_at = datetime.now(timezone.utc)
     db.add(AiMessage(session_id=session.id, role="assistant", content=summary_text))
+
+    # ---- DNA-004 行为事件埋点：学习小结生成 = AI 练习会话收尾（SESSIONEND）----
+    # 挂点理由：generate_summary 是 AI 练习链路的**唯一收尾路径**（两道相似题
+    # 都判定后才允许生成小结，且 summary_text 有缓存——重复调用早返回，
+    # 天然幂等，不会重复发事件）。归参取会话绑定题目；缺失标 unknown。
+    end_unknown: Dict[str, Any] = {}
+    if session.question_id is None:
+        end_unknown["question_id_unknown"] = True
+    elif session.question is None or session.question.kp_id is None:
+        end_unknown["kp_id_unknown"] = True
+    _emit_dna_event(
+        db,
+        student_id=session.student_id,
+        event_type="SESSIONEND",
+        question_id=session.question_id,
+        knowledge_point_id=session.question.kp_id if session.question else None,
+        meta={
+            "channel": "ai_exercise",
+            "session_id": str(session.id),
+            "exercise_count": len(exercise_ids),
+            **end_unknown,
+        },
+    )
     db.commit()
     return {"summary": summary_text, "cached": False, "prompt_version": summary_prompt.VERSION}
 
@@ -1175,6 +1407,29 @@ async def generate_summary_async(
     session.session_state = "summarizing"
     session.state_updated_at = datetime.now(timezone.utc)
     db.add(AiMessage(session_id=session.id, role="assistant", content=summary_text))
+
+    # ---- DNA-004 行为事件埋点：学习小结生成 = AI 练习会话收尾（SESSIONEND）----
+    # 挂点理由：generate_summary 是 AI 练习链路的**唯一收尾路径**（两道相似题
+    # 都判定后才允许生成小结，且 summary_text 有缓存——重复调用早返回，
+    # 天然幂等，不会重复发事件）。归参取会话绑定题目；缺失标 unknown。
+    end_unknown: Dict[str, Any] = {}
+    if session.question_id is None:
+        end_unknown["question_id_unknown"] = True
+    elif session.question is None or session.question.kp_id is None:
+        end_unknown["kp_id_unknown"] = True
+    _emit_dna_event(
+        db,
+        student_id=session.student_id,
+        event_type="SESSIONEND",
+        question_id=session.question_id,
+        knowledge_point_id=session.question.kp_id if session.question else None,
+        meta={
+            "channel": "ai_exercise",
+            "session_id": str(session.id),
+            "exercise_count": len(exercise_ids),
+            **end_unknown,
+        },
+    )
     db.commit()
     return {"summary": summary_text, "cached": False, "prompt_version": summary_prompt.VERSION}
 
@@ -1225,6 +1480,11 @@ def get_weak_profile(
 __all__ = [
     "AI_SOURCE_DOC",
     "MISTAKE_REASON_PREFIX",
+    "ANSWER_CHECK_KEY",
+    "ANSWER_CHECK_OK",
+    "ANSWER_CHECK_EMPTY",
+    "ANSWER_CHECK_UNPARSEABLE",
+    "ANSWER_CHECK_SKIPPED",
     "persist_exercises",
     "guide_exercise",
     "guide_exercise_async",
