@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai import intent  # T2 意图识别：mode 的唯一定稿处
+from app.ai import response_analyzer  # TASK-002 学生回答结构化（与 mode 并存不互替）
 from app.ai.agents import diagnose, exercise, question, tutor  # noqa: F401  (diagnose 供上层复用)
 from app.ai.agents._json_utils import extract_json as _extract_json
 from app.ai.ark_client import ArkError
@@ -693,7 +694,15 @@ def continue_session(
             threshold=settings.explanation_quality_gate_threshold,
         )
 
-    db.add(AiMessage(session_id=session.id, role="user", content=content))
+    # TASK-002：学生消息顺带结构化（旁路容错，失败列落 NULL 不拖垮主链路）
+    db.add(
+        AiMessage(
+            session_id=session.id,
+            role="user",
+            content=content,
+            response_object=_safe_response_object(content, history),
+        )
+    )
     db.add(AiMessage(session_id=session.id, role="assistant", content=reply))
     # T04B 状态机：步数 +1；开场首轮后即转入引导阶段
     session.step = step + 1
@@ -805,7 +814,15 @@ async def continue_session_async(
             threshold=settings.explanation_quality_gate_threshold,
         )
 
-    db.add(AiMessage(session_id=session.id, role="user", content=content))
+    # TASK-002：学生消息顺带结构化（旁路容错，失败列落 NULL 不拖垮主链路）
+    db.add(
+        AiMessage(
+            session_id=session.id,
+            role="user",
+            content=content,
+            response_object=_safe_response_object(content, history),
+        )
+    )
     db.add(AiMessage(session_id=session.id, role="assistant", content=reply))
     # T04B 状态机：步数 +1；开场首轮后即转入引导阶段
     session.step = step + 1
@@ -965,6 +982,29 @@ async def _apply_demo_quality_gate_async(
     return final_text
 
 
+def _safe_response_object(
+    text: str, history: List[Dict[str, str]]
+) -> Optional[Dict[str, Any]]:
+    """学生消息的结构化对象（**旁路容错**，TASK-002）。
+
+    analyzer 自身已承诺永不抛异常（内部收敛 UNCLEAR 契约）；此处再兜一层——
+    万一 analyzer 被替换/演进实现出错，消息照常落库、结构化列 NULL，
+    绝不能影响聊天主链路。
+
+    Args:
+        text: 学生本轮原话。
+        history: 会话历史（不含本轮）。
+
+    Returns:
+        结构化契约 dict；analyzer 异常时 ``None``（列落 NULL）。
+    """
+    try:
+        return response_analyzer.analyze_response(text=text, history=history)
+    except Exception:  # noqa: BLE001 - 结构化失败不拖垮辅导主流程
+        logger.warning("response analyze 旁路失败，结构化列落 NULL", exc_info=True)
+        return None
+
+
 def _pick_analysis(messages: List[AiMessage]) -> Dict[str, Any]:
     """从第一条 assistant 消息里回捞分析 JSON；捞不到返回空 dict。"""
     for message in messages:
@@ -976,6 +1016,32 @@ def _pick_analysis(messages: List[AiMessage]) -> Dict[str, Any]:
             return {}
         return data if isinstance(data, dict) else {}
     return {}
+
+
+def latest_response_objects(
+    messages: List[AiMessage], limit: int = 1
+) -> List[Optional[Dict[str, Any]]]:
+    """按时间升序取最近 ``limit`` 条**学生消息**的结构化对象（#33 消费入口）。
+
+    Args:
+        messages: 会话消息（ORM 对象，按 ``created_at`` 升序，见 ``_load_messages``）。
+        limit: 取最近几条；``<=0`` 返回空列表。
+
+    Returns:
+        与消息对应的结构化对象列表（最旧的在前）；老消息（列值 NULL）或
+        脏 JSON（读出非 dict）对应位置为 ``None``，**不抛异常**。
+
+    Note:
+        assistant/system 消息的结构化列恒 NULL，直接跳过；调用方如需完整
+        消息序列，请自行按 ``role`` 对齐。
+    """
+    objects: List[Optional[Dict[str, Any]]] = []
+    for message in messages:
+        if str(message.role or "").strip().lower() != "user":
+            continue
+        raw = getattr(message, "response_object", None)
+        objects.append(raw if isinstance(raw, dict) else None)
+    return objects[-limit:] if limit > 0 else []
 
 
 def generate_exercise(*, session_id: Any, db: Session) -> Dict[str, Any]:

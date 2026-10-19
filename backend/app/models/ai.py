@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from sqlalchemy import (
     CheckConstraint,
@@ -21,7 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import GUID, Base, utcnow, uuid_pk
+from app.models.base import GUID, Base, JSONType, utcnow, uuid_pk
 
 if TYPE_CHECKING:  # 仅类型检查期引用，运行期不产生循环导入
     from app.models.content import Question
@@ -112,6 +112,18 @@ class AiMessage(Base):
     )
     role: Mapped[str] = mapped_column(String(16), nullable=False, comment="user/assistant/system")
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="消息内容")
+    # TASK-002 学生回答结构化（V1）：仅 role='user' 消息非空；assistant/system 恒 NULL。
+    # 契约见 docs/task-002-response-object-design.md §3.3 与 app/ai/response_analyzer.py；
+    # content 列即 raw_response（不复制进 JSON），模型升级后可凭它重分析。
+    response_object: Mapped[Optional[Any]] = mapped_column(
+        JSONType(),
+        nullable=True,
+        default=None,
+        comment=(
+            "学生回答结构化对象(JSON):response_type/answer/reasoning/evidence/"
+            "error/confidence/step_state;仅user消息;老数据NULL;可凭content重分析"
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, comment="创建时间(UTC)"
     )

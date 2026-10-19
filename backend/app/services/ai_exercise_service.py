@@ -36,6 +36,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai import ark_client
+from app.ai._num_utils import sole_number
 from app.ai.agents._json_utils import extract_json
 from app.ai.intent import (
     MODE_DEMO,
@@ -758,9 +759,6 @@ _NOISE_RE = re.compile(r"[\s,，。、；;：:！!？?（）()【】\[\]{}\"'“
 #: 「答案是 / 结果为 / 等于」这类前缀，比对前先剥掉
 _ANSWER_LABEL_RE = re.compile(r"^(答案|答|结果|等于|得|是|为)\s*[是为:：=]?\s*")
 
-#: 抽取答案里的数字（含负号与小数）
-_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
-
 
 def _normalize_answer(raw: Any) -> str:
     """答案文本归一化：全角转半角 + 小写 + 去噪声 + 去「答：」类前缀。"""
@@ -777,14 +775,11 @@ def _sole_number(text: str) -> Optional[float]:
 
     「有且只有一个」是关键：``12`` 与 ``12元`` 能对上，而 ``7`` 与 ``17``
     不会被误判成相等（后者抽出的是 17，与 7 不等）。
+
+    TASK-002：实现提升为 ``app/ai/_num_utils.py::sole_number`` 共享
+    （学生回答结构化 analyzer 同款语义，消双份；分层纪律允许 services 依赖 ai）。
     """
-    found = _NUM_RE.findall(text)
-    if len(found) != 1:
-        return None
-    try:
-        return float(found[0])
-    except (TypeError, ValueError):
-        return None
+    return sole_number(text)
 
 
 def _answers_match(student_answer: Any, correct_answer: Any) -> Optional[bool]:
