@@ -153,10 +153,22 @@ class Settings(BaseSettings):
     tts_piper_executable: str = ""
     tts_piper_model_path: str = ""
 
-    # ---------- 短信 ----------
-    sms_provider: str = "mock"
+    # ---------- 短信（腾讯云 SMS v2021-01-11）----------
+    sms_provider: str = "mock"  # mock | tencent
     # dev_sms_code 已废弃：验证码改为随机生成，不再使用固定万能码
     dev_sms_code: str = ""
+    # 仅 SMS_PROVIDER=tencent 时使用。申请入口：腾讯云控制台 -> 短信 -> 快速开始。
+    #   SMS_TENCENT_SECRET_ID / SMS_TENCENT_SECRET_KEY 腾讯云 API 密钥（访问管理 CAM 生成）
+    #   SMS_TENCENT_SDK_APP_ID  短信应用 ID（SdkAppId）
+    #   SMS_TENCENT_SIGN_NAME   短信签名（需已审核通过，如"数学小老师"）
+    #   SMS_TENCENT_TEMPLATE_ID 验证码模板 ID（需已审核通过，正文含 {1} 验证码占位符）
+    sms_tencent_secret_id: str = ""
+    sms_tencent_secret_key: str = ""
+    sms_tencent_sdk_app_id: str = ""
+    sms_tencent_sign_name: str = ""
+    sms_tencent_template_id: str = ""
+    sms_tencent_endpoint: str = "sms.tencentcloudapi.com"
+    sms_tencent_region: str = "ap-guangzhou"
 
     # ---------------------------------------------------------------- 派生属性
     @property

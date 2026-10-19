@@ -466,14 +466,20 @@ def send_login_code(phone: str) -> Dict[str, Any]:
 
     _check_send_rate(normalized_phone)
 
+    # 生产环境守卫：mock 通道在生产无意义（收了码却收不到短信），
+    # 直接报明确错误，避免「发码成功但用户没收到」的静默假象。
+    if settings.is_prod and settings.sms_provider == "mock":
+        raise ApiError(CODE_SERVER_ERROR, "短信验证码服务尚未接入，请稍后再试")
+
     try:
         sent = sms.send_code(normalized_phone)
     except NotImplementedError as exc:
         raise ApiError(CODE_SERVER_ERROR, "短信验证码服务尚未接入") from exc
 
-    # mock 模式下回传验证码，方便测试（真实通道上线后移除）
+    # mock 模式且非生产环境时回传验证码，方便测试；
+    # 生产环境（APP_ENV=prod）一律不回传，避免验证码泄露。
     dev_code: Optional[str] = None
-    if settings.sms_provider == "mock" and sent:
+    if settings.sms_provider == "mock" and sent and not settings.is_prod:
         dev_code = sms.get_last_sent_code(normalized_phone)
 
     return {
