@@ -1,0 +1,47 @@
+# Manim 渲染容器（deploy-manim）
+# 独立镜像，与主 backend 镜像完全隔离：
+#   * 只装 manim + ffmpeg + 中文字体（场景模板全部用 Text，不依赖 texlive）
+#   * 只跑 manim_worker.py：blpop manim:queue -> 渲染 -> COS 上传 -> 回写共享 SQLite
+# 构建约 400~600MB，比 manimcommunity/manim 官方镜像（含 texlive，2GB+）轻很多。
+# 构建上下文为 deploy/ 目录（docker-compose.yml manim.build.context: .），
+# 因此 COPY manim_worker.py 与同目录的 manim_worker.py 对应。
+
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# 渲染运行库：ffmpeg + pango/cairo（Text 渲染必需）+ 思源黑体（中文标签）
+# 注意：国内网络 apt 官方源不通，先换清华源再装
+# 编译依赖（gcc/pkg-config/libcairo2-dev/python3-dev）：pycairo 无预编译 wheel，
+# manim 依赖它在构建期编译，装完即删以缩小镜像
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libcairo2 \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libgdk-pixbuf-2.0-0 \
+        fonts-noto-cjk \
+        fonts-wqy-zenhei \
+        gcc \
+        pkg-config \
+        libcairo2-dev \
+        libpango1.0-dev \
+        libgdk-pixbuf-2.0-dev \
+        python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# manim（纯 CPU 渲染）+ redis 客户端 + COS SDK（视频 CDN 上传）
+# 镜像仓库/源均为公开源，无凭证；COS 凭据运行时由 compose .env.production 注入
+RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    "manim==0.18.*" \
+    "redis==5.0.*" \
+    "cos-python-sdk-v5>=1.9.0"
+
+WORKDIR /app
+COPY manim_worker.py /app/manim_worker.py
+
+CMD ["python", "-u", "/app/manim_worker.py"]
