@@ -46,7 +46,6 @@ from app.models.content import (
     KnowledgePoint,
     Question,
 )
-from app.models.learning import Mistake
 
 logger = logging.getLogger("app.ai.orchestrator")
 
@@ -361,25 +360,20 @@ def _archive_student_question(
         answer_row.analysis or str(analysis.get("solution") or "").strip() or None
     )
 
-    existing_mistake = db.execute(
-        select(Mistake.id)
-        .where(
-            Mistake.student_id == student_id,
-            Mistake.question_id == question_row.id,
-        )
-        .limit(1)
-    ).scalar_one_or_none()
-    if existing_mistake is None:
-        db.add(
-            Mistake(
-                student_id=student_id,
-                question_id=question_row.id,
-                kp_id=question_row.kp_id,
-                error_reason="咨询求助题",
-                solved=False,
-                work_image_urls=[],
-            )
-        )
+    # 错题落库统一走 learning_service.record_mistake：幂等口径与其余入本
+    # 路径一致（同题有未攻克记录直接复用），顺带获得「入本即建档」的 FSRS
+    # 题目粒度复习卡（Again(1)，灰度内核走 review_service 既有封装）。
+    # ⚠️ 该函数内部自带 commit——归档的题目/答案/错题立即落库，后续 AI
+    # 调用失败也不丢已沉淀的数据；幂等语义见 record_mistake 文档
+    # （已攻克的历史记录不阻挡再次建档：学生重新咨询同一题视为再次错题）。
+    from app.services import learning_service
+
+    learning_service.record_mistake(
+        db,
+        student_id=student_id,
+        question_id=question_row.id,
+        error_reason="咨询求助题",
+    )
     return question_row
 
 

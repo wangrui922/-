@@ -347,5 +347,7 @@ def test_to_item_all_fields_present(client, monkeypatch):
             "questionText",
             "originalImageUrl",
             "workImageUrls",
+            # 复习调度联动：题目粒度复习卡到期时间（无卡/已攻克为 null）
+            "due",
         }
     assert set(item.keys()) == expected_keys, f"出参键不匹配: {set(item.keys())}"

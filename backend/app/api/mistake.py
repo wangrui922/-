@@ -33,7 +33,7 @@ from app.core.response import ok
 from app.db import get_db
 from app.models.learning import Mistake
 from app.schemas.common import BaseSchema
-from app.services import learning_service
+from app.services import learning_service, review_service
 from app.services.learning_service import MISTAKE_STATES, require_student_id
 
 router = APIRouter(tags=["mistake"])
@@ -63,7 +63,7 @@ class MistakeSolve(BaseSchema):
     note: Optional[str] = None
 
 
-def _to_item(mistake: Mistake) -> Dict[str, Any]:
+def _to_item(mistake: Mistake, due: Optional[str] = None) -> Dict[str, Any]:
     """把 ``Mistake`` 序列化成 camelCase 出参（时间转 ISO 8601）。
 
     ⚠️ 本文件是 T03 既有接口，沿用 camelCase 不改。
@@ -71,6 +71,16 @@ def _to_item(mistake: Mistake) -> Dict[str, Any]:
       - kpId/kpName 来自 Mistake.kp_id（快照），kp_name 通过 relationship 取
       - grade 来自 Question.grade（通过 question relationship 取）
       - kpId 为空时前端不渲染知识点条 / 不显示「练同类题」按钮
+    due 为复习调度联动新增字段：
+      - 该题题目粒度复习卡的下次到期时间（ISO 8601），学生端展示
+        「何时该再练」；
+      - 无卡（建卡前历史数据 / 建卡失败）或已攻克（卡片暂停调度）时
+        为 None，前端不展示该信息。
+
+    Args:
+        mistake: 错题实例。
+        due: 该题复习卡到期时间（ISO 8601 或 None），由列表接口按
+            (student, question) join review_cards 得出。
     """
     return {
         "id": str(mistake.id),
@@ -88,6 +98,8 @@ def _to_item(mistake: Mistake) -> Dict[str, Any]:
         "questionText": mistake.question.content if mistake.question else "",
         "originalImageUrl": mistake.question.image_url if mistake.question else None,
         "workImageUrls": list(mistake.work_image_urls or []),
+        # ★ 复习调度联动：何时该再练（无卡/已暂停为 None）
+        "due": due,
     }
 
 
@@ -132,6 +144,9 @@ def list_mistakes(
 ) -> dict:
     """按三态筛选错题本，``createdAt`` 倒序。
 
+    出参每条错题带 ``due``（何时该再练）：该题题目粒度复习卡的下次到期
+    时间（ISO 8601）；无复习卡或已攻克（卡片暂停）为 ``None``。
+
     Returns:
         ``{"code":0,"msg":"ok","data":{"items":[...],"total":n}}``。
 
@@ -142,7 +157,17 @@ def list_mistakes(
     items = learning_service.list_mistakes(
         db, student_id=student_id, state=state, kp_id=kp_id
     )
-    return ok({"items": [_to_item(m) for m in items], "total": len(items)})
+    # 复习卡到期时间（学生端「何时该再练」）：按 (student, question) 从
+    # review_cards join 得出；无卡 / 已攻克暂停 → None（前端不展示）。
+    due_map = review_service.get_question_due_map(db, student_id)
+    return ok(
+        {
+            "items": [
+                _to_item(m, due_map.get(str(m.question_id))) for m in items
+            ],
+            "total": len(items),
+        }
+    )
 
 
 @router.put("/mistake/{mistake_id}/solve")

@@ -17,6 +17,9 @@
  *   - T04 起 SUPPORTS_MARK_SOLVED 已置 true（@/config/features），卡片对未掌握
  *     错题渲染「标记已掌握」按钮，调 markMistakeSolved（PUT .../solve），
  *     成功后用返回条目就地更新本地列表。
+ *   - 复习调度联动：列表出参带 due（题目粒度 FSRS 复习卡到期时间）。未掌握
+ *     且有卡的错题展示「何时该再练」；无卡（历史数据）/ 已攻克（卡片暂停）
+ *     due 为 null，不展示该行。
  *   - 顶栏与退出已下沉到 StudentLayout，本页只保留筛选 tab 与列表。
  *   - 「去练习」跳练习页筛选态（kpId 为空的错题用这个出口）。
  */
@@ -356,6 +359,14 @@ onMounted(() => {
 
             <p v-if="item.errorReason" class="text-sm leading-relaxed text-amber-700">
               {{ item.errorReason }}
+            </p>
+
+            <!-- 何时该再练：题目粒度复习卡到期（due 为空不展示） -->
+            <p
+              v-if="item.due && !item.solved"
+              class="text-xs font-medium text-brand-600"
+            >
+              何时该再练：{{ formatDate(item.due) }}
             </p>
 
             <p class="text-xs text-slate-400">

@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger("app.services.review_service")
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -82,16 +82,27 @@ class ReviewService:
         now: Optional[datetime] = None,
     ) -> dict:
         """
-        为一道题目创建复习卡片（通常在练习完成后调用）
+        为一道题目创建复习卡片（错题入本即建档 / 练习完成时调用）
+
+        幂等与复活口径：
+            * 已有**活跃**卡片（``due`` 非空）→ 直接复用，不重复建卡；
+            * 已有**暂停**卡片（``due`` 为空，错题攻克联动置空）→ 按
+              ``initial_rating`` **复活**重新排程。学生再次做错同一题时
+              ``record_mistake`` 会新建错题记录，卡片若不复活将永远沉底、
+              再也不进到期队列；
+            * 没有任何卡片 → 新建。
+
+        调度一律走 ``_scheduler_for(student_id)``（sm2/fsrs_py 按学生
+        稳定哈希灰度裁决），不绕过统一入口——灰度可回滚的前提就在这里。
 
         Args:
             student_id: 学生 ID
             question_id: 题目 ID
-            initial_rating: 初始评分（默认 Good=3）
+            initial_rating: 初始评分（默认 Good=3；错题入本传 Again=1）
             now: 当前时间
 
         Returns:
-            卡片字典
+            卡片字典（``created`` / ``revived`` / ``reason`` 等键）
         """
         student_id = str(student_id)
         question_id = str(question_id)
@@ -100,15 +111,69 @@ class ReviewService:
 
         db = self._get_db()
 
-        # 检查是否已存在
+        # 检查是否已存在（连排程状态一起读，供「暂停态复活」判定）
         existing = db.execute(
-            text("""SELECT id FROM review_cards 
-               WHERE student_id = :p1 AND question_id = :p2"""),
+            text("""SELECT id, due, stability, difficulty, elapsed_days,
+                           scheduled_days, reps, lapses, state, last_review
+                   FROM review_cards 
+                   WHERE student_id = :p1 AND question_id = :p2"""),
             {"p1": student_id, "p2": question_id},
         ).fetchone()
 
-        if existing:
+        if existing is not None and self._to_dt(existing[1]) is not None:
+            # 活跃卡片：幂等复用，不重复建卡
             return {"id": existing[0], "created": False, "reason": "already_exists"}
+
+        if existing is not None:
+            # 暂停态卡片（攻克联动把 due 置空）：从库里重建状态，按
+            # initial_rating 复活（错题→Again(1) 近期重现）。
+            card = Card(
+                id=existing[0],
+                due=self._to_dt(existing[1]),
+                stability=existing[2],
+                difficulty=existing[3],
+                elapsed_days=existing[4],
+                scheduled_days=existing[5],
+                reps=existing[6],
+                lapses=existing[7],
+                state=existing[8],
+                last_review=self._to_dt(existing[9]),
+            )
+            card, _ = self._scheduler_for(student_id).review_card(
+                card, initial_rating, now
+            )
+
+            db.execute(
+                text("""UPDATE review_cards SET
+                    due = :p1, stability = :p2, difficulty = :p3, elapsed_days = :p4,
+                    scheduled_days = :p5, reps = :p6, lapses = :p7, state = :p8,
+                    last_review = :p9, updated_at = :p10
+                   WHERE id = :p11"""),
+                {
+                    "p1": card.due,
+                    "p2": card.stability,
+                    "p3": card.difficulty,
+                    "p4": card.elapsed_days,
+                    "p5": card.scheduled_days,
+                    "p6": card.reps,
+                    "p7": card.lapses,
+                    "p8": card.state,
+                    "p9": card.last_review,
+                    "p10": now,
+                    "p11": card.id,
+                },
+            )
+            db.commit()
+
+            return {
+                "id": card.id,
+                "created": True,
+                "revived": True,
+                "due": card.due.isoformat(),
+                "stability": card.stability,
+                "difficulty": card.difficulty,
+                "state": card.state,
+            }
 
         # 创建 FSRS 卡片（调度器按学生取，保证灰度裁决与后续复习一致）
         card = Card()
@@ -146,11 +211,79 @@ class ReviewService:
         return {
             "id": card.id,
             "created": True,
+            "revived": False,
             "due": card.due.isoformat(),
             "stability": card.stability,
             "difficulty": card.difficulty,
             "state": card.state,
         }
+
+    def pause_cards_for_question(
+        self,
+        student_id: str,
+        question_id: str,
+        now: Optional[datetime] = None,
+    ) -> dict:
+        """把 (student, question) 的题目粒度复习卡暂停调度（错题攻克联动）。
+
+        暂停语义（**无 schema 变更**，复用既有列）：``review_cards.due`` 置空。
+            * ``get_due_cards`` / 复习页自然不再出现该卡（``due <= now``
+              不匹配 NULL）；
+            * 错题本列表出参的 ``due`` 同步变为 None（学生端不展示
+              「何时该再练」）；
+            * 卡片行与 ``review_logs`` 历史**全部保留**，不删行；
+            * 学生再次做错同一题时 ``create_card_for_question`` 会把卡片
+              按 Again(1) 复活（见该方法的「暂停态复活」口径）。
+
+        Args:
+            student_id: 学生 ID。
+            question_id: 题目 ID。
+            now: 当前时间（写 ``updated_at`` 用）。
+
+        Returns:
+            ``{"paused": 受影响行数}``；0 = 没有可暂停的卡片（建卡失败 /
+            历史数据无卡），属正常情况，调用方按成功处理。
+        """
+        student_id = str(student_id)
+        question_id = str(question_id)
+        if now is None:
+            now = datetime.now()
+
+        db = self._get_db()
+        result = db.execute(
+            text("""UPDATE review_cards SET due = NULL, updated_at = :p1
+                   WHERE student_id = :p2 AND question_id = :p3"""),
+            {"p1": now, "p2": student_id, "p3": question_id},
+        )
+        db.commit()
+
+        return {"paused": int(result.rowcount or 0)}
+
+    def has_question_card_for_kp(self, student_id: str, kp_id: str) -> bool:
+        """该学生是否已有**题目粒度**复习卡覆盖这个知识点（KP 卡去重判据）。
+
+        去重口径（产品拍板）：题目粒度卡优先——同一学生已有题目卡的知识点，
+        练习结算不再建 KP 卡（KP 卡仅兜底），避免同一知识点双卡排程、
+        到期队列里同一内容重复出现。
+
+        暂停态卡片（攻克后 ``due`` 置空）同样算「已存在」：题目卡是该题
+        唯一的调度记录，学生再次做错会按 Again(1) 复活，不需要 KP 卡补位。
+
+        Args:
+            student_id: 学生 ID。
+            kp_id: 知识点 ID。
+
+        Returns:
+            存在至少一张题目卡返回 ``True``，否则 ``False``。
+        """
+        row = self._get_db().execute(
+            text("""SELECT rc.id FROM review_cards rc
+                   JOIN questions q ON q.id = rc.question_id
+                   WHERE rc.student_id = :p1 AND q.kp_id = :p2
+                   LIMIT 1"""),
+            {"p1": str(student_id), "p2": str(kp_id)},
+        ).fetchone()
+        return row is not None
 
     def create_card_for_knowledge_point(
         self,
@@ -752,6 +885,10 @@ def upsert_cards_from_practice(
     供 Review.vue 的卡片流复习页使用。练习答对的知识点按 Good(3) 建档
     （隔日到期），答错/未攻克的知识点按 Again(1) 建档（近期再次出现）。
 
+    去重口径（产品拍板）：**题目粒度卡优先**。建 KP 卡前先查该学生是否
+    已有题目粒度卡片覆盖这个知识点（``has_question_card_for_kp``），
+    存在则跳过——KP 卡仅兜底，避免同一内容双卡排程。
+
     Args:
         student_id: 学生 ID。
         kp_results: ``{kp_id(str): {"correct": bool, "attempts": int}}``，
@@ -759,7 +896,8 @@ def upsert_cards_from_practice(
         now: 当前时间（UTC）。
 
     Returns:
-        ``{"created", "skipped", "total"}``：新建 / 已存在跳过 / 参与评估总数。
+        ``{"created", "skipped", "total"}``：新建 / 已存在或被题目卡去重
+        跳过 / 参与评估总数。
     """
     svc = ReviewService()
     created = skipped = 0
@@ -767,6 +905,11 @@ def upsert_cards_from_practice(
         try:
             correct = bool(res.get("correct", False))
             initial_rating = 3 if correct else 1
+            # 去重口径：题目粒度卡优先——已有题目卡覆盖该知识点时跳过 KP 卡
+            # （KP 卡仅兜底）。见 ReviewService.has_question_card_for_kp。
+            if svc.has_question_card_for_kp(str(student_id), str(kp_id)):
+                skipped += 1
+                continue
             out = svc.create_card_for_knowledge_point(
                 str(student_id), str(kp_id), initial_rating, now or datetime.now()
             )
@@ -778,3 +921,52 @@ def upsert_cards_from_practice(
             logger.exception("练习结算建档复习卡失败 kp=%s", kp_id)
             skipped += 1
     return {"created": created, "skipped": skipped, "total": len(kp_results or {})}
+
+
+def get_question_due_map(
+    db: Session,
+    student_id: Any,
+) -> Dict[str, Optional[str]]:
+    """查询学生的题目粒度复习卡到期时间：``{question_id: due ISO | None}``。
+
+    用途：错题本列表出参补 ``due`` 字段（学生端「何时该再练」）。口径：
+        * 有活跃卡片 → 下次到期时间（ISO 8601 字符串）；
+        * 卡片已暂停（攻克联动置空 ``due``）→ ``None``；
+        * 从未建卡 / 建卡失败的历史错题 → 不进 map，调用方 ``.get``
+          得到 ``None``（前端据此不展示该信息）。
+
+    同一题存在多张卡的异常场景（历史数据）取**最早的非空到期时间**。
+
+    容错口径：``due`` 是错题本列表的附属信息，查询失败（如 review_cards
+    表尚未建好的历史库）只 warning 并返回空 dict——错题本主链路不因
+    复习卡读取故障而 500（与建卡兜底同款思路）。
+
+    Args:
+        db: 数据库会话（调用方请求级会话，只读查询）。
+        student_id: 学生 ID。
+
+    Returns:
+        ``{question_id: due ISO 字符串或 None}`` 的字典；没有任何题目卡
+        （或查询失败）时返回空字典。
+    """
+    try:
+        rows = db.execute(
+            text("""SELECT question_id, due FROM review_cards
+                    WHERE student_id = :p1 AND question_id IS NOT NULL
+                    ORDER BY (due IS NULL), due ASC"""),
+            {"p1": str(student_id)},
+        ).fetchall()
+    except Exception:  # noqa: BLE001 - 附属信息读取失败不拖垮错题本列表
+        logger.warning(
+            "读取题目复习卡到期时间失败 student=%s", student_id, exc_info=True
+        )
+        return {}
+
+    due_map: Dict[str, Optional[str]] = {}
+    for question_id, due in rows:
+        key = str(question_id)
+        if key in due_map and due_map[key] is not None:
+            continue  # 已记录更早的非空到期（ORDER BY 保证非空且小的先到）
+        due_dt = ReviewService._to_dt(due)
+        due_map[key] = due_dt.isoformat() if due_dt is not None else None
+    return due_map

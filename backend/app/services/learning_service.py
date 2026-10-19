@@ -209,6 +209,25 @@ def record_mistake(
         raise ApiError(CODE_BAD_REQUEST, "关联的学生或题目不存在") from exc
 
     db.refresh(mistake)
+
+    # ---- FSRS 复习卡联动：错题入本即建档（产品口径）------------------------
+    # 学生做错的题以**题目粒度**进入 FSRS 调度：错→Again(1) 近期重现。
+    # 必须走 ReviewService 既有封装（内部按学生稳定哈希裁决 sm2/fsrs_py
+    # 双内核，灰度可回滚），不得绕过调度器直写 review_cards。
+    # existing 复用路径在上面已直接返回——复用不重复建卡（幂等口径）。
+    # 兜底口径与 upsert_cards_from_practice 一致：建卡失败只 warning——
+    # 错题本主链路已落库，不能因复习卡故障阻断入本。
+    try:
+        from app.services.review_service import ReviewService
+
+        ReviewService(db).create_card_for_question(
+            sid, qid, initial_rating=1, now=utcnow()
+        )
+    except Exception:  # noqa: BLE001 - 建卡失败不拖垮错题入本主流程
+        logger.warning(
+            "错题建档复习卡失败 student=%s question=%s", sid, qid, exc_info=True
+        )
+
     return mistake
 
 
@@ -331,6 +350,23 @@ def mark_mistake_solved(
         except Exception:  # noqa: BLE001 - 缓存失效失败不能拖垮「标记攻克」主流程
             logger.warning(
                 "标记攻克后刷新画像缓存失败 mistake=%s student=%s",
+                mid,
+                mistake.student_id,
+                exc_info=True,
+            )
+
+        # ---- 复习卡联动：该题的题目粒度复习卡暂停调度（不再 due）-----------
+        # 攻克 = 这题不再需要间隔重复：卡片 due 置空（不删行，历史保留），
+        # 学生再次做错同一题时 record_mistake 会把卡片按 Again(1) 复活。
+        try:
+            from app.services.review_service import ReviewService
+
+            ReviewService(db).pause_cards_for_question(
+                mistake.student_id, mistake.question_id, now=stamp
+            )
+        except Exception:  # noqa: BLE001 - 暂停失败不拖垮「标记攻克」主流程
+            logger.warning(
+                "攻克后暂停复习卡失败 mistake=%s student=%s",
                 mid,
                 mistake.student_id,
                 exc_info=True,

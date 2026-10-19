@@ -161,6 +161,12 @@ export interface MistakeItem {
   questionText: string
   originalImageUrl: string | null
   workImageUrls: string[]
+  /**
+   * 下次该再练的时间（题目粒度 FSRS 复习卡到期，ISO 8601；错题入本即建档联动）。
+   * 无复习卡（建卡前历史数据 / 建卡失败）或已攻克（卡片暂停调度）为 null——
+   * 前端据此展示「何时该再练」，null 不展示。
+   */
+  due: string | null
 }
 
 /** GET /api/mistake/list 结果。 */
