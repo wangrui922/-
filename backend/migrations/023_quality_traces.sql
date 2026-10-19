@@ -5,6 +5,9 @@
 -- 泄漏只写 logger 不累计、讲解质量评分不落库——指标无事实源，无法复盘。
 --
 -- 设计（与 app/models/quality_trace.py::QualityTrace 逐字对齐，勿漂移）：
+--   * 本文件 DDL 与 SQLAlchemy 按 postgresql dialect 编译的 CreateTable 产出
+--     一致（严重度/created_at 的 server default、5 个索引均与模型对齐）——
+--     模型是唯一真相源，改模型必须同步改本文件与 SQLite 版；
 --   * student_id 可空：系统级（无学生归属）的教学行为事件也要能记；
 --     ON DELETE CASCADE 与其余学生维度表保持一致；
 --   * session_id / question_id 归参可空，ON DELETE SET NULL——会话/题目
@@ -38,6 +41,13 @@ CREATE INDEX IF NOT EXISTS idx_quality_traces_type_created
     ON quality_traces (event_type, created_at);
 CREATE INDEX IF NOT EXISTS idx_quality_traces_student_created
     ON quality_traces (student_id, created_at);
+-- FK 列自动索引（与模型 index=True 对齐，SQLite 版同）
+CREATE INDEX IF NOT EXISTS ix_quality_traces_student_id
+    ON quality_traces (student_id);
+CREATE INDEX IF NOT EXISTS ix_quality_traces_session_id
+    ON quality_traces (session_id);
+CREATE INDEX IF NOT EXISTS ix_quality_traces_question_id
+    ON quality_traces (question_id);
 
 COMMENT ON TABLE  quality_traces              IS '教学行为质量事件流水表(Benchmark维度一)';
 COMMENT ON COLUMN quality_traces.student_id   IS '所属学生(可空:系统级事件)';

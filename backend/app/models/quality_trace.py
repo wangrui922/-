@@ -90,6 +90,7 @@ class QualityTrace(CreatedAtMixin, Base):
         String(16),
         nullable=False,
         default="warning",
+        server_default="warning",  # 与 023 双方言迁移一致：裸 SQL 插入也有兜底
         comment="严重度 info/warning/error",
     )
     payload: Mapped[Optional[Any]] = mapped_column(

@@ -170,6 +170,11 @@ def content_fingerprint(db_path: Path) -> str:
     哪怕一行数据都没改（实测同一份题的三个副本文件大小相同但 sha256 各不相同）。
     按「表行数 + 关键表有序行内容」算摘要，才能真正回答"这两份库是不是同一份数据"。
 
+    列结构也进指纹（024 事故加固）：母版执行加列迁移后，dev.db 若漏同步，
+    旧版指纹（表名+行数+内容）完全一致，会误报「就绪」不重建——schema guard
+    随后才红，CI 前置检查形同虚设。纳入 ``PRAGMA table_info`` 的列名/类型/
+    非空/默认值/主键序五元组后，列漂移直接导致指纹不符、触发重建。
+
     Args:
         db_path: 数据库绝对路径。
 
@@ -187,6 +192,10 @@ def content_fingerprint(db_path: Path) -> str:
         )
         for table in tables:
             digest.update(f"{table}={conn.execute(f'SELECT COUNT(*) FROM \"{table}\"').fetchone()[0]};".encode())
+            # 列结构五元组（cid 序号不含——它只反映历史加列顺序，不影响语义）
+            columns = conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+            for col in columns:
+                digest.update(f"|{col[1]},{col[2]},{col[3]},{col[4]},{col[5]}".encode())
         for row in conn.execute(
             "SELECT id, content, type, options, status, kp_verified FROM questions ORDER BY id"
         ):
