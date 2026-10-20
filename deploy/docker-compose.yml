@@ -67,11 +67,14 @@ services:
     # 永久 unhealthy（2026-10-20 实测 FailingStreak=7，容器其实完全正常：
     # celery 已连 redis、7 个 task 注册、ready）。
     # 改成用 celery 自己的 ping——既能判活，又真正验证「worker 能接活」。
+    # ⚠️ 必须用 CMD-SHELL：exec 形式（CMD）**不经 shell**，`$HOSTNAME`
+    # 不会被展开，目标节点名成了字面量 "celery@$HOSTNAME" →
+    # "Error: No nodes replied within time constraint"（2026-10-20 实测）。
     healthcheck:
-      test: ["CMD", "celery", "-A", "app.core.celery_app", "inspect", "ping", "-d", "celery@$HOSTNAME"]
+      test: ["CMD-SHELL", "celery -A app.core.celery_app inspect ping -d celery@$$HOSTNAME -t 5 || exit 1"]
       interval: 30s
-      timeout: 10s
-      start_period: 40s
+      timeout: 15s
+      start_period: 60s
       retries: 3
 
   web:
