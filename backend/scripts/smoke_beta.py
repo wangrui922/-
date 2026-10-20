@@ -46,6 +46,15 @@ GUARDIAN_PHONE = os.environ.get("SMOKE_GUARDIAN_PHONE", "13900000000")
 RESULTS: list[tuple[str, bool, str]] = []
 
 
+def _is_uuid(value: str) -> bool:
+    """判断字符串是否为合法 UUID（用于拼 raw SQL 的 IN 列表）。"""
+    try:
+        uuid.UUID(value)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
+
+
 def resolve_consent_version(db) -> str:
     """从生产库读当前 ``CONSENT_VERSION``。
 
@@ -295,7 +304,7 @@ def finish(args, db, created_user_ids, created_code_id=None) -> int:
     if not args.keep:
         print("\n=== 清理测试数据 ===")
         try:
-            from sqlalchemy import delete, select
+            from sqlalchemy import delete, select, text
 
             from app.models.activation import ActivationCode
             from app.models.ai import AiMessage, AiSession
@@ -325,6 +334,50 @@ def finish(args, db, created_user_ids, created_code_id=None) -> int:
                 db.execute(delete(ActivationCode).where(ActivationCode.user_id == user.id))
                 db.execute(delete(User).where(User.id == user.id))
                 print(f"  已清理 user {uid}")
+
+            # ---- 兜底：子表残留 ----
+            # 上面按 ORM 模型删了核心表，但 learning_tasks / review_cards /
+            # review_logs / student_learning_events / student_learning_profiles /
+            # student_knowledge_mastery / practice_progress / guardian_consents
+            # 这些表有的没被上面覆盖、有的（review_cards/review_logs）
+            # 根本无 ORM 模型（由 FSRS 模块 raw SQL 维护），
+            # 漏删会在生产库留孤儿行，累积后污染统计口径。
+            #
+            # 注意：不能「执行失败就 rollback」——那会把同一事务里已经删掉的
+            # 行一起回滚掉。正确做法是**先探测表是否存在**，只对存在的表发 DELETE。
+            uid_list = [u for u in created_user_ids if _is_uuid(u)]
+            if uid_list:
+                from sqlalchemy import inspect as sa_inspect
+
+                inspector = sa_inspect(db.get_bind())
+                existing = set(inspector.get_table_names())
+                uids = ",".join(f"'{u}'" for u in uid_list)
+                sids_sql = f"(select id from students where user_id in ({uids}))"
+                plan = [
+                    ("guardian_consents", f"delete from guardian_consents where user_id in ({uids})"),
+                    ("learning_tasks", f"delete from learning_tasks where student_id in {sids_sql}"),
+                    ("review_logs", f"delete from review_logs where student_id in {sids_sql}"),
+                    ("review_cards", f"delete from review_cards where student_id in {sids_sql}"),
+                    ("student_knowledge_mastery",
+                     f"delete from student_knowledge_mastery where student_id in {sids_sql}"),
+                    ("student_learning_events",
+                     f"delete from student_learning_events where student_id in {sids_sql}"),
+                    ("student_learning_profiles",
+                     f"delete from student_learning_profiles where student_id in {sids_sql}"),
+                    ("practice_progress",
+                     f"delete from practice_progress where student_id in {sids_sql}"),
+                    ("subscriptions", f"delete from subscriptions where user_id in ({uids})"),
+                    ("payment_transactions",
+                     f"delete from payment_transactions where user_id in ({uids})"),
+                ]
+                hit = 0
+                for table, sql in plan:
+                    if table not in existing:
+                        continue
+                    db.execute(text(sql))
+                    hit += 1
+                db.commit()
+                print(f"  已清理关联子表 {hit} 张（consent/task/review/learning/subscription）")
 
             # 兜底：激活失败时那枚临时码仍是「未绑定」状态，上面按 user_id
             # 删不到，会在生产库留垃圾——按 id 显式删一次。
