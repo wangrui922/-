@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import random
 import string
 import uuid
@@ -25,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import CurrentUser, require_role
 from app.core.response import ApiError, CODE_BAD_REQUEST, CODE_FORBIDDEN, CODE_NOT_FOUND, ok
+from app.core.system_config import DEFAULTS, _to_bool, reload_config, reset_configs
 from app.db import get_db
 from app.models.activation import ActivationCode
 from app.models.quality_trace import (
@@ -32,6 +34,7 @@ from app.models.quality_trace import (
     QUALITY_TRACE_SEVERITIES,
     QualityTrace,
 )
+from app.models.system_config import SystemConfig
 from app.models.user import ROLE_VALUES, User, Student, GRADE_MIN, GRADE_MAX
 from app.models.learning import Mistake, Attempt, LearningTask, StudentProfile
 from app.models.student_mastery import StudentMastery
@@ -40,6 +43,7 @@ from app.models.ai import AiSession, AiMessage
 from app.schemas.admin import (
     ActivationCodeCreate,
     ActivationCodeItem,
+    ConfigUpdate,
     DashboardStats,
     UserListItem,
     UserListQuery,
@@ -639,6 +643,131 @@ def list_quality_traces(
         for r in rows
     ]
     return ok({"total": total, "page": page, "size": size, "items": items})
+
+
+# ---- 系统配置（运营阈值 / 灰度开关）-----------------------------------------
+#
+# 存储层是 ``system_config`` key-value 表；读取侧缓存与转型的唯一真相源是
+# ``app.core.system_config``（DEFAULTS 含 V6.5 的监护人同意门控 / 低置信度
+# 重拍等键）。本模块只做管理面的查与改，**不另立默认值表**。
+#
+# 写入门禁（较服务器版严格）：PUT 的值必须能通过该键的 cast 函数转型，
+# bool 键只认白名单 token、float 键拒绝 nan/inf——杜绝「存得进、读时
+# 静默回退默认值」的运维坑。
+
+#: 配置项中文说明（键与 DEFAULTS 对齐；DEFAULTS 新增键要同步这里，
+#: 未配的键兜底返空串，不 KeyError）。
+_CONFIG_DESCRIPTIONS: Dict[str, str] = {
+    "REPEAT_SIMILARITY": "重复回答判定阈值（字符重叠率 ≥ 此值视为重复）",
+    "STUCK_TO_L2": "连续卡壳次数 ≥ 此值 → 升级到半引导(L2)",
+    "STUCK_TO_L3": "连续卡壳次数 ≥ 此值 → 升级到边讲边问(L3)",
+    "STUCK_TO_L4": "连续卡壳次数 ≥ 此值 → 升级到直接讲解(L4)",
+    "REPEAT_TO_L2": "连续重复回答次数 ≥ 此值 → 升级到半引导(L2)",
+    "REPEAT_TO_L3": "连续重复回答次数 ≥ 此值 → 升级到边讲边问(L3)",
+    "NOPROGRESS_TO_L3": "连续无进展次数 ≥ 此值 → 升级到边讲边问(L3)",
+    "NOPROGRESS_TO_L4": "连续无进展次数 ≥ 此值 → 升级到直接讲解(L4)",
+    "TURNS_TO_L4": "单题求助轮次 ≥ 此值 → 升级到直接讲解(L4)",
+    "HAS_SUBSTANCE_MIN_LEN": "回答有实质内容的最小字符长度",
+    "CONSENT_GATE_ENABLED": "监护人同意门控总开关（灰度，默认关）",
+    "CONSENT_VERSION": "监护人同意规则版本号（变更后旧版本同意记录一律失效）",
+    "CONFIDENCE_RETHRESHOLD": "拍题分析置信度阈值（低于此值引导重拍，-1 关闭）",
+}
+
+#: bool 键认得的 token（与 ``_to_bool`` 语义一致）。不设白名单的话，
+#: PUT "maybe" 存得进、读出来是 False——运营以为关了，其实从没开过。
+_BOOL_TOKENS = {"1", "true", "yes", "on", "0", "false", "no", "off"}
+
+
+def _config_description(key: str) -> str:
+    """配置项中文说明（未配置的键返空串）。"""
+    return _CONFIG_DESCRIPTIONS.get(key, "")
+
+
+def _validate_config_value(key: str, raw: str) -> str:
+    """写入门禁：值必须能被该键的 cast 解析，否则抛 400。
+
+    * bool 键（``cast is _to_bool``）只认白名单 token；
+    * float 键拒绝 nan/inf（阈值比较遇 nan 恒假，语义不确定）；
+    * int/float 键 cast 失败（如 ``"abc"``）直接 400，不落库。
+    """
+    _default_str, cast = DEFAULTS[key]
+    if cast is _to_bool and raw.lower() not in _BOOL_TOKENS:
+        raise ApiError(
+            CODE_BAD_REQUEST,
+            f"{key} 是开关型配置，只能取 {sorted(_BOOL_TOKENS)}，当前: {raw!r}",
+        )
+    try:
+        parsed = cast(raw)
+    except (TypeError, ValueError) as exc:
+        raise ApiError(
+            CODE_BAD_REQUEST,
+            f"{key} 的值无法按 {cast.__name__} 解析: {raw!r}",
+        ) from exc
+    if isinstance(parsed, float) and not math.isfinite(parsed):
+        raise ApiError(CODE_BAD_REQUEST, f"{key} 不接受 nan/inf，当前: {raw!r}")
+    return raw
+
+
+@router.get("/configs")
+def list_configs(
+    current: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """获取全部系统配置（DB 无记录的键回退代码默认值）。"""
+    rows = db.execute(select(SystemConfig)).scalars().all()
+    db_values = {r.key: r.value for r in rows}
+
+    items = []
+    for key, (default_str, _cast) in DEFAULTS.items():
+        items.append(
+            {
+                "key": key,
+                "value": db_values.get(key, default_str),
+                "default_value": default_str,
+                "description": _config_description(key),
+            }
+        )
+    return ok({"items": items})
+
+
+@router.put("/configs/{key}")
+def update_config(
+    key: str,
+    body: ConfigUpdate,
+    current: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """更新单个配置项（写入门禁 + 清读取缓存）。
+
+    未知键 400；值无法被该键 cast 解析时 400 且 DB 保持原值；成功后
+    ``reload_config()`` 清进程内缓存，下一次 ``get_config`` 即读新值
+    （缓存不清是这类接口最静的坑，单测直接盯）。
+    """
+    if key not in DEFAULTS:
+        raise ApiError(CODE_BAD_REQUEST, f"未知配置项: {key}")
+    raw = _validate_config_value(key, (body.value or "").strip())
+
+    row = db.execute(select(SystemConfig).where(SystemConfig.key == key)).scalar_one_or_none()
+    if row is None:
+        db.add(SystemConfig(key=key, value=raw, description=_config_description(key)))
+    else:
+        row.value = raw
+        row.description = _config_description(key) or row.description
+    db.commit()
+
+    reload_config()
+    return ok({"key": key, "value": raw})
+
+
+@router.post("/configs/reset")
+def reset_all_configs(
+    current: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """重置所有配置为默认值（reset_configs 内部已清缓存）。"""
+    reset_configs(db)
+    db.commit()
+    return ok({"reset": True, "items": list(DEFAULTS.keys())})
 
 
 # ---- FSRS 复习排期统计（方向三 · 教师端看板）-------------------------------

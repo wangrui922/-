@@ -60,3 +60,14 @@ class UserListQuery(BaseModel):
     size: int = 20
     role: Optional[str] = None
     keyword: Optional[str] = None
+
+
+class ConfigUpdate(BaseModel):
+    """更新系统配置项请求。
+
+    value 一律按字符串入库（存储契约），读取侧由
+    ``system_config`` 按各键 cast 函数转型；写入门禁在
+    ``admin.update_config`` 校验可解析性。
+    """
+
+    value: str = Field(..., min_length=1, max_length=500, description="配置值（字符串）")
