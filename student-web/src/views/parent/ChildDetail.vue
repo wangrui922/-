@@ -28,6 +28,12 @@ const tab = ref<'summary' | 'mistakes' | 'attempts' | 'mastery' | 'entitlement'>
 const loading = ref(false)
 const error = ref('')
 
+/** 「不限」判定（内测期全免费不限额，2026-10-20 口径）。 */
+function isUnlimited(limit: number | null | undefined): boolean {
+  if (limit === null || limit === undefined) return false
+  return limit <= 0 || limit >= 9999
+}
+
 const summary = ref<Record<string, unknown> | null>(null)
 const mistakes = ref<ChildMistake[]>([])
 const attempts = ref<ChildAttempt[]>([])
@@ -214,7 +220,7 @@ const tabs = [
         <div class="mt-4 space-y-3 text-sm">
           <div class="flex justify-between">
             <span class="text-slate-500">AI 对话今日用量</span>
-            <span class="font-semibold text-ink">{{ entitlement.aiSessionsToday }} / {{ entitlement.dailyAiLimit }}</span>
+            <span class="font-semibold text-ink">{{ entitlement.aiSessionsToday }} / {{ isUnlimited(entitlement.dailyAiLimit) ? '不限' : entitlement.dailyAiLimit }}</span>
           </div>
           <div class="flex justify-between">
             <span class="text-slate-500">练习今日用量</span>

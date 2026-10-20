@@ -17,7 +17,27 @@ const error = ref('')
 const checkoutLoading = ref<string | null>(null)
 const intervalMode = ref<'month' | 'year'>('month')
 
+/**
+ * 内测期开关（2026-10-20 定）：全免费不限额，隐藏付费订阅入口。
+ * 商业化重启时置为 false 即可恢复「立即订阅」按钮。
+ */
+const BETA_FREE_ONLY = true
+
 const currentPlanSlug = computed(() => entitlement.value?.plan ?? 'free')
+
+/**
+ * 「不限」判定（内测期全免费不限额，2026-10-20 口径）。
+ * 后端统一用 -1 表示无限；历史套餐用 9999/99999 表达近似无限，一并归一。
+ */
+function isUnlimited(limit: number | null | undefined): boolean {
+  if (limit === null || limit === undefined) return false
+  return limit <= 0 || limit >= 9999
+}
+
+function limitLabel(limit: number | null | undefined, unit: string): string {
+  if (isUnlimited(limit)) return '不限'
+  return `每日 ${limit} ${unit}`
+}
 
 function priceLabel(plan: Plan): string {
   const price = intervalMode.value === 'year' ? plan.priceYearly : plan.priceMonthly
@@ -34,7 +54,9 @@ async function loadData() {
   error.value = ''
   try {
     const [p, e] = await Promise.all([getPlans(), getEntitlement()])
-    plans.value = p
+    // 内测期只展示 free 档：basic/pro 是尚未开放的商业化档位，
+    // 展示给内测用户会造成"要付费才能用 AI"的误解（2026-10-20 口径）。
+    plans.value = BETA_FREE_ONLY ? p.filter((item) => item.slug === 'free') : p
     entitlement.value = e
   } catch (err) {
     error.value = toMessage(err, '加载失败')
@@ -59,12 +81,14 @@ async function handleCheckout(plan: Plan) {
 
 const aiUsagePercent = computed(() => {
   if (!entitlement.value) return 0
+  if (isUnlimited(entitlement.value.dailyAiLimit)) return 0
   const limit = Math.max(1, entitlement.value.dailyAiLimit)
   return Math.min(100, Math.round((entitlement.value.aiSessionsToday / limit) * 100))
 })
 
 const practiceUsagePercent = computed(() => {
   if (!entitlement.value) return 0
+  if (isUnlimited(entitlement.value.practiceDailyLimit)) return 0
   const limit = Math.max(1, entitlement.value.practiceDailyLimit)
   return Math.min(100, Math.round((entitlement.value.aiAttemptsToday / limit) * 100))
 })
@@ -86,6 +110,7 @@ onMounted(loadData)
           <span v-if="entitlement?.expiresAt" class="ml-1 text-xs opacity-80">
             ({{ entitlement.isActive ? '有效至 ' + entitlement.expiresAt.split('T')[0] : '已过期' }})
           </span>
+          <span v-else-if="BETA_FREE_ONLY" class="ml-1 text-xs opacity-80">(内测期永久有效)</span>
         </p>
 
         <!-- 用量条 -->
@@ -93,7 +118,7 @@ onMounted(loadData)
           <div>
             <div class="flex justify-between text-xs text-white/80">
               <span>AI 对话</span>
-              <span>{{ entitlement?.aiSessionsToday ?? 0 }} / {{ entitlement?.dailyAiLimit ?? 20 }}</span>
+              <span>{{ entitlement?.aiSessionsToday ?? 0 }} / {{ isUnlimited(entitlement?.dailyAiLimit) ? '不限' : (entitlement?.dailyAiLimit ?? '-') }}</span>
             </div>
             <div class="mt-1 h-2 overflow-hidden rounded-full bg-white/20">
               <div class="h-full rounded-full bg-white transition-all" :style="{ width: aiUsagePercent + '%' }" />
@@ -102,7 +127,7 @@ onMounted(loadData)
           <div>
             <div class="flex justify-between text-xs text-white/80">
               <span>今日练习</span>
-              <span>{{ entitlement?.aiAttemptsToday ?? 0 }} / {{ entitlement?.practiceDailyLimit ?? 50 }}</span>
+              <span>{{ entitlement?.aiAttemptsToday ?? 0 }} / {{ isUnlimited(entitlement?.practiceDailyLimit) ? '不限' : (entitlement?.practiceDailyLimit ?? '-') }}</span>
             </div>
             <div class="mt-1 h-2 overflow-hidden rounded-full bg-white/20">
               <div class="h-full rounded-full bg-mint-300 transition-all" :style="{ width: practiceUsagePercent + '%' }" />
@@ -112,8 +137,8 @@ onMounted(loadData)
       </div>
     </section>
 
-    <!-- 周期切换 -->
-    <div class="mx-4 -mt-4 rounded-2xl bg-white p-1 shadow-soft">
+    <!-- 周期切换（内测期无付费周期，隐藏） -->
+    <div v-if="!BETA_FREE_ONLY" class="mx-4 -mt-4 rounded-2xl bg-white p-1 shadow-soft">
       <div class="flex rounded-xl bg-slate-100 p-1">
         <button
           type="button"
@@ -133,6 +158,14 @@ onMounted(loadData)
           <span class="ml-1 rounded bg-mint-100 px-1.5 py-0.5 text-[10px] text-mint-700">省20%</span>
         </button>
       </div>
+    </div>
+
+    <!-- 内测期说明横幅 -->
+    <div v-if="BETA_FREE_ONLY" class="mx-4 -mt-4 rounded-2xl bg-mint-50 p-4 shadow-soft">
+      <p class="text-sm font-bold text-mint-700">内测期全部功能免费开放</p>
+      <p class="mt-1 text-xs leading-relaxed text-mint-600">
+        AI 讲解、拍照解题、练习与错题本均不限次数、不限额度。正式商用后会推出付费套餐，届时会提前通知。
+      </p>
     </div>
 
     <!-- 计划卡片 -->
@@ -165,17 +198,17 @@ onMounted(loadData)
         <ul class="mt-3 space-y-2 text-sm">
           <li class="flex items-center gap-2">
             <span class="flex h-5 w-5 items-center justify-center rounded-full text-xs"
-                  :class="plan.aiDailyLimit >= 9999 ? 'bg-mint-100 text-mint-600' : 'bg-brand-50 text-brand-500'">✓</span>
-            <span class="text-ink">AI 对话：{{ plan.aiDailyLimit >= 9999 ? '不限' : `每日 ${plan.aiDailyLimit} 次` }}</span>
+                  :class="isUnlimited(plan.aiDailyLimit) ? 'bg-mint-100 text-mint-600' : 'bg-brand-50 text-brand-500'">✓</span>
+            <span class="text-ink">AI 对话：{{ limitLabel(plan.aiDailyLimit, '次') }}</span>
           </li>
           <li class="flex items-center gap-2">
             <span class="flex h-5 w-5 items-center justify-center rounded-full text-xs"
-                  :class="plan.practiceDailyLimit >= 9999 ? 'bg-mint-100 text-mint-600' : 'bg-brand-50 text-brand-500'">✓</span>
-            <span class="text-ink">练习：{{ plan.practiceDailyLimit >= 9999 ? '不限' : `每日 ${plan.practiceDailyLimit} 道` }}</span>
+                  :class="isUnlimited(plan.practiceDailyLimit) ? 'bg-mint-100 text-mint-600' : 'bg-brand-50 text-brand-500'">✓</span>
+            <span class="text-ink">练习：{{ limitLabel(plan.practiceDailyLimit, '道') }}</span>
           </li>
           <li class="flex items-center gap-2">
             <span class="flex h-5 w-5 items-center justify-center rounded-full bg-brand-50 text-xs text-brand-500">✓</span>
-            <span class="text-ink">错题本：{{ plan.maxMistakeStorage >= 99999 ? '不限' : `${plan.maxMistakeStorage} 道` }}</span>
+            <span class="text-ink">错题本：{{ isUnlimited(plan.maxMistakeStorage) ? '不限' : `${plan.maxMistakeStorage} 道` }}</span>
           </li>
           <li v-if="plan.hasAdvancedAnalytics" class="flex items-center gap-2">
             <span class="flex h-5 w-5 items-center justify-center rounded-full bg-mint-100 text-xs text-mint-600">✓</span>
@@ -191,9 +224,17 @@ onMounted(loadData)
           </li>
         </ul>
 
-        <!-- 按钮 -->
+        <!-- 按钮：内测期全免费不限额，付费入口隐藏（2026-10-20 口径） -->
         <button
-          v-if="!isCurrentPlan(plan) && plan.slug !== 'free' && plan.slug !== 'enterprise'"
+          v-if="BETA_FREE_ONLY && !isCurrentPlan(plan) && plan.slug !== 'free' && plan.slug !== 'enterprise'"
+          type="button"
+          class="mt-4 w-full rounded-xl bg-mint-50 py-2.5 text-sm font-bold text-mint-600"
+          disabled
+        >
+          内测期间免费开放
+        </button>
+        <button
+          v-else-if="!BETA_FREE_ONLY && !isCurrentPlan(plan) && plan.slug !== 'free' && plan.slug !== 'enterprise'"
           type="button"
           class="mt-4 w-full rounded-xl py-2.5 text-sm font-bold transition"
           :class="checkoutLoading === plan.slug

@@ -64,7 +64,9 @@ class Settings(BaseSettings):
     jwt_issuer: str = "ai-math-coach"
 
     # ---------- 配额（无 Redis，走 DB 计数）----------
-    free_daily_ai: int = 20
+    # 内测期口径（2026-10-20 定）：全免费不限额。
+    # 0 或负数 = 不限流（见 app/ai/guards.py::check_ai_quota）。
+    free_daily_ai: int = 0
 
     # ---------- 模型网关（服务端持 Key）----------
     ark_api_key: str = ""

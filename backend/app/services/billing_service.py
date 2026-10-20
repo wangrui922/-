@@ -47,12 +47,12 @@ DEFAULT_PLANS: List[Dict[str, Any]] = [
     {
         "slug": PLAN_FREE,
         "name": "免费版",
-        "description": "每日 20 次 AI 对话，50 道练习题，基础错题本",
+        "description": "内测期全免费：AI 对话与练习均不限次数",
         "price_monthly": 0,
         "price_yearly": 0,
-        "ai_daily_limit": 20,
-        "practice_daily_limit": 50,
-        "max_mistake_storage": 500,
+        "ai_daily_limit": -1,
+        "practice_daily_limit": -1,
+        "max_mistake_storage": 99999,
         "has_advanced_analytics": False,
         "has_family_sharing": False,
         "has_ocr_premium": False,
@@ -106,7 +106,12 @@ DEFAULT_PLANS: List[Dict[str, Any]] = [
 # ---- Seed ----------------------------------------------------------------------
 
 def seed_plans(session: Session) -> None:
-    """幂等插入默认计划（部署初始化用）。"""
+    """幂等插入默认计划（部署初始化用）。
+
+    对 free 档额外做**配额同步**：内测期口径变更（全免费不限额）后，
+    库里已存在的 free 行不会因"已存在"而更新，必须显式对齐，
+    否则运营看到的仍是旧额度。这里只同步配额与描述，不动价格。
+    """
     existing = session.execute(select(Plan.slug)).scalars().all()
     existing_set = set(existing)
     for p in DEFAULT_PLANS:
@@ -114,6 +119,38 @@ def seed_plans(session: Session) -> None:
             session.add(Plan(**p))
             logger.info("[billing] seed plan: %s", p["slug"])
     session.flush()
+
+    sync_free_plan_limits(session)
+
+
+def sync_free_plan_limits(session: Session) -> None:
+    """把 free 档的配额/描述对齐到 DEFAULT_PLANS（幂等，不动价格）。"""
+    target = next(p for p in DEFAULT_PLANS if p["slug"] == PLAN_FREE)
+    plan = session.execute(
+        select(Plan).where(Plan.slug == PLAN_FREE)
+    ).scalar_one_or_none()
+    if plan is None:
+        return
+    changed = False
+    for field in (
+        "name",
+        "description",
+        "ai_daily_limit",
+        "practice_daily_limit",
+        "max_mistake_storage",
+    ):
+        new_value = target[field]
+        if getattr(plan, field) != new_value:
+            setattr(plan, field, new_value)
+            changed = True
+    if changed:
+        session.flush()
+        logger.info(
+            "[billing] free 档配额已同步: ai=%s practice=%s mistake=%s",
+            plan.ai_daily_limit,
+            plan.practice_daily_limit,
+            plan.max_mistake_storage,
+        )
 
 
 # ---- 查询 ----------------------------------------------------------------------
@@ -442,6 +479,7 @@ def create_checkout_session(
 
 __all__ = [
     "seed_plans",
+    "sync_free_plan_limits",
     "list_visible_plans",
     "get_plan_by_slug",
     "get_active_subscription",

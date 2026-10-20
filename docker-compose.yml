@@ -48,7 +48,7 @@ services:
       ARK_API_KEY: ${ARK_API_KEY:-}
       ARK_BASE_URL: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
       ARK_MODEL: ${ARK_MODEL:-doubao-seed-1-6-250615}
-      FREE_DAILY_AI: ${FREE_DAILY_AI:-20}
+      FREE_DAILY_AI: ${FREE_DAILY_AI:-0}
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       TZ: UTC
     ports:

@@ -24,11 +24,18 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.ai.guards import CN_TZ, cn_day_start_utc
 from app.core.deps import CurrentUser, require_role
 from app.core.response import ApiError, CODE_BAD_REQUEST, CODE_FORBIDDEN, CODE_NOT_FOUND, ok
 from app.core.system_config import DEFAULTS, _to_bool, reload_config, reset_configs
 from app.db import get_db
 from app.models.activation import ActivationCode
+from app.models.subscription import (
+    SUBSCRIPTION_STATUS_ACTIVE,
+    Plan,
+    Subscription,
+    PaymentTransaction,
+)
 from app.models.quality_trace import (
     QUALITY_TRACE_EVENT_TYPES,
     QUALITY_TRACE_SEVERITIES,
@@ -49,6 +56,7 @@ from app.schemas.admin import (
     UserListQuery,
 )
 from app.services import quality_metrics_service as qms
+from app.services.auth_service import USER_STATUS_ACTIVE
 
 
 _MASTERY_LEVEL_MAP = {0: "weak", 1: "weak", 2: "medium", 3: "strong"}
@@ -275,6 +283,308 @@ def dashboard_stats(
             "total_ai_messages": total_ai_messages,
             "total_attempts": total_attempts,
             "weekly_reports": weekly_reports,
+        }
+    )
+
+
+# ---- 运营总览看板（服务器版 admin-web 依赖）---------------------------------
+#
+# 口径说明：
+#     * 「今天 / 每天」一律按**北京时间（UTC+8）**切分，复用
+#       ``app.ai.guards.cn_day_start_utc``（不另写一份时区口径）；
+#     * 趋势分桶在 Python 侧做（按日期字符串归并），不依赖方言专属
+#       ``DATE_TRUNC`` / ``strftime``，SQLite 与 PG 结果一致；
+#     * 三个趋势数组恒为 14 个点，无数据的日期补 ``count=0``——前端直接
+#       按下标画线，缺项会把图画歪。
+
+#: 趋势窗口长度（天）
+_TREND_DAYS = 14
+
+
+def _cn_day_keys(now: datetime) -> List[str]:
+    """返回近 ``_TREND_DAYS`` 天的日期键（``YYYY-MM-DD``，升序、北京时间）。"""
+    today = now.astimezone(CN_TZ).date()
+    return [
+        (today - timedelta(days=_TREND_DAYS - 1 - i)).isoformat()
+        for i in range(_TREND_DAYS)
+    ]
+
+
+def _cn_day_key(value: Optional[datetime]) -> Optional[str]:
+    """把 UTC 存储的时间折算成北京日期键；``None`` / naive 视为无效。"""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(CN_TZ).date().isoformat()
+
+
+def _count_by_day(values: List[Optional[datetime]], keys: List[str]) -> List[Dict[str, Any]]:
+    """按北京日期分桶计数，补齐窗口内每一天（无数据为 0）。"""
+    buckets: Dict[str, int] = {key: 0 for key in keys}
+    for value in values:
+        key = _cn_day_key(value)
+        if key in buckets:
+            buckets[key] += 1
+    return [{"date": key, "count": buckets[key]} for key in keys]
+
+
+def _sum_by_day(
+    values: List[Any], keys: List[str], day_field: int = 0
+) -> List[Dict[str, Any]]:
+    """按北京日期分桶求和，补齐窗口内每一天（无数据为 0）。"""
+    buckets: Dict[str, int] = {key: 0 for key in keys}
+    for row in values:
+        key = _cn_day_key(row[day_field])
+        if key in buckets:
+            buckets[key] += int(row[1] or 0)
+    return [{"date": key, "amount": buckets[key]} for key in keys]
+
+
+@router.get("/dashboard/overview")
+def dashboard_overview(
+    current: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """运营总览看板：用户/订阅/付费/激活码概览 + 近 14 天趋势。
+
+    服务器版 admin-web ``views/dashboard/index.vue`` 的 ``loadOverview()``
+    直接读下列字段渲染 statCards 与 ECharts，**任一字段缺失都会渲染
+    undefined**，故此处字段清单与前端强绑定。
+
+    金额单位统一为**分**（前端自行 ``/100`` 转元）。
+
+    Returns:
+        ``{"code":0,"msg":"ok","data":{...}}``，data 见下方各键注释。
+    """
+    now = datetime.now(timezone.utc)
+    today_start = cn_day_start_utc(now)
+    week_start = cn_day_start_utc(now - timedelta(days=_TREND_DAYS - 1))
+    keys = _cn_day_keys(now)
+
+    # 用户类统计口径：**排除软删除与冻结账号**。
+    # ``User`` 同时有 ``deleted_at``（SoftDeleteMixin）与 ``status``
+    # （active/frozen）两套「不算数」的标记：前者是账号已注销、后者是运营
+    # 主动冻结，两者都不该出现在「总用户数 / 今日活跃 / 注册趋势」里——
+    # 否则运营会以为冻结的僵尸号还在贡献 UV。
+    user_where = (User.deleted_at.is_(None), User.status == USER_STATUS_ACTIVE)
+
+    total_users = (
+        db.execute(select(func.count()).select_from(User).where(*user_where)).scalar()
+        or 0
+    )
+    active_today = (
+        db.execute(
+            select(func.count())
+            .select_from(User)
+            .where(*user_where, User.last_login_at >= today_start)
+        ).scalar()
+        or 0
+    )
+    active_7d = (
+        db.execute(
+            select(func.count())
+            .select_from(User)
+            .where(*user_where, User.last_login_at >= week_start)
+        ).scalar()
+        or 0
+    )
+
+    active_subscriptions = (
+        db.execute(
+            select(func.count())
+            .select_from(Subscription)
+            .where(
+                Subscription.status == SUBSCRIPTION_STATUS_ACTIVE,
+                Subscription.current_period_end > now,
+            )
+        ).scalar()
+        or 0
+    )
+
+    # 付费笔数 / 金额：只认 succeeded 流水
+    pay_where = (PaymentTransaction.status == "succeeded",)
+    payment_count = (
+        db.execute(
+            select(func.count()).select_from(PaymentTransaction).where(*pay_where)
+        ).scalar()
+        or 0
+    )
+    payment_amount = (
+        db.execute(
+            select(func.coalesce(func.sum(PaymentTransaction.amount), 0))
+            .select_from(PaymentTransaction)
+            .where(*pay_where)
+        ).scalar()
+        or 0
+    )
+
+    # 激活码三态：已用（已绑定账号）/ 未用（未绑定且未吊销）/ 已吊销
+    activation_used = (
+        db.execute(
+            select(func.count())
+            .select_from(ActivationCode)
+            .where(ActivationCode.user_id.isnot(None))
+        ).scalar()
+        or 0
+    )
+    activation_revoked = (
+        db.execute(
+            select(func.count())
+            .select_from(ActivationCode)
+            .where(ActivationCode.revoked_at.isnot(None))
+        ).scalar()
+        or 0
+    )
+    activation_unused = (
+        db.execute(
+            select(func.count())
+            .select_from(ActivationCode)
+            .where(
+                ActivationCode.user_id.is_(None),
+                ActivationCode.revoked_at.is_(None),
+            )
+        ).scalar()
+        or 0
+    )
+
+    # register_trend：按注册日分桶，与 total_users 同口径（排除软删/冻结）
+    register_trend = _count_by_day(
+        list(
+            db.execute(
+                select(User.created_at).where(*user_where, User.created_at >= week_start)
+            ).scalars().all()
+        ),
+        keys,
+    )
+    # dau_trend：**当日有登录行为的用户数**（口径 = ``users.last_login_at``
+    # 落在该自然日的去重账号数，已排除软删/冻结）。
+    # ⚠️ 这是「最后一次登录时间」近似，不是真正的日活跃曲线——同一用户当天
+    # 登录多次只落一个点，跨天不再回补历史。之所以不用 ``ai_sessions``
+    # 去重学生数：那个口径把「做题但没提问」的用户判成不活跃，与 DAU 的
+    # 通行定义（登录/使用即活跃）不符，且内测期 ai_sessions 样本量极小，
+    # 看板会长期显示接近 0。
+    dau_trend = _count_by_day(
+        list(
+            db.execute(
+                select(User.last_login_at).where(
+                    *user_where, User.last_login_at >= week_start
+                )
+            ).scalars().all()
+        ),
+        keys,
+    )
+    activation_trend = _count_by_day(
+        list(
+            db.execute(
+                select(ActivationCode.activated_at).where(
+                    ActivationCode.activated_at >= week_start
+                )
+            ).scalars().all()
+        ),
+        keys,
+    )
+    payment_trend = _sum_by_day(
+        list(
+            db.execute(
+                select(PaymentTransaction.created_at, PaymentTransaction.amount)
+                .where(*pay_where, PaymentTransaction.created_at >= week_start)
+            ).all()
+        ),
+        keys,
+    )
+
+    sub_by_status = [
+        {"status": str(status), "count": int(count)}
+        for status, count in db.execute(
+            select(Subscription.status, func.count()).group_by(Subscription.status)
+        ).all()
+    ]
+    plan_name_by_slug = {
+        slug: name
+        for slug, name in db.execute(select(Plan.slug, Plan.name)).all()
+    }
+    sub_raw_by_plan = db.execute(
+        select(Subscription.plan_slug, func.count()).group_by(Subscription.plan_slug)
+    ).all()
+    sub_by_plan = [
+        {
+            "name": plan_name_by_slug.get(str(slug), str(slug)),
+            "plan": str(slug),
+            "slug": str(slug),
+            "count": int(count),
+        }
+        for slug, count in sub_raw_by_plan
+    ]
+
+    return ok(
+        {
+            "total_users": int(total_users),
+            "active_today": int(active_today),
+            "active_7d": int(active_7d),
+            "active_subscriptions": int(active_subscriptions),
+            "payment_count": int(payment_count),
+            "payment_amount": int(payment_amount),
+            "activation_used": int(activation_used),
+            "activation_unused": int(activation_unused),
+            "activation_revoked": int(activation_revoked),
+            "register_trend": register_trend,
+            "dau_trend": dau_trend,
+            "activation_trend": activation_trend,
+            "sub_by_status": sub_by_status,
+            "sub_by_plan": sub_by_plan,
+            "payment_trend": payment_trend,
+        }
+    )
+
+
+@router.get("/dashboard/members")
+def dashboard_members(
+    limit: int = Query(10, ge=1, le=200),
+    current: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """会员订阅列表（看板「会员管理」入口）。
+
+    数据源为 ``Subscription`` JOIN ``User`` JOIN ``Plan``（按 ``plan_slug``
+    关联 ``Plan.slug``），按到期时间倒序取 ``limit`` 条。
+
+    Returns:
+        ``{"code":0,"msg":"ok","data":{"list":[...]}}``；``amount_paid`` 单位为分。
+    """
+    rows = db.execute(
+        select(Subscription, User, Plan)
+        .join(User, User.id == Subscription.user_id)
+        .join(Plan, Plan.slug == Subscription.plan_slug)
+        .order_by(Subscription.current_period_end.desc())
+        .limit(limit)
+    ).all()
+
+    return ok(
+        {
+            "list": [
+                {
+                    "user_id": str(user.id),
+                    "phone": user.phone,
+                    "nickname": user.nickname,
+                    "plan_name": plan.name,
+                    "plan_slug": sub.plan_slug,
+                    "status": sub.status,
+                    "amount_paid": int(sub.amount_paid or 0),
+                    "current_period_start": (
+                        sub.current_period_start.isoformat()
+                        if sub.current_period_start
+                        else None
+                    ),
+                    "current_period_end": (
+                        sub.current_period_end.isoformat()
+                        if sub.current_period_end
+                        else None
+                    ),
+                    "subscription_id": str(sub.id),
+                }
+                for sub, user, plan in rows
+            ]
         }
     )
 

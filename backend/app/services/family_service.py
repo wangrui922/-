@@ -278,10 +278,13 @@ def get_child_entitlement(session: Session, student_id: uuid.UUID) -> Dict[str, 
 
     sid = _parse_uuid(student_id, "studentId")
     session_count, attempt_count = count_today_usage(sid, session)
+    # 内测期不限流：free_daily_ai <= 0 表示无限，向前端统一上报 -1（"不限"语义）。
+    raw_limit = int(settings.free_daily_ai or 0)
+    daily_ai_limit = -1 if raw_limit <= 0 else raw_limit
     return {
         "plan": "free",
-        "plan_name": "免费版",
-        "daily_ai_limit": int(settings.free_daily_ai or 0),
+        "plan_name": "内测免费版",
+        "daily_ai_limit": daily_ai_limit,
         "ai_sessions_today": session_count,
         "ai_attempts_today": attempt_count,
         "expires_at": None,

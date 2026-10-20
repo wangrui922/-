@@ -87,7 +87,7 @@ def count_today_usage(student_id: uuid.UUID, db: Session) -> Tuple[int, int]:
 def check_ai_quota(student_id: uuid.UUID, db: Session) -> None:
     """日配额守卫：今日会话数或作答数达到上限即拒绝。
 
-    上限取 ``settings.free_daily_ai``（默认 20 次/日）。两个计数只要有一个
+    上限取 ``settings.free_daily_ai``（内测期默认 0 = 不限流）。两个计数只要有一个
     达到上限就拦截（"或"的语义），避免刷会话或刷作答两条路径互相绕过。
 
     Args:
