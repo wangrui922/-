@@ -74,7 +74,7 @@ def save_progress(
     db: Session = Depends(get_db),
 ) -> dict:
     """保存练习进度（UPSERT，多端冲突时返回 409）。"""
-    sid = require_student_id(current)
+    sid = require_student_id(current.sid)
 
     # 查询现有记录
     existing = (
@@ -178,7 +178,7 @@ def get_adaptive_plan(
     Raises:
         ApiError: 400 未绑定学生 / 参数越界；401 未登录。
     """
-    sid = require_student_id(current)
+    sid = require_student_id(current.sid)
     payload = build_adaptive_plan(db, student_id=sid, count=count, grade=grade)
     logger.info(
         "adaptive-plan student=%s count=%s grade=%s → engine=%s total=%s actual=%s items=%d",
@@ -199,7 +199,7 @@ def get_progress(
     db: Session = Depends(get_db),
 ) -> dict:
     """读取最新练习进度。"""
-    sid = require_student_id(current)
+    sid = require_student_id(current.sid)
 
     progress = (
         db.query(PracticeProgress)
@@ -226,7 +226,7 @@ def clear_progress(
     db: Session = Depends(get_db),
 ) -> dict:
     """清空练习进度（软删）。"""
-    sid = require_student_id(current)
+    sid = require_student_id(current.sid)
 
     progress = (
         db.query(PracticeProgress)

@@ -257,7 +257,7 @@ def main() -> int:
     # ---------------------------------------------------------- 7. 复习计划
     print("\n[7] 复习计划")
     st, body = call("GET", "/progress/adaptive-plan", token=token)
-    check("复习计划可读", st == 200 and body.get("code") == 0, f"status={st}")
+    check("复习计划可读", st == 200 and body.get("code") == 0, f"status={st} body={str(body)[:250]}")
 
     # ---------------------------------------------------------- 8. 额度无限
     print("\n[8] 权益额度（内测不限额）")

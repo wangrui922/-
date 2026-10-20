@@ -26,21 +26,14 @@ from pathlib import Path
 def _db_path_from_url(url: str) -> str:
     """从 ``DATABASE_URL`` 解析出 SQLite 文件绝对路径。
 
-    ⚠️ **不能先过 ``Path()``**：``Path("sqlite:////app/data/coach.db").as_posix()``
-    会把重复斜杠压成 ``sqlite:/app/data/coach.db``（少一斜杠），后面再怎么
-    切前缀都救不回来——文件必然不存在。必须**先切字符串再转 Path**。
-
-    ``sqlite:////app/data/coach.db`` → ``/app/data/coach.db``（四斜杠=绝对路径）
-    ``sqlite:///./rel.db``        → ``/rel.db``（三斜杠=相对路径，仍给绝对）
+    实现见 ``scripts/_sqlite_url.py``（与 schema_reconcile.py 共用一份，
+    避免两处各写一遍、各自漂移）。
     """
-    raw = (url or "").strip()
-    if raw.startswith("sqlite:///"):
-        rest = raw[len("sqlite://"):]  # 四斜杠时 rest = "//app/..."，三斜杠时 = "/..."
-        # rest 形如 "//app/x" 或 "/x"，统一成单个前导斜杠的绝对路径
-        return "/" + rest.lstrip("/")
-    if raw.startswith("sqlite://"):
-        return "/" + raw[len("sqlite://"):].lstrip("/")
-    return raw
+    if str(Path(__file__).resolve().parent) not in sys.path:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _sqlite_url import sqlite_path_from_url
+
+    return sqlite_path_from_url(url)
 
 
 DB_PATH = _db_path_from_url(

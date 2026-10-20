@@ -7,8 +7,9 @@
     1. sync     —— git archive 导出并同步到服务器（自动处理 LF，杜绝 CRLF 挂死）
     2. build    —— 服务器上 docker compose build backend / web
     3. restart  —— 重启 backend + worker（web 是前端构建产物，随 build 走）
-    4. align    —— 对齐生产库（内测不限额 plans 档）
-    5. smoke    —— 真实业务链路冒烟（激活码 → 门控 → 抽题 → 判分 → AI → 错题本）
+    4. schema   —— 生产库 schema 对账（补建缺表 + 报缺列）★ 2026-10-20 新增
+    5. align    —— 对齐生产库（内测不限额 plans 档）
+    6. smoke    —— 真实业务链路冒烟（激活码 → 门控 → 抽题 → 判分 → AI → 错题本）
 
 ⚠️ 部署前必须已经 commit（archive 只导 commit 内容）。
 
@@ -55,7 +56,7 @@ def ssh(cmd: str, timeout: int = 900, check: bool = True) -> str:
 
 def stage_sync(ref: str) -> None:
     """阶段 1：导出 + 同步。"""
-    print("\n=== [1/5] 同步代码 ===")
+    print("\n=== [1/6] 同步代码 ===")
     r = subprocess.run(
         [sys.executable, str(REPO_ROOT / "deploy" / "sync_git_archive.py"),
          "--push", "--ref", ref],
@@ -67,7 +68,7 @@ def stage_sync(ref: str) -> None:
 
 def stage_build() -> None:
     """阶段 2：构建镜像。"""
-    print("\n=== [2/5] 构建镜像（backend + web）===")
+    print("\n=== [2/6] 构建镜像（backend + web）===")
     ssh(
         f"cd {REMOTE} && {COMPOSE} build backend web 2>&1 | tail -40",
         timeout=2400,
@@ -81,7 +82,7 @@ def stage_build() -> None:
 
 def stage_restart() -> None:
     """阶段 3：重启 backend + worker。"""
-    print("\n=== [3/5] 重启容器 ===")
+    print("\n=== [3/6] 重启容器 ===")
     ssh(
         f"cd {REMOTE} && {COMPOSE} up -d --no-deps --force-recreate backend worker 2>&1 | tail -20"
     )
@@ -100,9 +101,35 @@ def stage_restart() -> None:
     raise SystemExit("backend 未在 2 分钟内变为 healthy")
 
 
+def stage_schema_check() -> None:
+    """阶段 0：生产库 schema 对账（补建缺表 + 报缺列）。
+
+    必须在 align 之前跑——``create_all`` 只建**ORM 有模型**的表，而
+    ``review_cards`` / ``review_logs`` 由 FSRS 模块用 raw SQL 维护
+    （无 ORM 模型），``create_all`` 永远不会建它们。2026-10-20 生产
+    实测：缺 ``review_cards`` → ``GET /api/progress/adaptive-plan`` 400，
+    而 ``/api/health`` 仍 200。
+    """
+    print("\n=== [4/6] 生产库 schema 对账 ===")
+    out = ssh(
+        f"cd {REMOTE} && {COMPOSE} exec -T backend python /app/scripts/schema_reconcile.py --fix 2>&1",
+        check=False,
+    )
+    print(out[-3000:])
+    if "SCHEMA_OK" in out:
+        print("schema 一致（SCHEMA_OK）")
+        return
+    if "[warn] 仍有缺表" in out or "[warn] 仍有缺列" in out:
+        raise SystemExit(
+            "生产库 schema 仍与代码不一致（缺表/缺列未解决）——"
+            "缺表看上面 MISSING，缺列须人工照抄 migrations/0NN_*_sqlite.sql 的 UPDATE 段"
+        )
+    raise SystemExit("schema 对账脚本异常退出（未见 SCHEMA_OK），中止部署")
+
+
 def stage_align() -> None:
     """阶段 4：对齐生产库数据。"""
-    print("\n=== [4/5] 对齐生产库（内测不限额）===")
+    print("\n=== [5/6] 对齐生产库（内测不限额）===")
     out = ssh(
         f"cd {REMOTE} && {COMPOSE} exec -T backend python /app/scripts/align_beta_quota.py 2>&1",
         check=False,
@@ -115,7 +142,7 @@ def stage_align() -> None:
 
 def stage_smoke() -> None:
     """阶段 5：真实业务链路冒烟。"""
-    print("\n=== [5/5] 冒烟（真实业务链路）===")
+    print("\n=== [6/6] 冒烟（真实业务链路）===")
     out = ssh(
         f"cd {REMOTE} && {COMPOSE} exec -T backend python /app/scripts/smoke_beta.py 2>&1",
         check=False,
@@ -147,6 +174,7 @@ def main() -> None:
     if not args.skip_build:
         stage_build()
     stage_restart()
+    stage_schema_check()
     stage_align()
     if not args.skip_smoke:
         stage_smoke()
