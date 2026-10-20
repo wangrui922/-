@@ -55,6 +55,30 @@ def _is_uuid(value: str) -> bool:
     return True
 
 
+def _jwt_claim(token: str, claim: str) -> str | None:
+    """从 JWT payload 里取一个 claim（不验签，只为拿到 id 做清理目标）。
+
+    激活接口的响应体里**没有 user_id**，只有 access token；
+    token 的 payload 带 ``sub``（用户 id）与 ``sid``（学生 id），
+    这是冒烟清理能定位到本次测试数据的唯一可靠来源。
+    """
+    import base64
+    import json
+
+    parts = (token or "").split(".")
+    if len(parts) < 2:
+        return None
+    payload = parts[1]
+    padding = "=" * (-len(payload) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(payload + padding)
+        data = json.loads(raw)
+    except Exception:  # noqa: BLE001 - token 坏了就当没有
+        return None
+    val = data.get(claim)
+    return str(val) if val else None
+
+
 def resolve_consent_version(db) -> str:
     """从生产库读当前 ``CONSENT_VERSION``。
 
@@ -130,6 +154,7 @@ def main() -> int:
     nickname = f"冒烟{suffix[:4]}"
     token: str | None = None
     created_user_ids: list[str] = []
+    created_student_ids: list[str] = []
     db = get_db()
 
     # 同意门控的规则版本：优先环境变量覆盖，否则跟生产 system_config 读
@@ -170,7 +195,7 @@ def main() -> int:
 
     if not plain_code:
         check("生成临时激活码", False, "无法生成，激活链路无法测")
-        return finish(args, db, created_user_ids, created_code_id)
+        return finish(args, db, created_user_ids, created_code_id, created_student_ids)
     check("生成临时激活码", True, f"code={plain_code[:10]}…")
 
     st, body = call(
@@ -180,7 +205,7 @@ def main() -> int:
     ok = st == 200 and body.get("code") == 0
     check("激活码激活成功", ok, f"status={st} body={str(body)[:220]}")
     if not ok:
-        return finish(args, db, created_user_ids, created_code_id)
+        return finish(args, db, created_user_ids, created_code_id, created_student_ids)
     data = body.get("data") or {}
     token = data.get("token") or data.get("accessToken") or data.get("access_token")
     user_id = data.get("user_id") or data.get("userId")
@@ -189,7 +214,21 @@ def main() -> int:
     check("拿到 access token", bool(token))
     if not token:
         print(f"  data keys={sorted(data.keys())}")
-        return finish(args, db, created_user_ids, created_code_id)
+        return finish(args, db, created_user_ids, created_code_id, created_student_ids)
+
+    # ---- 兜底：从 JWT payload 解出 sub / sid ----
+    # ⚠️ 激活接口的 data 里**没有 user_id 字段**（只有 access token），
+    #    所以上面 created_user_ids 一直是空的 → 清理阶段全程空转，
+    #    生产库每次冒烟都留一批孤儿数据（2026-10-21 实测确认）。
+    #    JWT payload 里带 sub（用户 id）和 sid（学生 id），
+    #    直接解出来当作清理目标，不依赖响应体字段。
+    if not created_user_ids:
+        for claim, bucket in (("sub", created_user_ids), ("sid", created_student_ids)):
+            val = _jwt_claim(token, claim)
+            if val and _is_uuid(val):
+                bucket.append(val)
+        if created_user_ids:
+            print(f"  已从 JWT 解出清理目标 sub={created_user_ids[0]} sid={created_student_ids}")
 
     # ---------------------------------------------------------- 2. 门控
     print("\n[2] 监护人同意门控")
@@ -222,7 +261,7 @@ def main() -> int:
     check("抽到题目", len(questions) > 0, f"questions={len(questions)} pool={session_payload.get('pool_size')}")
     if not questions:
         print(f"  data keys={sorted(session_payload.keys())}")
-        return finish(args, db, created_user_ids, created_code_id)
+        return finish(args, db, created_user_ids, created_code_id, created_student_ids)
 
     session_id = session_payload.get("session_id") or session_payload.get("sessionId")
     q = questions[0]
@@ -289,10 +328,10 @@ def main() -> int:
     st, _ = call("GET", "/admin/dashboard/overview")
     check("未登录访问 overview → 401", st == 401, f"status={st}")
 
-    return finish(args, db, created_user_ids, created_code_id)
+    return finish(args, db, created_user_ids, created_code_id, created_student_ids)
 
 
-def finish(args, db, created_user_ids, created_code_id=None) -> int:
+def finish(args, db, created_user_ids, created_code_id=None, created_student_ids=None) -> int:
     """汇总 + 清理。"""
     print("\n=== 汇总 ===")
     passed = sum(1 for _, ok, _ in RESULTS if ok)
@@ -318,22 +357,31 @@ def finish(args, db, created_user_ids, created_code_id=None) -> int:
             #    （这正是 2026-10-21 生产残留的直接原因：兜底段"执行了"但删了 0 行。）
             target_uids: list[str] = []
             target_sids: list[str] = []
+            # JWT 解出的 sid 是最可靠的 student 目标（库里 students 行可能已被删）
+            for sid in (created_student_ids or []):
+                if _is_uuid(sid) and sid not in target_sids:
+                    target_sids.append(sid)
             for uid in created_user_ids:
                 if not _is_uuid(uid):
                     continue
+                # 无条件加入：即使库里这行已不存在，user_id 维度的表
+                # （guardian_consents / subscriptions / payment_transactions）
+                # 仍可能挂着指向它的行，必须一起清。
+                if uid not in target_uids:
+                    target_uids.append(uid)
                 user = db.execute(
                     select(User).where(User.id == uuid.UUID(uid))
                 ).scalar_one_or_none()
                 if user is None:
                     continue
-                target_uids.append(str(user.id))
                 for s in db.execute(
                     select(Student).where(Student.user_id == user.id)
                 ).scalars().all():
-                    target_sids.append(str(s.id))
+                    if str(s.id) not in target_sids:
+                        target_sids.append(str(s.id))
 
-            if target_uids:
-                uids = ",".join(f"'{u}'" for u in target_uids)
+            if target_uids or target_sids:
+                uids = ",".join(f"'{u}'" for u in target_uids) or "''"
                 sids_sql = (
                     ",".join(f"'{s}'" for s in target_sids) if target_sids else "''"
                 )

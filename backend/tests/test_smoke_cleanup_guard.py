@@ -108,6 +108,32 @@ def test_smoke_cleanup_covers_all_written_tables(smoke_src: str) -> None:
     )
 
 
+def test_smoke_cleanup_target_comes_from_jwt(smoke_src: str) -> None:
+    """清理目标必须能从 JWT 解出——激活接口响应体里**没有** user_id。
+
+    根因（2026-10-21 生产残留）：激活接口的 ``data`` 只有 ``access`` token，
+    没有 ``user_id`` 字段。原实现只从响应体取 user_id，
+    于是 ``created_user_ids`` 恒为空 → 整个清理阶段空转 →
+    每次冒烟都在生产库留一批孤儿数据（实测 users=3 / students=1 /
+    guardian_consents=1 / learning_tasks=1 / review_cards=1 /
+    student_learning_events=5 全部残留）。
+
+    所以必须解 JWT 的 ``sub``（用户 id）与 ``sid``（学生 id）作为兜底来源。
+    """
+    assert "_jwt_claim" in smoke_src, (
+        "冒烟脚本缺少 JWT 解析：激活接口响应体没有 user_id，"
+        "必须从 token 的 sub/sid claim 取清理目标"
+    )
+    # 必须解出 sid（学生 id）——students 行可能被先删掉，sid 是唯一可靠来源
+    assert '"sid"' in smoke_src or "'sid'" in smoke_src, (
+        "必须从 JWT 解出 sid（学生 id）作为清理目标"
+    )
+    # 解出的 sid 要真的进清理列表
+    assert "created_student_ids" in smoke_src, (
+        "JWT 解出的 sid 必须传入 finish() 的清理目标列表"
+    )
+
+
 def test_smoke_cleanup_collects_ids_before_deleting(smoke_src: str) -> None:
     """子表清理不得依赖 ``select id from students ...`` 这类子查询。
 
