@@ -40,13 +40,24 @@ DB_PATH = _db_path_from_url(
     os.environ.get("DATABASE_URL", "sqlite:////app/data/coach.db")
 )
 
-BACKUP_DIR = Path("/app/runtime/data")
+#: 备份目录——必须与库文件**同级**（容器内库在 /app/data/）。
+#: 之前误写成 /app/runtime/data（那是**宿主**路径），容器内不存在 →
+#: 备份静默跳过（只打印一行「目录不存在，跳过」），差点让人以为有备份。
+BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", "/app/data"))
 
 
 def backup_db() -> Path | None:
-    """用 sqlite3 backup API 备份（不能 cp，WAL 下会 malformed）。"""
+    """用 sqlite3 backup API 备份（不能 cp，WAL 下会 malformed）。
+
+    ⚠️ 备份失败**不中止**对齐（对齐本身幂等），但必须打醒目的警告——
+    静默「跳过」会让人误以为有备份。
+    """
     if not BACKUP_DIR.exists():
-        print(f"[backup] 目录不存在，跳过：{BACKUP_DIR}")
+        print(
+            f"  [backup] ⚠️ 备份目录不存在，跳过备份：{BACKUP_DIR}\n"
+            f"           ⚠️ 本次对齐**没有数据库备份**，如需回滚请手动先备份！",
+            file=sys.stderr,
+        )
         return None
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     dst = BACKUP_DIR / f"coach.db.bak-betaquota-{stamp}"
