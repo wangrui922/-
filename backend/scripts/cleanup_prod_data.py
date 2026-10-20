@@ -227,6 +227,12 @@ def main() -> int:
             "or label like '%acceptance%' or label like '%订单%'"
         )
         print(f"   activation_codes                  -{cur.rowcount}")
+        # 孤儿 ai_messages：session_id 指向已不存在的 ai_sessions
+        cur = conn.execute(
+            "delete from ai_messages where session_id not in (select id from ai_sessions)"
+        )
+        if cur.rowcount > 0:
+            print(f"   ai_messages(孤儿)                 -{cur.rowcount}")
         conn.commit()
         print("\nDONE（已提交）")
 

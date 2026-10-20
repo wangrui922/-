@@ -388,6 +388,14 @@ def finish(args, db, created_user_ids, created_code_id=None, created_student_ids
                 sids_in = f"({sids_sql})"
 
                 # ---- 第二步：删核心表（ORM）----
+                # ⚠️ 先收集 ai_sessions.id：下面会删掉 ai_sessions 行，
+                #    之后子查询就找不到 session 了，ai_messages 会成孤儿。
+                target_session_ids: list[str] = []
+                for sid in target_sids:
+                    for s in db.execute(
+                        select(AiSession.id).where(AiSession.student_id == sid)
+                    ).scalars().all():
+                        target_session_ids.append(str(s))
                 for sid in target_sids:
                     db.execute(delete(AiMessage).where(AiMessage.session_id.in_(
                         select(AiSession.id).where(AiSession.student_id == sid))))
@@ -436,6 +444,15 @@ def finish(args, db, created_user_ids, created_code_id=None, created_student_ids
                         continue
                     db.execute(text(sql))
                     hit += 1
+                # 兜底清 ai_messages：按**收集到的 session_id 列表**删。
+                # ⚠️ 不能用全局 `not in (select id from ai_sessions)`——
+                #    那是清理脚本 cleanup_prod_data.py 的活，
+                #    在冒烟里做会误删同库其他用户的数据。
+                if "ai_messages" in existing and target_session_ids:
+                    sess_in = ",".join(f"'{s}'" for s in target_session_ids)
+                    db.execute(text(
+                        f"delete from ai_messages where session_id in ({sess_in})"
+                    ))
                 db.commit()
                 print(f"  已清理关联子表 {hit} 张（consent/task/review/learning/subscription）")
 
