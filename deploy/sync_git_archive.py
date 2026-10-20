@@ -15,7 +15,9 @@
 
 前置：
     * 工作区改动必须**已提交**（archive 只导 commit 里的内容）。
-    * SSH 私钥：``C:/Users/Administrator/coach-keys/github_coach_deploy``。
+    * SSH 私钥：``C:/Users/Administrator/coach-keys/AIjiaolian_new``
+      （服务器登录用；``github_coach_deploy`` 是 GitHub deploy key，
+      服务器会拒 ``Permission denied (publickey)``）。
     * 服务器目录：``/home/ubuntu/coach``。
 
 用法：
@@ -35,7 +37,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SHIP_DIR = REPO_ROOT / ".qa_cache" / "ship"
-SSH_KEY = Path("C:/Users/Administrator/coach-keys/github_coach_deploy")
+SSH_KEY = Path(
+    os.environ.get("COACH_SSH_KEY", "C:/Users/Administrator/coach-keys/AIjiaolian_new")
+)
 REMOTE_HOST = os.environ.get("COACH_SSH_HOST", "118.25.44.126")
 REMOTE_USER = os.environ.get("COACH_SSH_USER", "ubuntu")
 REMOTE_DIR = os.environ.get("COACH_SSH_DIR", "/home/ubuntu/coach")
@@ -108,6 +112,7 @@ def push(tar_path: Path) -> None:
     remote_tmp = "/tmp/coach_sync.tar.gz"
     scp = [
         "scp", "-i", str(SSH_KEY), "-o", "StrictHostKeyChecking=no",
+        "-o", "IdentitiesOnly=yes", "-o", "ConnectTimeout=20",
         str(tar_path), f"{REMOTE_USER}@{REMOTE_HOST}:{remote_tmp}",
     ]
     run(scp)
@@ -115,6 +120,7 @@ def push(tar_path: Path) -> None:
 
     ssh = [
         "ssh", "-i", str(SSH_KEY), "-o", "StrictHostKeyChecking=no",
+        "-o", "IdentitiesOnly=yes", "-o", "ConnectTimeout=20",
         f"{REMOTE_USER}@{REMOTE_HOST}",
     ]
     # 服务器上解包：排除 .env.production / runtime 等本地数据目录
