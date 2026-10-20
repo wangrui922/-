@@ -103,21 +103,37 @@ def stage_restart() -> None:
 def stage_align() -> None:
     """阶段 4：对齐生产库数据。"""
     print("\n=== [4/5] 对齐生产库（内测不限额）===")
-    ssh(
-        f"cd {REMOTE} && {COMPOSE} exec -T backend python /app/scripts/align_beta_quota.py 2>&1 | tail -40"
+    out = ssh(
+        f"cd {REMOTE} && {COMPOSE} exec -T backend python /app/scripts/align_beta_quota.py 2>&1",
+        check=False,
     )
+    print(out[-3000:])
+    if "[fatal]" in out or "Traceback (most recent call last)" in out or "DONE" not in out:
+        raise SystemExit("数据对齐失败（未见 DONE），中止部署")
+    print("数据对齐完成（DONE）")
 
 
 def stage_smoke() -> None:
     """阶段 5：真实业务链路冒烟。"""
     print("\n=== [5/5] 冒烟（真实业务链路）===")
     out = ssh(
-        f"cd {REMOTE} && {COMPOSE} exec -T backend python /app/scripts/smoke_beta.py 2>&1 | tail -40",
+        f"cd {REMOTE} && {COMPOSE} exec -T backend python /app/scripts/smoke_beta.py 2>&1",
         check=False,
     )
+    print(out[-4000:])
+    # ⚠️ 判定必须同时看三样东西：
+    #   1. 有没有 SMOKE_FAIL（断言失败）
+    #   2. 有没有 SMOKE_OK（跑到底了）
+    #   3. 有没有 Traceback（脚本自身崩了——**最容易被误判成通过**：
+    #      旧版本只 grep SMOKE_FAIL，脚本在第 1 步抛 AttributeError 直接
+    #      退出，输出里没有 SMOKE_FAIL，被当成"冒烟通过"放行）。
     if "SMOKE_FAIL" in out:
-        raise SystemExit("冒烟失败")
-    print("冒烟通过")
+        raise SystemExit("冒烟失败：有断言未通过（见上方 SMOKE_FAIL）")
+    if "Traceback (most recent call last)" in out:
+        raise SystemExit("冒烟脚本自身崩溃（见上方 Traceback），结果不可信")
+    if "SMOKE_OK" not in out:
+        raise SystemExit("冒烟未跑完（既无 SMOKE_OK 也无 SMOKE_FAIL），结果不可信")
+    print("冒烟通过（SMOKE_OK）")
 
 
 def main() -> None:

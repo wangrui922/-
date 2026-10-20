@@ -106,27 +106,41 @@ def main() -> int:
     from sqlalchemy import select
 
     from app.models.activation import ActivationCode
+    from app.services import auth_service
 
+    # 激活码库里只存 ``code_digest``（SHA-256），**明文不可恢复**——
+    # 所以不能从库里捞现成码来用（旧版本脚本踩过
+    # ``'ActivationCode' object has no attribute 'code'`` 这个坑），
+    # 必须现场生成一枚未绑定的码，测完再删掉。
+    plain_code = ""
+    created_code_id = None
     try:
-        code_row = db.execute(
-            select(ActivationCode).where(ActivationCode.user_id.is_(None)).limit(1)
+        codes = auth_service.generate_activation_codes(
+            db, 1, label="smoke_beta 冒烟临时码"
+        )
+        plain_code = codes[0]
+        created_code_id = db.execute(
+            select(ActivationCode.id).where(
+                ActivationCode.code_digest == auth_service._activation_digest(plain_code)
+            )
         ).scalar_one_or_none()
+        db.commit()
     except Exception as exc:  # noqa: BLE001
-        code_row = None
-        print(f"  读激活码失败：{exc}")
-    if code_row is None:
-        check("存在未使用激活码", False, "库里没有未使用的激活码，无法测激活链路")
-        return finish(args, db, created_user_ids)
-    check("存在未使用激活码", True, f"code={code_row.code[:10]}…")
+        print(f"  生成临时激活码失败：{exc}")
+
+    if not plain_code:
+        check("生成临时激活码", False, "无法生成，激活链路无法测")
+        return finish(args, db, created_user_ids, created_code_id)
+    check("生成临时激活码", True, f"code={plain_code[:10]}…")
 
     st, body = call(
         "POST", "/auth/activation/activate",
-        {"code": code_row.code, "pin": PIN, "nickname": nickname},
+        {"code": plain_code, "pin": PIN, "nickname": nickname},
     )
     ok = st == 200 and body.get("code") == 0
     check("激活码激活成功", ok, f"status={st} body={str(body)[:220]}")
     if not ok:
-        return finish(args, db, created_user_ids)
+        return finish(args, db, created_user_ids, created_code_id)
     data = body.get("data") or {}
     token = data.get("token") or data.get("accessToken") or data.get("access_token")
     user_id = data.get("user_id") or data.get("userId")
@@ -135,7 +149,7 @@ def main() -> int:
     check("拿到 access token", bool(token))
     if not token:
         print(f"  data keys={sorted(data.keys())}")
-        return finish(args, db, created_user_ids)
+        return finish(args, db, created_user_ids, created_code_id)
 
     # ---------------------------------------------------------- 2. 门控
     print("\n[2] 监护人同意门控")
@@ -157,7 +171,7 @@ def main() -> int:
     check("抽到题目", len(questions) > 0, f"questions={len(questions)} pool={session_payload.get('pool_size')}")
     if not questions:
         print(f"  data keys={sorted(session_payload.keys())}")
-        return finish(args, db, created_user_ids)
+        return finish(args, db, created_user_ids, created_code_id)
 
     session_id = session_payload.get("session_id") or session_payload.get("sessionId")
     q = questions[0]
@@ -224,10 +238,10 @@ def main() -> int:
     st, _ = call("GET", "/admin/dashboard/overview")
     check("未登录访问 overview → 401", st == 401, f"status={st}")
 
-    return finish(args, db, created_user_ids)
+    return finish(args, db, created_user_ids, created_code_id)
 
 
-def finish(args, db, created_user_ids) -> int:
+def finish(args, db, created_user_ids, created_code_id=None) -> int:
     """汇总 + 清理。"""
     print("\n=== 汇总 ===")
     passed = sum(1 for _, ok, _ in RESULTS if ok)
@@ -269,6 +283,12 @@ def finish(args, db, created_user_ids) -> int:
                 db.execute(delete(ActivationCode).where(ActivationCode.user_id == user.id))
                 db.execute(delete(User).where(User.id == user.id))
                 print(f"  已清理 user {uid}")
+
+            # 兜底：激活失败时那枚临时码仍是「未绑定」状态，上面按 user_id
+            # 删不到，会在生产库留垃圾——按 id 显式删一次。
+            if created_code_id is not None:
+                db.execute(delete(ActivationCode).where(ActivationCode.id == created_code_id))
+                print(f"  已清理临时激活码 {created_code_id}")
             db.commit()
         except Exception as exc:  # noqa: BLE001
             db.rollback()
@@ -281,7 +301,6 @@ def finish(args, db, created_user_ids) -> int:
         return 1
     print("\nSMOKE_OK")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

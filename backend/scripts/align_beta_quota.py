@@ -23,9 +23,29 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(os.environ.get("DATABASE_URL", "sqlite:////app/data/coach.db")).as_posix()
-if DB_PATH.startswith("sqlite:///"):
-    DB_PATH = DB_PATH[len("sqlite:///"):]
+def _db_path_from_url(url: str) -> str:
+    """从 ``DATABASE_URL`` 解析出 SQLite 文件绝对路径。
+
+    ⚠️ **不能先过 ``Path()``**：``Path("sqlite:////app/data/coach.db").as_posix()``
+    会把重复斜杠压成 ``sqlite:/app/data/coach.db``（少一斜杠），后面再怎么
+    切前缀都救不回来——文件必然不存在。必须**先切字符串再转 Path**。
+
+    ``sqlite:////app/data/coach.db`` → ``/app/data/coach.db``（四斜杠=绝对路径）
+    ``sqlite:///./rel.db``        → ``/rel.db``（三斜杠=相对路径，仍给绝对）
+    """
+    raw = (url or "").strip()
+    if raw.startswith("sqlite:///"):
+        rest = raw[len("sqlite://"):]  # 四斜杠时 rest = "//app/..."，三斜杠时 = "/..."
+        # rest 形如 "//app/x" 或 "/x"，统一成单个前导斜杠的绝对路径
+        return "/" + rest.lstrip("/")
+    if raw.startswith("sqlite://"):
+        return "/" + raw[len("sqlite://"):].lstrip("/")
+    return raw
+
+
+DB_PATH = _db_path_from_url(
+    os.environ.get("DATABASE_URL", "sqlite:////app/data/coach.db")
+)
 
 BACKUP_DIR = Path("/app/runtime/data")
 
