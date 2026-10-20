@@ -38,7 +38,34 @@ from datetime import datetime, timezone
 BASE = os.environ.get("SMOKE_BASE", "http://127.0.0.1:8000")
 API = f"{BASE}/api"
 PIN = "123456"
+#: 同意门控的规则版本——**不要硬编码**：运行时从生产库 system_config 读
+#: （见 resolve_consent_version）；这里只作为环境变量覆盖的入口。
+CONSENT_VERSION_OVERRIDE = os.environ.get("SMOKE_CONSENT_VERSION")
+#: 冒烟用的监护人手机号（仅留痕，不发短信）
+GUARDIAN_PHONE = os.environ.get("SMOKE_GUARDIAN_PHONE", "13900000000")
 RESULTS: list[tuple[str, bool, str]] = []
+
+
+def resolve_consent_version(db) -> str:
+    """从生产库读当前 ``CONSENT_VERSION``。
+
+    门控判定用的是 ``system_config.CONSENT_VERSION``（改动规则版本后旧同意
+    记录一律失效）。冒烟脚本若硬编码 v1，一旦生产改成 v2 就会写出「同意 v1」
+    的记录 → 门控不认 → 后续断言全崩，且看不出真实原因。**必须跟生产读。**
+    """
+    from sqlalchemy import select
+
+    from app.models.system_config import SystemConfig
+
+    try:
+        v = db.execute(
+            select(SystemConfig.value).where(SystemConfig.key == "CONSENT_VERSION")
+        ).scalar_one_or_none()
+        if v and str(v).strip():
+            return str(v).strip()
+    except Exception as exc:  # noqa: BLE001
+        print(f"  读 CONSENT_VERSION 失败（回退 v1）：{exc}")
+    return "v1"
 
 
 # ==================================================================== 工具
@@ -95,6 +122,10 @@ def main() -> int:
     token: str | None = None
     created_user_ids: list[str] = []
     db = get_db()
+
+    # 同意门控的规则版本：优先环境变量覆盖，否则跟生产 system_config 读
+    consent_version = CONSENT_VERSION_OVERRIDE or resolve_consent_version(db)
+    print(f"门控版本 consentVersion={consent_version}\n")
 
     # ---------------------------------------------------------- 0. 探活
     print("[0] 探活（仅参考，不作为通过依据）")
@@ -157,7 +188,18 @@ def main() -> int:
     gated = st == 403 and "监护人同意" in str(body.get("msg", ""))
     check("未同意 → 403 且话术含「监护人同意」", gated, f"status={st} msg={body.get('msg')!r}")
 
-    st, body = call("POST", "/compliance/guardian-consent", {"agreed": True}, token=token)
+    # 入参是 camelCase：``guardianPhone`` / ``consentVersion`` / ``agreed``
+    # （后端 schema 字段名是 snake_case，但 BaseSchema 配了 camelCase 别名，
+    # 只传 ``agreed`` 会 400 "guardianPhone Field required"）。
+    st, body = call(
+        "POST", "/compliance/guardian-consent",
+        {
+            "guardianPhone": GUARDIAN_PHONE,
+            "consentVersion": consent_version,
+            "agreed": True,
+        },
+        token=token,
+    )
     check("提交同意 → 200", st == 200 and body.get("code") == 0, f"status={st} body={str(body)[:200]}")
 
     st, body = call("POST", "/practice/session", {"count": 1}, token=token)
