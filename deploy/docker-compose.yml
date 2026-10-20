@@ -61,6 +61,18 @@ services:
       backend:
         condition: service_healthy
     command: ["celery", "-A", "app.core.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+    # ⚠️ 必须覆盖 healthcheck：worker 与 backend **共用同一个 Dockerfile**，
+    # 会继承 backend 的 HEALTHCHECK（打 http://127.0.0.1:8000/api/health）。
+    # 但 worker 容器里跑的是 celery、**没有 uvicorn**，那个端口无人监听 →
+    # 永久 unhealthy（2026-10-20 实测 FailingStreak=7，容器其实完全正常：
+    # celery 已连 redis、7 个 task 注册、ready）。
+    # 改成用 celery 自己的 ping——既能判活，又真正验证「worker 能接活」。
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.core.celery_app", "inspect", "ping", "-d", "celery@$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
 
   web:
     build:

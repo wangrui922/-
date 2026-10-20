@@ -81,12 +81,22 @@ def stage_build() -> None:
 
 
 def stage_restart() -> None:
-    """阶段 3：重启 backend + worker。"""
-    print("\n=== [3/6] 重启容器 ===")
+    """阶段 3：重启容器。
+
+    ⚠️ **必须包含 web**：``build`` 阶段构建了 web 镜像，但只重建
+    backend+worker 的话，**前端改动永远不上线**（容器还跑着旧镜像）。
+
+    ⚠️ **不重建 admin-web**：它是服务器上独立维护的副本
+    （``/home/ubuntu/coach/admin-web``，不在本仓库内，有自己的 node_modules），
+    本次没有改它的前端代码——我们改的是**后端**补齐它依赖的 4 个端点，
+    后端重启后它自然就能用上。动它只增加构建失败风险。
+    """
+    print("\n=== [3/6] 重启容器（backend + worker + web）===")
     ssh(
-        f"cd {REMOTE} && {COMPOSE} up -d --no-deps --force-recreate backend worker 2>&1 | tail -20"
+        f"cd {REMOTE} && {COMPOSE} up -d --no-deps --force-recreate "
+        f"backend worker web 2>&1 | tail -25"
     )
-    # 等健康
+    # 等 backend 健康
     print("等待 backend 健康…")
     for i in range(30):
         out = ssh(
@@ -95,10 +105,29 @@ def stage_restart() -> None:
         )
         if "healthy" in out.lower():
             print(f"backend healthy（第 {i + 1} 次探测）")
-            return
+            break
         import time
         time.sleep(4)
-    raise SystemExit("backend 未在 2 分钟内变为 healthy")
+    else:
+        raise SystemExit("backend 未在 2 分钟内变为 healthy")
+
+    # 校验 web 真的换了新构建：静态资源指纹应与本次构建一致
+    print("校验 web 已加载新构建…")
+    out = ssh(
+        f"cd {REMOTE} && curl -s http://127.0.0.1/ | grep -oE 'assets/index-[A-Za-z0-9_-]+\\.js' | head -1",
+        check=False,
+    )
+    asset = (out or "").strip().splitlines()[-1] if out and out.strip() else ""
+    if not asset:
+        raise SystemExit("web 首页取不到静态资源指纹，部署可能未生效")
+    print(f"  web 入口资源：{asset}")
+
+    # 打印所有服务状态（worker 的 unhealthy 曾经是误报——继承 backend 的
+    # HEALTHCHECK 打 uvicorn 端口，而 worker 里没有 uvicorn）
+    ssh(
+        f"cd {REMOTE} && {COMPOSE} ps --format '{{{{.Service}}}} {{{{.Status}}}}' 2>/dev/null",
+        check=False,
+    )
 
 
 def stage_schema_check() -> None:
