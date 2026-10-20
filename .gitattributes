@@ -1,0 +1,25 @@
+# Keep LF line endings for files that get shipped to the production server.
+#
+# Why: the deployment syncs the working tree with tar (the server has no .git),
+# and a Windows checkout yields CRLF. A CRLF "Dockerfile" makes the build line
+# "RUN pip install -r requirements.txt\r", so pip endlessly retries fetching a
+# non-existent package literally named "requirements.txt\r" and the build hangs
+# (observed 2026-10-20: 45+ min, load average 0.14, CPU 0.3%).
+#
+# Python sources are intentionally NOT listed: CPython handles CRLF fine, and
+# forcing LF there would rewrite thousands of working-tree files for no benefit.
+
+* text=auto
+
+# Build inputs — must stay LF.
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
+*.txt text eol=lf
+*.sh text eol=lf
+*.sql text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Windows-only launchers must stay CRLF for cmd.exe.
+*.bat text eol=crlf
+*.cmd text eol=crlf

@@ -4,9 +4,19 @@
 
 FROM python:3.12-slim
 
+# PIP_INDEX_URL: Tencent Cloud internal PyPI mirror.
+# The production server (118.25.44.126) cannot reach pypi.org directly (pypi.org and
+# Tsinghua mirror time out; Tencent Cloud mirror answers in 0.62s). pip reads this env var
+# natively, so requirements + gunicorn/uvicorn + celery all three installs use it.
+# Override with: docker build --build-arg PIP_INDEX_URL=...
+# NOTE: keep this file LF-only. With CRLF, the trailing \r leaks into the RUN line and pip
+# endlessly retries fetching a non-existent "requirements.txt\r" package, hanging the build
+# (seen 2026-10-20: build stuck 45 min, load 0.14, CPU 0.3%).
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple/ \
+    PIP_TRUSTED_HOST=mirrors.cloud.tencent.com
 
 WORKDIR /app
 
@@ -37,4 +47,5 @@ CMD ["gunicorn", "app.main:app", \
      "--max-requests", "1000", \
      "--max-requests-jitter", "100", \
      "--timeout", "120", \
-     "--access-logfile", "-", "--error-logfile", "-"]
+     "--access-logfile", "-", \
+     "--error-logfile", "-"]
