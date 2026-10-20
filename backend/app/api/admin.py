@@ -6,6 +6,7 @@
     * 学生/家长账户管理（列表、冻结/解冻、详情）
     * 错题/掌握度/练习统计看板
     * AI 会话调用日志（暂只列出会话与消息数，后续对接真实日志）
+    * AI 质量监控（Benchmark 维度一：直接给答案率 / 讲解质量 / trace 流水）
 """
 
 from __future__ import annotations
@@ -26,6 +27,11 @@ from app.core.deps import CurrentUser, require_role
 from app.core.response import ApiError, CODE_BAD_REQUEST, CODE_FORBIDDEN, CODE_NOT_FOUND, ok
 from app.db import get_db
 from app.models.activation import ActivationCode
+from app.models.quality_trace import (
+    QUALITY_TRACE_EVENT_TYPES,
+    QUALITY_TRACE_SEVERITIES,
+    QualityTrace,
+)
 from app.models.user import ROLE_VALUES, User, Student, GRADE_MIN, GRADE_MAX
 from app.models.learning import Mistake, Attempt, LearningTask, StudentProfile
 from app.models.student_mastery import StudentMastery
@@ -38,6 +44,7 @@ from app.schemas.admin import (
     UserListItem,
     UserListQuery,
 )
+from app.services import quality_metrics_service as qms
 
 
 _MASTERY_LEVEL_MAP = {0: "weak", 1: "weak", 2: "medium", 3: "strong"}
@@ -373,6 +380,264 @@ def list_ai_sessions(
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
         )
+    return ok({"total": total, "page": page, "size": size, "items": items})
+
+
+# ---- AI 质量监控（Benchmark 维度一 · 内测看板）---------------------------
+#
+# 口径唯一真相源是 ``app.services.quality_metrics_service``（qms）：本模块只做
+# 参数校验、编排与序列化，**不另写任何聚合口径**；分母为 0 时按既有约定返回
+# ``None``（不编造 0%）。后台规划的 6 项指标中当前只有「直接给答案率」有数据
+# 源，其余明确标注「数据源待建」——看板展示真相，不造假数据。
+
+#: 后台规划的 6 项 AI 质量指标（key 稳定，前端按 key 渲染）。
+#: ``pending_note`` 说明数据源缺口，供看板直接展示。
+_QUALITY_METRIC_PLAN: List[Dict[str, str]] = [
+    {
+        "key": "recognition_accuracy",
+        "name": "识别正确率",
+        "pending_note": (
+            "数据源待建：原拟以「需重拍率」作代理指标（低置信度重拍机制 #29），"
+            "但重拍事件未落库（gate 仅返回引导、不创建记录），暂无法量化"
+        ),
+    },
+    {
+        "key": "answer_accuracy",
+        "name": "答案正确率",
+        "pending_note": "数据源待建：学生作答正误与 AI 判定结论暂无可关联的落库事件",
+    },
+    {
+        "key": "error_cause_accuracy",
+        "name": "错因识别准确率",
+        "pending_note": "数据源待建：错因识别结论缺少人工标注样本可核对",
+    },
+    {
+        "key": "answer_leak_rate",
+        "name": "直接给答案率",
+        "pending_note": "answer_leak 事件数 ÷ 同期 AI 应答数（assistant 消息）",
+    },
+    {
+        "key": "practice_generation_success_rate",
+        "name": "练习生成成功率",
+        "pending_note": "数据源待建：AI 练习生成结果未按成败落库",
+    },
+    {
+        "key": "validation_failure_rate",
+        "name": "验证失败率",
+        "pending_note": "数据源待建：sympy 验证结果未按事件落库",
+    },
+]
+
+
+def _weighted_bucket_avg(
+    buckets: List[Dict[str, Any]], field: str
+) -> Optional[float]:
+    """按 ``count`` 加权求窗内某字段均值（数据取自 service 趋势桶，不另立口径）。
+
+    桶内该字段为 ``None``（当日无有效评分）或计数为非正时跳过；全窗无有效
+    样本时返回 ``None``（不编造 0）。
+    """
+    weight = 0
+    acc = 0.0
+    for bucket in buckets:
+        value = bucket.get(field)
+        count = int(bucket.get("count") or 0)
+        if value is None or count <= 0:
+            continue
+        acc += float(value) * count
+        weight += count
+    if weight == 0:
+        return None
+    return round(acc / weight, 4)
+
+
+def _weighted_dimension_avgs(
+    buckets: List[Dict[str, Any]], keys: List[str]
+) -> Dict[str, Optional[float]]:
+    """5 维 rubric 的窗内加权均分（同样只加工 service 的趋势桶）。"""
+    return {key: _dimension_weighted_avg(buckets, key) for key in keys}
+
+
+def _dimension_weighted_avg(
+    buckets: List[Dict[str, Any]], dim_key: str
+) -> Optional[float]:
+    """单个维度的窗内加权均分（维度值嵌在桶的 ``dimensions`` 子对象里）。"""
+    weight = 0
+    acc = 0.0
+    for bucket in buckets:
+        count = int(bucket.get("count") or 0)
+        if count <= 0:
+            continue
+        dims = bucket.get("dimensions") or {}
+        value = dims.get(dim_key)
+        if value is None:
+            continue
+        acc += float(value) * count
+        weight += count
+    if weight == 0:
+        return None
+    return round(acc / weight, 4)
+
+
+def _parse_optional_uuid(raw: Optional[str], field: str) -> Optional[uuid.UUID]:
+    """可选的 UUID 查询参数：缺省 None，非法值抛 400（不进 500）。"""
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(raw)
+    except (TypeError, ValueError) as exc:
+        raise ApiError(CODE_BAD_REQUEST, f"{field} 不是合法 UUID") from exc
+
+
+@router.get("/quality-metrics")
+def quality_metrics_overview(
+    window_days: int = Query(7, ge=1, le=90),
+    student_id: Optional[str] = Query(None),
+    current: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """AI 质量监控总览（Benchmark 维度一）。
+
+    总览 = 6 项规划指标各自状态（有数据/待建）+ 讲解质量五维均分 + 近 N 天趋势。
+    所有比率口径均来自 ``quality_metrics_service``；分母为 0 → ``None``。
+
+    Args:
+        window_days: 聚合时间窗（天），1~90，默认 7。
+        student_id: 可选的学生过滤（下钻单个学生）；缺省为全量。
+
+    Returns:
+        ``{"code":0,"msg":"ok","data":{...}}``，data 结构::
+
+            {
+                "window_days": int,
+                "since": iso 时间串,
+                "student_id": str | None,
+                "metrics": [                 # 恒 6 项，顺序稳定
+                    {
+                        "key": str,           # 指标 key（前端按此渲染）
+                        "name": str,          # 指标名
+                        "status": "available" | "pending",
+                        "value": float | None, # 比率/均分；无数据源或分母 0 → None
+                        "numerator": int | None,
+                        "denominator": int | None,
+                        "unit": "ratio",
+                        "note": str,           # 口径说明或「数据源待建」原因
+                    }
+                ],
+                "explanation_quality": {
+                    "total_count": int,
+                    "overall_avg": float | None,      # 窗内 overall 加权均分
+                    "dimension_avgs": {key: float | None},
+                    "buckets": [...],                 # service 趋势桶（按日升序）
+                },
+            }
+    """
+    sid = _parse_optional_uuid(student_id, "student_id")
+
+    leak = qms.answer_leak_rate(db, window_days=window_days, student_id=sid)
+    trend = qms.explanation_quality_trend(db, window_days=window_days, student_id=sid)
+    buckets: List[Dict[str, Any]] = list(trend["buckets"])
+
+    metrics: List[Dict[str, Any]] = []
+    for plan in _QUALITY_METRIC_PLAN:
+        row: Dict[str, Any] = {
+            "key": plan["key"],
+            "name": plan["name"],
+            "status": "pending",
+            "value": None,
+            "numerator": None,
+            "denominator": None,
+            "unit": "ratio",
+            "note": plan["pending_note"],
+        }
+        if plan["key"] == "answer_leak_rate":
+            row["status"] = "available"
+            row["value"] = leak["rate"]
+            row["numerator"] = leak["answer_leak_count"]
+            row["denominator"] = leak["ai_response_count"]
+        metrics.append(row)
+
+    explanation_quality: Dict[str, Any] = {
+        "total_count": trend["total_count"],
+        "overall_avg": _weighted_bucket_avg(buckets, "overall_avg"),
+        "dimension_avgs": _weighted_dimension_avgs(buckets, qms.DIMENSION_KEYS),
+        "buckets": buckets,
+    }
+
+    return ok(
+        {
+            "window_days": leak["window_days"],
+            "since": leak["since"].isoformat(),
+            "student_id": leak["student_id"],
+            "metrics": metrics,
+            "explanation_quality": explanation_quality,
+        }
+    )
+
+
+@router.get("/quality/traces")
+def list_quality_traces(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=200),
+    event_type: Optional[str] = Query(None),
+    severity: Optional[str] = Query(None),
+    student_id: Optional[str] = Query(None),
+    current: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """教学质量 trace 流水（分页 + event_type / severity 筛选）。
+
+    与 ``/admin/mistakes`` 等同款分页范式；按 ``created_at`` 倒序。
+
+    Args:
+        page: 页码，从 1 起。
+        size: 每页条数，1~200。
+        event_type: 可选，``answer_leak`` / ``explanation_quality``。
+        severity: 可选，``info`` / ``warning`` / ``error``。
+        student_id: 可选的学生过滤（合法 UUID，否则 400）。
+
+    Raises:
+        ApiError: 400 筛选值非法 / student_id 非法。
+    """
+    if event_type is not None and event_type not in QUALITY_TRACE_EVENT_TYPES:
+        raise ApiError(
+            CODE_BAD_REQUEST, f"event_type 只能是 {QUALITY_TRACE_EVENT_TYPES}"
+        )
+    if severity is not None and severity not in QUALITY_TRACE_SEVERITIES:
+        raise ApiError(CODE_BAD_REQUEST, f"severity 只能是 {QUALITY_TRACE_SEVERITIES}")
+    sid = _parse_optional_uuid(student_id, "student_id")
+
+    base = select(QualityTrace)
+    if event_type:
+        base = base.where(QualityTrace.event_type == event_type)
+    if severity:
+        base = base.where(QualityTrace.severity == severity)
+    if sid is not None:
+        base = base.where(QualityTrace.student_id == sid)
+
+    total = db.execute(select(func.count()).select_from(base.subquery())).scalar() or 0
+    rows = (
+        db.execute(
+            base.order_by(QualityTrace.created_at.desc())
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+        .scalars()
+        .all()
+    )
+    items: List[Dict[str, Any]] = [
+        {
+            "id": str(r.id),
+            "event_type": r.event_type,
+            "severity": r.severity,
+            "student_id": str(r.student_id) if r.student_id else None,
+            "session_id": str(r.session_id) if r.session_id else None,
+            "question_id": str(r.question_id) if r.question_id else None,
+            "payload": r.payload if isinstance(r.payload, dict) else None,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
     return ok({"total": total, "page": page, "size": size, "items": items})
 
 
