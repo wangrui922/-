@@ -108,6 +108,33 @@ def test_smoke_cleanup_covers_all_written_tables(smoke_src: str) -> None:
     )
 
 
+def test_smoke_cleanup_collects_ids_before_deleting(smoke_src: str) -> None:
+    """子表清理不得依赖 ``select id from students ...`` 这类子查询。
+
+    原因（2026-10-21 生产事故）：清理流程先删了 ``students`` 行，随后
+    兜底段再用 ``student_id in (select id from students where user_id in ...)``
+    去清子表——此时 students 行已被删掉，子查询恒返回空集，
+    **DELETE 执行了但删了 0 行**，生产库照样留一堆孤儿数据。
+    """
+    body = smoke_src.split("def finish(", 1)[-1]
+    # 只看可执行代码，剔除注释行（注释里可以自由讨论这个坑）
+    code_lines = [
+        ln for ln in body.splitlines() if not ln.strip().startswith("#")
+    ]
+    code = "\n".join(code_lines)
+    assert "select id from students" not in code, (
+        "子表清理不能用 `select id from students ...` 子查询定位——"
+        "students 行在前面已删，子查询恒空集；必须先把 id 收集到 Python 列表"
+    )
+    # 必须先把 id 收集起来（存在 target_sids 之类的变量）
+    assert re.search(r"target_sids\s*[:=]", body), (
+        "清理前必须先把 student id 收集到 Python 列表（target_sids）"
+    )
+    assert re.search(r"target_uids\s*[:=]", body), (
+        "清理前必须先把 user id 收集到 Python 列表（target_uids）"
+    )
+
+
 def test_smoke_cleanup_deletes_core_tables(smoke_src: str) -> None:
     """核心表（用户/学生/作答/错题）也必须在 DELETE 名单里。"""
     deleted = _deleted_tables(smoke_src)

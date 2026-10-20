@@ -311,61 +311,73 @@ def finish(args, db, created_user_ids, created_code_id=None) -> int:
             from app.models.learning import Attempt, Mistake
             from app.models.user import Student, User
 
+            # ---- 第一步：先把要删的 id 全收集起来 ----
+            # ⚠️ 必须先收集再删除。若边查边删，下面兜底段的
+            #    ``select id from students where user_id in (...)`` 子查询
+            #    会在 students 行已被删掉之后执行 → 恒返回空集 → 子表一条都删不掉。
+            #    （这正是 2026-10-21 生产残留的直接原因：兜底段"执行了"但删了 0 行。）
+            target_uids: list[str] = []
+            target_sids: list[str] = []
             for uid in created_user_ids:
-                try:
-                    uu = uuid.UUID(uid)
-                except ValueError:
+                if not _is_uuid(uid):
                     continue
-                user = db.execute(select(User).where(User.id == uu)).scalar_one_or_none()
+                user = db.execute(
+                    select(User).where(User.id == uuid.UUID(uid))
+                ).scalar_one_or_none()
                 if user is None:
                     continue
-                sids = [
-                    s.id for s in db.execute(
-                        select(Student).where(Student.user_id == user.id)
-                    ).scalars().all()
-                ]
-                for sid in sids:
+                target_uids.append(str(user.id))
+                for s in db.execute(
+                    select(Student).where(Student.user_id == user.id)
+                ).scalars().all():
+                    target_sids.append(str(s.id))
+
+            if target_uids:
+                uids = ",".join(f"'{u}'" for u in target_uids)
+                sids_sql = (
+                    ",".join(f"'{s}'" for s in target_sids) if target_sids else "''"
+                )
+                sids_in = f"({sids_sql})"
+
+                # ---- 第二步：删核心表（ORM）----
+                for sid in target_sids:
                     db.execute(delete(AiMessage).where(AiMessage.session_id.in_(
                         select(AiSession.id).where(AiSession.student_id == sid))))
                     db.execute(delete(AiSession).where(AiSession.student_id == sid))
                     db.execute(delete(Mistake).where(Mistake.student_id == sid))
                     db.execute(delete(Attempt).where(Attempt.student_id == sid))
-                    db.execute(delete(Student).where(Student.id == sid))
-                db.execute(delete(ActivationCode).where(ActivationCode.user_id == user.id))
-                db.execute(delete(User).where(User.id == user.id))
-                print(f"  已清理 user {uid}")
+                db.execute(delete(Student).where(Student.id.in_(target_sids)))
+                db.execute(delete(ActivationCode).where(ActivationCode.user_id.in_(target_uids)))
+                db.execute(delete(User).where(User.id.in_(target_uids)))
+                print(f"  已清理 user {len(target_uids)} 个 / student {len(target_sids)} 个")
 
-            # ---- 兜底：子表残留 ----
-            # 上面按 ORM 模型删了核心表，但 learning_tasks / review_cards /
-            # review_logs / student_learning_events / student_learning_profiles /
-            # student_knowledge_mastery / practice_progress / guardian_consents
-            # 这些表有的没被上面覆盖、有的（review_cards/review_logs）
-            # 根本无 ORM 模型（由 FSRS 模块 raw SQL 维护），
-            # 漏删会在生产库留孤儿行，累积后污染统计口径。
-            #
-            # 注意：不能「执行失败就 rollback」——那会把同一事务里已经删掉的
-            # 行一起回滚掉。正确做法是**先探测表是否存在**，只对存在的表发 DELETE。
-            uid_list = [u for u in created_user_ids if _is_uuid(u)]
-            if uid_list:
+                # ---- 第三步：兜底清子表 ----
+                # 上面按 ORM 模型删了核心表，但 learning_tasks / review_cards /
+                # review_logs / student_learning_events / student_learning_profiles /
+                # student_knowledge_mastery / practice_progress / guardian_consents
+                # 这些表有的没被上面覆盖、有的（review_cards/review_logs）
+                # 根本无 ORM 模型（由 FSRS 模块 raw SQL 维护），
+                # 漏删会在生产库留孤儿行，累积后污染统计口径。
+                #
+                # 不能「执行失败就 rollback」——那会把同一事务里已经删掉的
+                # 行一起回滚掉。正确做法是**先探测表是否存在**，只对存在的表发 DELETE。
                 from sqlalchemy import inspect as sa_inspect
 
                 inspector = sa_inspect(db.get_bind())
                 existing = set(inspector.get_table_names())
-                uids = ",".join(f"'{u}'" for u in uid_list)
-                sids_sql = f"(select id from students where user_id in ({uids}))"
                 plan = [
                     ("guardian_consents", f"delete from guardian_consents where user_id in ({uids})"),
-                    ("learning_tasks", f"delete from learning_tasks where student_id in {sids_sql}"),
-                    ("review_logs", f"delete from review_logs where student_id in {sids_sql}"),
-                    ("review_cards", f"delete from review_cards where student_id in {sids_sql}"),
+                    ("learning_tasks", f"delete from learning_tasks where student_id in {sids_in}"),
+                    ("review_logs", f"delete from review_logs where student_id in {sids_in}"),
+                    ("review_cards", f"delete from review_cards where student_id in {sids_in}"),
                     ("student_knowledge_mastery",
-                     f"delete from student_knowledge_mastery where student_id in {sids_sql}"),
+                     f"delete from student_knowledge_mastery where student_id in {sids_in}"),
                     ("student_learning_events",
-                     f"delete from student_learning_events where student_id in {sids_sql}"),
+                     f"delete from student_learning_events where student_id in {sids_in}"),
                     ("student_learning_profiles",
-                     f"delete from student_learning_profiles where student_id in {sids_sql}"),
+                     f"delete from student_learning_profiles where student_id in {sids_in}"),
                     ("practice_progress",
-                     f"delete from practice_progress where student_id in {sids_sql}"),
+                     f"delete from practice_progress where student_id in {sids_in}"),
                     ("subscriptions", f"delete from subscriptions where user_id in ({uids})"),
                     ("payment_transactions",
                      f"delete from payment_transactions where user_id in ({uids})"),
