@@ -48,12 +48,13 @@ def test_parent_bind_child_and_view_summary(client, new_phone):
     assert r.status_code == 200, r.text
     assert r.json()["data"]["studentId"] == child_sid
 
-    # 列出孩子
+    # 列出孩子（camelCase 契约：前端 ChildBrief.studentId 读这个键）
     r = client.get("/api/family/children", headers=_auth(parent_token))
     assert r.status_code == 200
     children = r.json()["data"]
     assert len(children) == 1
-    assert children[0]["student_id"] == child_sid
+    assert children[0]["studentId"] == child_sid
+    assert "student_id" not in children[0], "family 出口必须 camelCase（前端契约）"
 
     # 家长视角查看孩子概览
     r = client.get(
@@ -62,7 +63,7 @@ def test_parent_bind_child_and_view_summary(client, new_phone):
     )
     assert r.status_code == 200, r.text
     data = r.json()["data"]
-    assert data["student_id"] == child_sid
+    assert data["studentId"] == child_sid
     assert "profile" in data and "weekly" in data and "radar" in data
 
 

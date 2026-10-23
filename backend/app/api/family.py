@@ -6,11 +6,19 @@
     GET  /api/family/children/{student_id}/summary  家长视角孩子概览（需已绑定）
 
 全部受保护，且限定 ``role=parent``。
+
+出口统一 camelCase：family_service 返回的是 raw dict（snake_case），
+而前端契约（``src/api/family.ts`` 的类型定义与 JSDoc）全按 camelCase
+读。2026-10-23 修复：此前 ``list_children`` 返回 ``student_id`` 而前端读
+``child.studentId``，家长端孩子列表点击跳转拿到 ``undefined``，
+整条家长链路静默坏掉。现在所有出口过 ``_camelize``，契约以 api.ts 为准。
 """
 
 from __future__ import annotations
 
+import re
 import uuid
+from typing import Any
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -21,6 +29,20 @@ from app.schemas.family import BindChildIn
 from app.services import family_service
 
 router = APIRouter(prefix="/family", tags=["family"])
+
+_SNAKE_RE = re.compile(r"_([a-z])")
+
+
+def _camelize(value: Any) -> Any:
+    """递归把 dict 的 key 转 camelCase（list/dict 递归，标量原样）。
+
+    只动 key 不动 value——``is_correct`` 这类布尔值若被误转会破坏语义。
+    """
+    if isinstance(value, dict):
+        return {_SNAKE_RE.sub(lambda m: m.group(1).upper(), str(k)): _camelize(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_camelize(item) for item in value]
+    return value
 
 
 @router.post("/bind")
@@ -41,7 +63,7 @@ async def list_children(
 ) -> dict:
     """列出当前家长绑定的所有孩子。"""
     children = family_service.list_children(db, uuid.UUID(current.sub))
-    return ok(children)
+    return ok(_camelize(children))
 
 
 @router.delete("/bind/{student_id}")
@@ -63,7 +85,7 @@ async def child_summary(
 ) -> dict:
     """家长视角：查看已绑定孩子的完整概览（画像 + 周报 + 雷达）。"""
     family_service.assert_parent_of(db, uuid.UUID(current.sub), student_id)
-    return ok(family_service.get_child_summary(db, student_id))
+    return ok(_camelize(family_service.get_child_summary(db, student_id)))
 
 
 @router.get("/children/{student_id}/mistakes")
@@ -76,7 +98,7 @@ async def child_mistakes(
 ) -> dict:
     """家长视角：孩子错题列表（含题干）。"""
     family_service.assert_parent_of(db, uuid.UUID(current.sub), student_id)
-    return ok(family_service.list_child_mistakes(db, student_id, page=page, size=size))
+    return ok(_camelize(family_service.list_child_mistakes(db, student_id, page=page, size=size)))
 
 
 @router.get("/children/{student_id}/attempts")
@@ -89,7 +111,7 @@ async def child_attempts(
 ) -> dict:
     """家长视角：孩子练习记录。"""
     family_service.assert_parent_of(db, uuid.UUID(current.sub), student_id)
-    return ok(family_service.list_child_attempts(db, student_id, page=page, size=size))
+    return ok(_camelize(family_service.list_child_attempts(db, student_id, page=page, size=size)))
 
 
 @router.get("/children/{student_id}/mastery")
@@ -102,7 +124,7 @@ async def child_mastery(
 ) -> dict:
     """家长视角：孩子知识点掌握度。"""
     family_service.assert_parent_of(db, uuid.UUID(current.sub), student_id)
-    return ok(family_service.list_child_mastery(db, student_id, page=page, size=size))
+    return ok(_camelize(family_service.list_child_mastery(db, student_id, page=page, size=size)))
 
 
 @router.get("/children/{student_id}/consent")
@@ -123,8 +145,10 @@ async def child_consent(
         前端据 ``granted`` / ``consentVersion`` 区分三态。
     """
     return ok(
-        family_service.get_child_consent_status(
-            db, uuid.UUID(current.sub), student_id
+        _camelize(
+            family_service.get_child_consent_status(
+                db, uuid.UUID(current.sub), student_id
+            )
         )
     )
 
@@ -137,7 +161,7 @@ async def child_entitlement(
 ) -> dict:
     """家长视角：孩子订阅/权益状态。"""
     family_service.assert_parent_of(db, uuid.UUID(current.sub), student_id)
-    return ok(family_service.get_child_entitlement(db, student_id))
+    return ok(_camelize(family_service.get_child_entitlement(db, student_id)))
 
 
 __all__ = ["router"]
