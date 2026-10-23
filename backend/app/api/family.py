@@ -105,6 +105,30 @@ async def child_mastery(
     return ok(family_service.list_child_mastery(db, student_id, page=page, size=size))
 
 
+@router.get("/children/{student_id}/consent")
+async def child_consent(
+    student_id: str,
+    current: CurrentUser = Depends(require_role("parent")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """家长视角：孩子的监护人同意三态（已同意 / 未同意 / 版本失效）。
+
+    读操作，**刻意不挂** ``require_guardian_consent`` 门控：同意状态
+    查询不该被同意门控本身拦住（门控开启 + 孩子未同意时，家长更要
+    能查到状态）。门控只拦练习类 POST（见 ``deps`` 模块文档）。
+
+    Returns:
+        ``{"granted": bool, "agreedAt": iso8601|None,
+        "consentVersion": str|None, "currentVersion": str}``；
+        前端据 ``granted`` / ``consentVersion`` 区分三态。
+    """
+    return ok(
+        family_service.get_child_consent_status(
+            db, uuid.UUID(current.sub), student_id
+        )
+    )
+
+
 @router.get("/children/{student_id}/entitlement")
 async def child_entitlement(
     student_id: str,

@@ -3,7 +3,8 @@
 职责：
     * 家长绑定 / 解绑 / 列出孩子；
     * 家长视角越权校验（仅可访问自己绑定的孩子）；
-    * 家长视角孩子概览（复用学生画像 / 周报快照 / 学情雷达）。
+    * 家长视角孩子概览（复用学生画像 / 周报快照 / 学情雷达）；
+    * 家长视角孩子监护人同意三态（V6.5 合规闸门 · B02 体验收尾）。
 
 事务：本模块只 ``flush``，``commit`` 交给 ``app.db.get_db`` 依赖收口。
 """
@@ -132,6 +133,43 @@ def assert_parent_of(session: Session, parent_user_id: uuid.UUID, student_id: uu
     ).scalar_one_or_none()
     if row is None:
         raise ApiError(CODE_FORBIDDEN, "您未绑定该孩子，无法查看其数据")
+
+
+def get_child_consent_status(
+    session: Session,
+    parent_user_id: uuid.UUID,
+    student_id: uuid.UUID,
+) -> Dict[str, Any]:
+    """家长视角：孩子的监护人同意三态（已同意 / 未同意 / 版本失效）。
+
+    链路：越权校验（``assert_parent_of``）→ 学生档案解析（``students``
+    1:1 ``users``，同意记录挂在孩子自己账号的 ``user_id`` 上）→ 读当前
+    规则版本 ``CONSENT_VERSION`` → 委托 ``compliance_service`` 查三态。
+
+    读操作，**与门控开关无关**：门控（``require_guardian_consent``）只拦
+    练习类 POST；这里即便门控开启、孩子未同意，家长也应能查到状态——
+    否则「查状态」本身被门控挡住，三态展示就失去了意义。
+
+    Raises:
+        ApiError: 403 未绑定该孩子；404 孩子档案不存在。
+    """
+    assert_parent_of(session, parent_user_id, student_id)
+    sid = _parse_uuid(student_id, "studentId")
+    student = session.get(Student, sid)
+    if student is None:
+        raise ApiError(CODE_NOT_FOUND, "孩子档案不存在")
+
+    # 函数内 import：避免 family_service 与 compliance_service / system_config
+    # 形成顶层循环依赖（与本文件既有的 profile/report lazy import 同风格）
+    from app.core.system_config import get_config
+    from app.services import compliance_service
+
+    current_version = str(get_config("CONSENT_VERSION") or "").strip() or "v1"
+    return compliance_service.get_consent_detail(
+        session,
+        user_id=student.user_id,
+        current_version=current_version,
+    )
 
 
 def get_child_summary(session: Session, student_id: uuid.UUID) -> Dict[str, Any]:

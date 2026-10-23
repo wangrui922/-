@@ -726,7 +726,9 @@ function stripConfirm(text: string): string {
 function handleGuideSend(work: string): void {
   const idx = activeExerciseIdx.value
   const thread = threads.value[idx]
-  if (!thread) return
+  // guideLoading 在途时直接拒：否则第二次点击会先 push 一个重复学生气泡，
+  // 才轮到 runJudge 的 loading 守卫拒绝（tests/teacher-guidance.test.mjs 锁此行为）。
+  if (!thread || guideLoading.value) return
 
   const text = work.trim()
   if (thread.askFinalConfirm && text && FINAL_CONFIRM_RE.test(text)) {
@@ -765,7 +767,8 @@ async function handleGuideImage(file: File, dataUrl: string): Promise<void> {
 function handleGuideQuick(action: QuickAction, draft: string): void {
   const idx = activeExerciseIdx.value
   const thread = threads.value[idx]
-  if (!thread) return
+  // 同 handleGuideSend：loading 在途时拒掉重复点击，避免气泡/请求重复
+  if (!thread || guideLoading.value) return
 
   const typed = draft.trim()
   // 孩子写了一半再点「给点提示」：把他写的和诉求一起发过去，老师才接得住

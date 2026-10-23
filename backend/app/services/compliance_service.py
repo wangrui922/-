@@ -4,7 +4,10 @@
     * ``record_guardian_consent``：记录一次监护人同意。幂等——同一账号
       同一 ``consent_version`` 重复提交返回已有记录，不报错、不新建；
     * ``get_consent_status``：查询某账号在某版本（缺省取最新一条）的
-      同意状态。
+      同意状态；
+    * ``get_consent_detail``：查询同意三态详情（当前版本是否同意 +
+      最近一次同意的版本/时间），供家长端/孩子端展示「已同意 /
+      未同意 / 版本失效」。
 
 事务：只 ``flush``，``commit`` 由 ``app.db.get_db`` 收口
 （与 ``student_dna_service`` 同一约定）。
@@ -158,4 +161,79 @@ def get_consent_status(
     return _serialize(row)
 
 
-__all__ = ["record_guardian_consent", "get_consent_status"]
+def get_consent_detail(
+    db: Session,
+    *,
+    user_id: Any,
+    current_version: str,
+) -> Dict[str, Any]:
+    """查询同意详情（三态展示：已同意 / 未同意 / 版本失效）。
+
+    与 ``get_consent_status`` 的分工：后者按「指定版本」回答一个布尔；
+    本函数一次性回答「当前版本是否同意 + 最近一次同意的版本/时间」，
+    供前端区分「从未同意」与「规则更新后旧同意失效」两种未同意态。
+
+    口径（与 ``deps.require_guardian_consent`` 门控逐字对齐）：
+        1. 先查 ``(user_id, consent_version=current_version)``——有即
+           ``granted=true``，时间/版本取该记录（门控放行的就是它）；
+        2. 没有 → 再查该账号最近一条同意记录（不限版本）：有则
+           ``granted=false`` 但 ``consentVersion`` 非空（版本失效），
+           时间/版本取这条旧记录供展示「上次同意」；
+        3. 一条都没有 → 全空（从未同意）。
+
+    Args:
+        db: 数据库会话。
+        user_id: 账号 ID（UUID 或其字符串形式）。
+        current_version: 服务端当前规则版本（调用方读 ``CONSENT_VERSION``）。
+
+    Returns:
+        ``{"granted": bool, "agreedAt": str|None, "consentVersion": str|None,
+        "currentVersion": str}``。
+    """
+    uid = _parse_uuid(user_id, "userId")
+    version = (current_version or "").strip() or "v1"
+
+    current_row = db.execute(
+        select(GuardianConsent).where(
+            GuardianConsent.user_id == uid,
+            GuardianConsent.consent_version == version,
+        )
+    ).scalar_one_or_none()
+    if current_row is not None:
+        detail = _serialize(current_row)
+        return {
+            "granted": True,
+            "agreedAt": detail["agreedAt"],
+            "consentVersion": detail["consentVersion"],
+            "currentVersion": version,
+        }
+
+    latest_row = db.execute(
+        select(GuardianConsent)
+        .where(GuardianConsent.user_id == uid)
+        .order_by(
+            GuardianConsent.agreed_at.desc(), GuardianConsent.created_at.desc()
+        )
+    ).scalars().first()
+    if latest_row is None:
+        return {
+            "granted": False,
+            "agreedAt": None,
+            "consentVersion": None,
+            "currentVersion": version,
+        }
+
+    detail = _serialize(latest_row)
+    return {
+        "granted": False,
+        "agreedAt": detail["agreedAt"],
+        "consentVersion": detail["consentVersion"],
+        "currentVersion": version,
+    }
+
+
+__all__ = [
+    "record_guardian_consent",
+    "get_consent_status",
+    "get_consent_detail",
+]

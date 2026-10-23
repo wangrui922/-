@@ -12,6 +12,7 @@
  *   GET  /api/family/children/{sid}/attempts   -> { total, page, size, items[] }
  *   GET  /api/family/children/{sid}/mastery    -> { total, page, size, items[] }
  *   GET  /api/family/children/{sid}/entitlement-> { plan, planName, dailyAiLimit, ... }
+ *   GET  /api/family/children/{sid}/consent    -> { granted, agreedAt, consentVersion, currentVersion }
  */
 import { get, post, http } from '@/api/http'
 
@@ -74,6 +75,21 @@ export interface ChildEntitlement {
   expiresAt?: string | null
 }
 
+/**
+ * 家长端：孩子监护人同意三态出参（camelCase，对齐 backend/app/api/family.py
+ * 的 consent 端点；与 api/compliance.ts 的 ConsentStatusData 同一套命名口径）。
+ */
+export interface ChildConsentStatus {
+  /** 当前规则版本是否已同意（服务端权威判定） */
+  granted: boolean
+  /** 同意时间（ISO8601 UTC）；从未同意为 null */
+  agreedAt: string | null
+  /** 同意记录对应的规则版本；从未同意为 null（版本失效时为旧版本号） */
+  consentVersion: string | null
+  /** 服务端当前规则版本（CONSENT_VERSION） */
+  currentVersion: string
+}
+
 /** 发送登录验证码。 */
 export function sendParentCode(phone: string): Promise<{ sent: boolean; devCode?: string | null }> {
   return post('/auth/code', { phone })
@@ -122,4 +138,14 @@ export function getChildMastery(studentId: string, page = 1, size = 50): Promise
 /** 孩子权益状态。 */
 export function getChildEntitlement(studentId: string): Promise<ChildEntitlement> {
   return get(`/family/children/${studentId}/entitlement`)
+}
+
+/**
+ * 家长端：查询已绑定孩子的监护人同意三态（已同意 / 未同意 / 版本失效）。
+ *
+ * 读操作（GET），服务端不挂同意门控：门控开启 + 孩子未同意时也能查，
+ * 否则「查状态」本身被门控挡住，三态展示就失去意义。
+ */
+export function getChildConsent(studentId: string): Promise<ChildConsentStatus> {
+  return get(`/family/children/${studentId}/consent`)
 }

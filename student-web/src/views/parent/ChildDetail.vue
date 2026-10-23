@@ -4,6 +4,14 @@
  *
  * Tabs：概览 / 错题本 / 练习记录 / 掌握度 / 权益
  * 分别调用 family.ts 里的 summary / mistakes / attempts / mastery / entitlement。
+ *
+ * 监护人同意三态卡片（V6.5 合规闸门 · B02 体验收尾）：挂在概览 Tab 内
+ * 「本周数据」卡上方，与概览数据并行加载（同意查询是读操作，服务端不挂
+ * 门控，孩子没同意时家长也查得到）：
+ *   granted  绿卡 ✓ 监护人已同意（同意版本 vX · 同意时间 YYYY-MM-DD）
+ *   stale    黄卡 ⚠ 监护人规则已更新，需重新确认（附上次 / 当前规则版本）
+ *   required 灰卡 ⚪ 监护人尚未同意（引导家长去完成同意）
+ * 查询失败只显示一行「状态获取失败」小字：不弹错误、不阻塞其他 Tab。
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -13,13 +21,21 @@ import {
   getChildMistakes,
   getChildAttempts,
   getChildEntitlement,
+  getChildConsent,
   type ChildMistake,
   type ChildAttempt,
   type ChildMastery,
   type ChildEntitlement,
+  type ChildConsentStatus,
 } from '@/api/family'
 import { getLearningDna, toChildMasteryList } from '@/api/dna'
 import { toMessage } from '@/api/http'
+import { openDialog } from '@/stores/consent'
+import {
+  deriveChildConsentState,
+  formatConsentDate,
+  type ConsentGateState,
+} from '@/utils/consent-gate'
 
 const route = useRoute()
 const studentId = computed(() => route.params.sid as string)
@@ -32,6 +48,35 @@ const error = ref('')
 function isUnlimited(limit: number | null | undefined): boolean {
   if (limit === null || limit === undefined) return false
   return limit <= 0 || limit >= 9999
+}
+
+/* ---------- 监护人同意三态（家长视角 · B02） ---------- */
+
+/** 孩子账号的同意态原始数据；null = 还没查到 / 查失败。 */
+const consent = ref<ChildConsentStatus | null>(null)
+/** 同意态查询失败：只显示一行小字降级，不弹错误、不阻塞页面其他内容。 */
+const consentFailed = ref(false)
+
+/** 三态派生（granted / required / stale）；无数据时 null。 */
+const consentView = computed<ConsentGateState | null>(() =>
+  consent.value ? deriveChildConsentState(consent.value) : null,
+)
+
+/**
+ * 查孩子账号的监护人同意三态（GET /family/children/{sid}/consent）。
+ *
+ * 读操作不挂同意门控（服务端口径）：孩子未同意时家长也查得到，否则
+ * 「查状态」本身被挡住，三态展示就失去意义。失败静默降级——同意态
+ * 只是辅助展示，不为它弹错误，更不为它阻塞 Tab 数据。
+ */
+async function loadConsent(): Promise<void> {
+  consentFailed.value = false
+  try {
+    consent.value = await getChildConsent(studentId.value)
+  } catch {
+    consent.value = null
+    consentFailed.value = true
+  }
 }
 
 const summary = ref<Record<string, unknown> | null>(null)
@@ -87,6 +132,8 @@ async function loadTab() {
 
 onMounted(() => {
   loadTab()
+  // 同意态与概览数据并行：谁先到先渲染，互不阻塞（同意查询失败不影响 Tab 数据）
+  void loadConsent()
 })
 
 function switchTab(t: typeof tab.value) {
@@ -132,8 +179,57 @@ const tabs = [
     <div v-if="error" class="mx-4 mt-4 rounded-2xl bg-red-50 p-3 text-center text-sm text-red-500">{{ error }}</div>
 
     <!-- 概览 -->
-    <div v-if="tab === 'summary' && summary" class="space-y-3 px-4 pt-4">
-      <div class="rounded-2xl bg-white p-4 shadow-soft">
+    <div v-if="tab === 'summary'" class="space-y-3 px-4 pt-4">
+      <!-- 监护人同意三态卡（B02）：已同意 / 版本失效 / 未同意 -->
+      <div v-if="consent && consentView">
+        <!-- 已同意：绿卡，展示同意版本与时间 -->
+        <div
+          v-if="consentView === 'granted'"
+          class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-soft"
+        >
+          <p class="text-sm font-bold text-emerald-700">✓ 监护人已同意</p>
+          <p class="mt-1 text-xs text-emerald-600">
+            同意版本 {{ consent.consentVersion }} · 同意时间 {{ formatConsentDate(consent.agreedAt) }}
+          </p>
+        </div>
+        <!-- 版本失效：黄卡，展示上次同意记录并引导重新确认 -->
+        <div
+          v-else-if="consentView === 'stale'"
+          class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-soft"
+        >
+          <p class="text-sm font-bold text-amber-900">⚠ 监护人规则已更新，需重新确认</p>
+          <p class="mt-1 text-xs leading-relaxed text-amber-700">
+            上次同意版本 {{ consent.consentVersion }}（{{ formatConsentDate(consent.agreedAt) }}），当前规则版本 {{ consent.currentVersion }}
+          </p>
+          <button
+            type="button"
+            class="mt-2 inline-flex h-8 items-center rounded-full bg-amber-500 px-4 text-xs font-bold text-white shadow-soft transition active:scale-95"
+            @click="openDialog"
+          >
+            去重新确认
+          </button>
+        </div>
+        <!-- 未同意：灰卡，引导家长完成同意 -->
+        <div
+          v-else
+          class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-soft"
+        >
+          <p class="text-sm font-bold text-slate-600">⚪ 监护人尚未同意</p>
+          <p class="mt-1 text-xs leading-relaxed text-slate-500">孩子需要您同意后才能开始练习</p>
+          <button
+            type="button"
+            class="mt-2 inline-flex h-8 items-center rounded-full bg-slate-500 px-4 text-xs font-bold text-white shadow-soft transition active:scale-95"
+            @click="openDialog"
+          >
+            去同意
+          </button>
+        </div>
+      </div>
+      <!-- 同意态查询失败：静默降级，一行小字，不弹错误 -->
+      <p v-else-if="consentFailed" class="text-center text-xs text-slate-400">状态获取失败</p>
+
+      <!-- 本周数据 -->
+      <div v-if="summary" class="rounded-2xl bg-white p-4 shadow-soft">
         <h3 class="text-sm font-bold text-ink">本周数据</h3>
         <pre class="mt-2 overflow-x-auto text-xs text-slate-600">{{ JSON.stringify(summary, null, 2) }}</pre>
       </div>

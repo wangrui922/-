@@ -62,6 +62,18 @@ export function getConsentStatus(): Promise<ConsentStatusData> {
 }
 
 /**
+ * 查询当前账号**最近一条**同意记录（不限版本）。
+ *
+ * 用途：当前版本未同意时，区分「从未同意」（agreed=false）与
+ * 「版本失效」（agreed=true 但 consentVersion 是旧版本号）——
+ * 后者要展示「监护人规则已更新，需重新确认」，两者话术不同。
+ * 与 getConsentStatus 一样是 GET 读操作，不走门控。
+ */
+export function getLatestConsent(): Promise<ConsentStatusData> {
+  return get<ConsentStatusData>('/compliance/guardian-consent')
+}
+
+/**
  * 提交一次监护人同意（后端幂等：同账号同版本重复提交返回已有记录，不报错）。
  *
  * @param body camelCase 入参；agreed 仅 true 会被记录

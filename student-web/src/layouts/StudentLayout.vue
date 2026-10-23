@@ -13,6 +13,7 @@ import { logout } from '@/stores/auth'
 import { BANDS, segmentState, setBand, type Segment } from '@/stores/segment'
 import { useStreak } from '@/stores/streak'
 import TutorAvatar from '@/components/TutorAvatar.vue'
+import GuardianConsentBanner from '@/components/GuardianConsentBanner.vue'
 
 interface NavItem {
   name: string
@@ -124,6 +125,9 @@ function handleBand(band: Segment | null): void {
         不限
       </button>
     </div>
+
+    <!-- 监护人同意指引条（V6.5 合规闸门 · B02）：未同意 / 版本失效时常驻，granted / unknown 不渲染 -->
+    <GuardianConsentBanner />
 
     <!-- 内容区 -->
     <main class="min-h-0 flex-1 overflow-hidden">
