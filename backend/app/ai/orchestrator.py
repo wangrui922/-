@@ -72,12 +72,31 @@ STUDENT_QUESTION_SOURCE_DOC: str = "student_asked"
 REPHOTO_MESSAGE: str = "这道题有些地方我没看清，重新拍一张给我看看好吗？"
 
 
+def _has_no_real_question(analysis: Dict[str, Any]) -> bool:
+    """题面为空或只是 OCR 元话语时，视为「这次拍照彻底失败」。
+
+    2026-10-23 实测发现：重模糊图上 OCR 不返回空串，而是返回一句元话语
+    （如「无有效题目内容，返回空。」），analyze JSON 也往往不带 confidence。
+    两件事叠加 = 用户拍糊了，系统却拿着空分析硬答，还走「缺失放行」路径。
+    这里与 ``question._is_ocr_meta`` 同判据（长度上限 60 字 + 标记包含），
+    作为编排层兜底——源头（analyze_question）已拦，这里防其他路径漏网。
+    """
+    text = str(analysis.get("question_text") or "").strip()
+    if not text:
+        return True
+    if len(text) > 60:
+        return False
+    return any(marker in text for marker in question.OCR_META_MARKERS)
+
+
 def _confidence_gate(analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """低置信度闸门：模型自评置信度低于阈值时，返回「引导重拍」代替硬答。
 
     阈值读 ``system_config`` 的 ``CONFIDENCE_RETHRESHOLD``（默认 -1 = 关闭，
     灰度开关）：值 <0 表示机制关闭；``confidence`` 缺失（模型没给 / 解析失败）
     或无法转 float 时一律放行——不拿「没有自评」当「没看清」，避免误伤。
+    **例外**：题面为空 / 只是 OCR 元话语时，缺失也按 0 分拦截——那是拍照失败，
+    不是「模型没给自评」，不能拿空分析硬答（见 ``_has_no_real_question``）。
 
     Args:
         analysis: ``question.analyze_question`` 的分析结论。
@@ -93,14 +112,27 @@ def _confidence_gate(analysis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if threshold < 0:
         return None
 
+    no_content = _has_no_real_question(analysis)
     raw = analysis.get("confidence")
     if raw is None:
+        if no_content:
+            return {
+                "need_rephoto": True,
+                "confidence": 0.0,
+                "message": REPHOTO_MESSAGE,
+            }
         return None
     try:
         confidence = float(raw)
     except (TypeError, ValueError):
+        if no_content:
+            return {
+                "need_rephoto": True,
+                "confidence": 0.0,
+                "message": REPHOTO_MESSAGE,
+            }
         return None
-    if confidence >= threshold:
+    if not no_content and confidence >= threshold:
         return None
 
     logger.info(

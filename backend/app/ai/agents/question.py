@@ -134,6 +134,33 @@ def _merge_question_text(ocr_text: str, typed_text: str) -> str:
     return "\n".join(parts).strip()
 
 
+#: OCR 模型在糊图 / 非题目图上不会返回空串，而是返回一句「元话语」解释自己
+#: 为什么没转写（2026-10-23 实测：重模糊页返回「无有效题目内容，返回空。」）。
+#: 这句话不是题面——若放行，后续 analyze 会拿着它硬答，且 analyze JSON 往往
+#: 不带 confidence，低置信度闸门按「缺失放行」处理，用户拿到空分析还被告知正常。
+OCR_META_MARKERS: tuple[str, ...] = (
+    "无有效题目",
+    "无有效内容",
+    "无法识别",
+    "未能识别",
+    "没有识别到",
+    "读取失败",
+    "返回空",
+)
+
+
+def _is_ocr_meta(text: str) -> bool:
+    """判断题面是否只是 OCR 的元话语（而非真实题目内容）。
+
+    长度上限 60 字：真实题面（哪怕只有一行）通常也长于元话语句式；
+    正常题面极少完整包含「无有效题目」这类短语，误伤面可控。
+    """
+    s = (text or "").strip()
+    if not s or len(s) > 60:
+        return False
+    return any(marker in s for marker in OCR_META_MARKERS)
+
+
 def _build_analysis(raw: str, question_text: str) -> Dict[str, Any]:
     """把方舟分析响应收敛成统一的返回结构。
 
@@ -180,7 +207,7 @@ def analyze_question(*, text: Optional[str], image_b64: Optional[str]) -> Dict[s
 
     ocr_text = ocr_image(image) if image else ""
     question_text = _merge_question_text(ocr_text, typed_text)
-    if not question_text:
+    if not question_text or _is_ocr_meta(question_text):
         raise ApiError(CODE_BAD_REQUEST, "没能从图片里读出题目，换张清楚点的照片试试")
 
     raw = ark_respond(
@@ -212,7 +239,7 @@ async def analyze_question_async(*, text: Optional[str], image_b64: Optional[str
 
     ocr_text = await ocr_image_async(image) if image else ""
     question_text = _merge_question_text(ocr_text, typed_text)
-    if not question_text:
+    if not question_text or _is_ocr_meta(question_text):
         raise ApiError(CODE_BAD_REQUEST, "没能从图片里读出题目，换张清楚点的照片试试")
 
     raw = await ark_respond_async(

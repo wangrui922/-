@@ -253,3 +253,104 @@ def test_default_threshold_is_disabled():
 def test_normalize_confidence(raw: Any, expected: Any):
     """``_normalize_confidence``：0~1 收敛 + 缺失/脏值按 None（放行）处理。"""
     assert question_agent._normalize_confidence(raw) == expected
+
+
+# ====================================================================  ⑤ OCR 元话语（2026-10-23 实测修复）
+@pytest.fixture
+def gate_threshold_06():
+    """给 _confidence_gate 单测用：阈值置 0.6，结束自动还原。"""
+    from app.core import system_config
+
+    original = system_config._cache
+    system_config._cache = {"CONFIDENCE_RETHRESHOLD": 0.6}
+    yield
+    system_config._cache = original
+
+
+def test_ocr_meta_question_text_blocked_without_confidence(gate_threshold_06):
+    """⑤ 题面只是 OCR 元话语（重模糊图）+ confidence 缺失 → 必须拦截。
+
+    实测背景：糊图上 OCR 不返回空串，而返回「无有效题目内容，返回空。」，
+    analyze JSON 也不带 confidence。原实现两件事叠加 = 用户拍糊了却拿到
+    空分析硬答（缺失按放行处理）。现在空内容缺失也按 0 分拦截。
+    """
+    blocked = orchestrator._confidence_gate(
+        {"question_text": "无有效题目内容，返回空。", "confidence": None}
+    )
+    assert blocked is not None
+    assert blocked["need_rephoto"] is True
+    assert blocked["confidence"] == 0.0
+    assert "重新拍" in blocked["message"]
+
+
+def test_ocr_meta_blocked_even_with_high_confidence(gate_threshold_06):
+    """⑥ 题面是元话语时，模型自评 0.95 也不信——内容为空，置信度无意义。"""
+    blocked = orchestrator._confidence_gate(
+        {"question_text": "无有效题目内容，返回空。", "confidence": 0.95}
+    )
+    assert blocked is not None and blocked["need_rephoto"] is True
+
+
+def test_empty_question_text_blocked_without_confidence(gate_threshold_06):
+    """⑦ 题面为空串 + confidence 缺失 → 同样拦截（与元话语同一兜底）。"""
+    blocked = orchestrator._confidence_gate({"question_text": "", "confidence": None})
+    assert blocked is not None and blocked["need_rephoto"] is True
+
+
+def test_normal_question_missing_confidence_still_passes():
+    """⑧ 反向锁：正常题面 + confidence 缺失 → 仍然放行（不误伤，原契约不动）。"""
+    assert orchestrator._confidence_gate(
+        {"question_text": "解方程：2x + 3 = 7", "confidence": None}
+    ) is None
+
+
+def test_threshold_disabled_skips_meta_check():
+    """⑨ 阈值 -1（关闭）时元话语也放行——灰度开关优先，运营可整体关闸门。"""
+    from app.core import system_config
+
+    original = system_config._cache
+    system_config._cache = {"CONFIDENCE_RETHRESHOLD": -1}
+    try:
+        assert orchestrator._confidence_gate(
+            {"question_text": "无有效题目内容，返回空。", "confidence": None}
+        ) is None
+    finally:
+        system_config._cache = original
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("无有效题目内容，返回空。", True),
+        ("图片模糊，无法识别题目", True),
+        ("未能识别到有效内容", True),
+        ("解方程：2x + 3 = 7", False),
+        ("", False),  # 空串由调用方的 not question_text 分支处理
+        ("无" * 70, False),  # 超长（>60 字）不判元话语，防误伤长题面
+    ],
+)
+def test_is_ocr_meta(text: str, expected: bool):
+    """层 1 判据：短句 + 元话语标记才算；长题面不误伤。"""
+    assert question_agent._is_ocr_meta(text) is expected
+
+
+def test_analyze_question_rejects_ocr_meta(monkeypatch):
+    """⑩ 层 1（源头）：OCR 返回元话语 → 直接 400，不做无意义的 analyze 调用。"""
+    patch_ark(monkeypatch, FakeArk(ocr_text="无有效题目内容，返回空。"))
+    from app.core.response import ApiError
+
+    with pytest.raises(ApiError) as ei:
+        question_agent.analyze_question(text=None, image_b64="ZmFrZS1pbWFnZQ==")
+    assert "换张清楚点" in str(ei.value)
+
+
+def test_analyze_question_typed_text_not_blocked_by_meta_marker(monkeypatch):
+    """⑪ 用户手输正常题面（哪怕含「无法」字样但足够长）→ 不拦，照常分析。"""
+    ark = patch_ark(monkeypatch, FakeArk(confidence=0.9))
+    result = question_agent.analyze_question(
+        text="应用题：甲乙两地相距 300 千米，货车速度无法直接得知，需先求客车速度再推导",
+        image_b64=None,
+    )
+    assert result["question_text"].startswith("应用题")
+    assert result["confidence"] == 0.9
+    assert ark.count("analyze") == 1
