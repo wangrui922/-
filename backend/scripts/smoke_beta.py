@@ -434,6 +434,9 @@ def finish(args, db, created_user_ids, created_code_id=None, created_student_ids
                      f"delete from student_learning_profiles where student_id in {sids_in}"),
                     ("practice_progress",
                      f"delete from practice_progress where student_id in {sids_in}"),
+                    # C02 Phase 3 新增 L3 综合层（无 ORM 模型，raw SQL 维护）
+                    ("student_mastery_synthesis",
+                     f"delete from student_mastery_synthesis where student_id in {sids_in}"),
                     ("subscriptions", f"delete from subscriptions where user_id in ({uids})"),
                     ("payment_transactions",
                      f"delete from payment_transactions where user_id in ({uids})"),
