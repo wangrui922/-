@@ -41,6 +41,12 @@ from app.engines.types import (
     to_float,
     to_int,
 )
+from app.core.constants import (
+    MASTERY_CONFIDENCE_K,
+    MASTERY_HALF_LIFE_DAYS,
+    MASTERY_PRIOR_SCORE,
+)
+from app.core.error_categories import ERROR_CHECK, ERROR_KNOWLEDGE
 
 logger = logging.getLogger("app.engines.config")
 
@@ -487,6 +493,120 @@ def read_adaptive_config(db: Any) -> AdaptiveConfig:
     return build_adaptive_config(values)
 
 
+# ================================================================= 六维掌握度配置（C02 · Phase 1）
+@dataclass(frozen=True)
+class MasteryDimConfig:
+    """六维掌握度评分的可调阈值（冻结，构造期夹紧）。
+
+    字段分工：
+        * ``min_samples`` / ``slip_credit`` / ``prior`` / ``k`` / ``half_life`` /
+          ``retention_floor`` 可由后台 ``system_config`` 调（见
+          ``MASTERY_DIM_CONFIG_SPECS``）；
+        * ``concept_deficit`` / ``procedure_deficits`` 是错因口径，与
+          ``app.core.error_categories.ERROR_CATEGORIES`` 唯一真相源绑定，固定不进 DB。
+
+    Attributes:
+        min_samples: 单维最小有效样本（衰减加权），低于则维度判为 ``None``（样本不足降级）。
+        slip_credit: 非硬伤错因的信用分 0~1（概念/程序维度里，除硬伤外的错误给半分）。
+        prior: 贝叶斯先验分（与 D0 同口径，新知识点从 0.5 起算）。
+        k: 先验强度（有效样本越接近 0 越被拽回先验）。
+        half_life: 时效衰减半衰期（天），越大历史越保值。
+        retention_floor: D5 留存视为「弱」的下限（低于此召回率判留存弱）。
+        concept_deficit: D1 概念理解的硬伤错因（命中即该次不给概念信用）。
+        procedure_deficits: D2 程序执行的硬伤错因集合（命中即该次不给程序信用）。
+    """
+
+    min_samples: int = 3
+    slip_credit: float = 0.5
+    prior: float = MASTERY_PRIOR_SCORE
+    k: float = MASTERY_CONFIDENCE_K
+    half_life: float = MASTERY_HALF_LIFE_DAYS
+    retention_floor: float = 0.4
+    concept_deficit: str = ERROR_KNOWLEDGE
+    procedure_deficits: Any = ("CHECK", "CALC")
+
+    def __post_init__(self) -> None:
+        """把每个字段夹紧到合法区间（脏配置不得把评分算飞）。"""
+        set_field = object.__setattr__
+        set_field(self, "min_samples", max(0, to_int(self.min_samples, 3)))
+        set_field(self, "slip_credit", clamp(self.slip_credit, 0.0, 1.0))
+        set_field(self, "prior", clamp(self.prior, 0.0, 1.0))
+        set_field(self, "k", _positive(self.k, MASTERY_CONFIDENCE_K))
+        set_field(self, "half_life", _positive(self.half_life, MASTERY_HALF_LIFE_DAYS))
+        set_field(self, "retention_floor", clamp(self.retention_floor, 0.0, 1.0))
+
+
+#: 六维配置清单（唯一真相源：新增阈值只需在这里加一行）
+_MASTERY_DIM_SPEC_TABLE: Tuple[Tuple[str, str, str, Any], ...] = (
+    ("mastery.dim.min_samples", "min_samples", _KIND_INT, 3),
+    ("mastery.dim.slip_credit", "slip_credit", _KIND_FLOAT, 0.5),
+    ("mastery.dim.prior", "prior", _KIND_FLOAT, MASTERY_PRIOR_SCORE),
+    ("mastery.dim.k", "k", _KIND_FLOAT, MASTERY_CONFIDENCE_K),
+    ("mastery.dim.half_life", "half_life", _KIND_FLOAT, MASTERY_HALF_LIFE_DAYS),
+    ("mastery.dim.retention_floor", "retention_floor", _KIND_FLOAT, 0.4),
+)
+
+MASTERY_DIM_CONFIG_SPECS: Tuple[ConfigSpec, ...] = tuple(
+    ConfigSpec(CONFIG_KEY_PREFIX + suffix, attr, kind, default)
+    for suffix, attr, kind, default in _MASTERY_DIM_SPEC_TABLE
+)
+MASTERY_DIM_CONFIG_KEYS: Tuple[str, ...] = tuple(spec.key for spec in MASTERY_DIM_CONFIG_SPECS)
+DEFAULT_MASTERY_DIM_CONFIG: MasteryDimConfig = MasteryDimConfig()
+
+
+def build_mastery_dim_config(values: Optional[Mapping[str, Any]] = None) -> MasteryDimConfig:
+    """由原始 key-value 解码出冻结的 ``MasteryDimConfig``（**纯函数**）。
+
+    兼容完整 key ``adaptive.mastery.dim.min_samples`` 与短写
+    ``mastery.dim.min_samples``；脏值回退缺省；未知 key 忽略。
+    ``concept_deficit`` / ``procedure_deficits`` 不在此表，保持 dataclass 缺省。
+    """
+    source: Mapping[str, Any] = values if isinstance(values, Mapping) else {}
+    payload: Dict[str, Any] = {}
+    for spec in MASTERY_DIM_CONFIG_SPECS:
+        raw = source.get(spec.key)
+        if raw is None:
+            raw = source.get(short_key(spec.key))
+        if raw is None:
+            payload[spec.attr] = spec.default
+            continue
+        caster = _CASTERS.get(spec.kind, _CASTERS[_KIND_FLOAT])
+        payload[spec.attr] = caster(raw, spec.default)
+    return MasteryDimConfig(**payload)
+
+
+def mastery_dim_config_to_rows() -> Dict[str, str]:
+    """把缺省六维配置序列化成 ``{key: value_str}``，用于种子/后台初始化。"""
+    rows: Dict[str, str] = {}
+    for spec in MASTERY_DIM_CONFIG_SPECS:
+        value = getattr(DEFAULT_MASTERY_DIM_CONFIG, spec.attr)
+        rows[spec.key] = str(value)
+    return rows
+
+
+def read_mastery_dim_config(db: Any) -> MasteryDimConfig:
+    """从 ``system_config`` 表读出六维配置（**本模块唯一的 DB 边界**）。
+
+    只读 ``MASTERY_DIM_CONFIG_KEYS`` 这些行；读不到/表不存在/会话异常一律记日志
+    并回退缺省值——配置读失败绝不能把掌握度评分主流程打挂。
+    """
+    values: Dict[str, Any] = {}
+    try:
+        from sqlalchemy import select  # noqa: PLC0415 - 延迟导入，保持 import 期纯净
+        from app.models.system_config import SystemConfig  # noqa: PLC0415
+
+        rows = db.execute(
+            select(SystemConfig.key, SystemConfig.value).where(
+                SystemConfig.key.in_(MASTERY_DIM_CONFIG_KEYS)
+            )
+        ).all()
+        values = {str(key): value for key, value in rows if key is not None}
+    except Exception as exc:  # noqa: BLE001 - 配置读失败按降级处理，不上抛
+        logger.warning("读取 mastery_dim_config 失败，回退缺省值: %s", exc)
+        values = {}
+    return build_mastery_dim_config(values)
+
+
 __all__ = [
     "CONFIG_KEY_PREFIX",
     "CONFIG_SPECS",
@@ -498,4 +618,11 @@ __all__ = [
     "adaptive_config_to_rows",
     "read_adaptive_config",
     "short_key",
+    "MasteryDimConfig",
+    "MASTERY_DIM_CONFIG_SPECS",
+    "MASTERY_DIM_CONFIG_KEYS",
+    "DEFAULT_MASTERY_DIM_CONFIG",
+    "build_mastery_dim_config",
+    "mastery_dim_config_to_rows",
+    "read_mastery_dim_config",
 ]
