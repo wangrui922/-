@@ -62,6 +62,11 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from app.engines.gap_ranking import (  # noqa: E402  (需先补 sys.path)
+    GapCandidate,
+    candidate_from_mapping,
+    rank_gaps,
+)
 from app.engines.scenario_kp_mapping import (  # noqa: E402  (需先补 sys.path)
     ANNOTATION_ISSUES,
     EXPECTED_QUESTION_COUNT,
@@ -87,6 +92,23 @@ DEFAULT_BATCH_SIZE = 500
 
 #: 备份文件名前缀
 BACKUP_PREFIX = "backfill-scenario-kp-backup"
+
+#: 缺口榜取前 N 条（写进 JSON 报告的 ``gap_ranking.items``）。
+#:
+#: ⚠️ 为什么是常量而不是 ``CONFIG_SPECS`` 键：``CONFIG_SPECS`` 被 31 键
+#: golden 测试锁死，且与并行 rag 分支冲突；缺口榜条数属于**报告呈现参数**，
+#: 走模块常量即可。
+GAP_RANKING_TOP_N = 50
+
+#: 缺口榜段的口径说明（**必须如实写明两个缺席因子**，不许伪造数据填它们）。
+GAP_RANKING_NOTE = (
+    "「前置被依赖」因子未启用（knowledge_relations 4 行 / knowledge_prerequisite 0 行，"
+    "依赖边数据不足，该因子在引擎里 enabled=False 只留接口位）；"
+    "错因命中数因子恒 0（错因富化埋点未上线）。"
+    "本榜口径为：错因命中数 > 重要度 > 难度 > 零题量时长（字典序）。"
+    "「零题量时长」取该知识点建档至今的天数（库里没有题量历史快照表，"
+    "这是可得的最近似口径，非精确的『连续零题量天数』）。"
+)
 
 
 # ============================================================ 数据结构
@@ -138,6 +160,7 @@ class BackfillOutcome:
     skipped_same: int = 0
     skipped_mismatch: int = 0
     skipped_no_mapping: int = 0
+    gap_ranking: Dict[str, Any] = field(default_factory=dict)
 
 
 # ============================================================ 工具函数
@@ -355,6 +378,119 @@ def count_zero_question_kps(connection: sqlite3.Connection) -> int:
     return int(row[0]) if row else 0
 
 
+# ============================================================ 缺口榜（脚本层查库 → 引擎层纯排序）
+def fetch_gap_candidates(connection: sqlite3.Connection) -> List[GapCandidate]:
+    """取「零题量 active 知识点」候选集（**脚本层查库**）。
+
+    ⚠️ 职责边界：``app/engines/gap_ranking.py`` 是**纯函数层**，不查库。
+    所以"哪些知识点算缺口"这件事必须由**本脚本**（唯一碰 SQLite 的地方）
+    查出来，再喂给引擎排序。
+
+    「零题量时长」取 ``knowledge_points.created_at`` 到今天的天数——
+    库里**没有**题量历史快照表，所以这是可得的最近似口径
+    （"建档至今一直零题量"），不是精确的"连续零题量天数"。
+    ``created_at`` 为空时记 0。
+
+    Args:
+        connection: 已打开的 SQLite 连接。
+
+    Returns:
+        候选知识点列表（``GapCandidate``）。
+    """
+    rows = connection.execute(
+        """
+        SELECT kp.id AS kp_id,
+               kp.code AS kp_code,
+               kp.name AS kp_name,
+               kp.grade AS grade,
+               kp.subject AS subject,
+               kp.importance AS importance,
+               kp.difficulty AS difficulty,
+               CAST(julianday('now') - julianday(kp.created_at) AS INTEGER)
+                   AS zero_duration_days,
+               (SELECT COUNT(*) FROM questions q
+                 WHERE q.kp_id = kp.id AND q.status = 'active') AS question_count
+          FROM knowledge_points kp
+         WHERE kp.status = 'active'
+         ORDER BY kp.code
+        """
+    ).fetchall()
+
+    candidates: List[GapCandidate] = []
+    for row in rows:
+        if int(row["question_count"] or 0) > 0:
+            continue  # 有题 → 不是缺口
+        candidates.append(
+            candidate_from_mapping(
+                {
+                    "knowledge_point_id": row["kp_id"],
+                    "kp_code": row["kp_code"] or "",
+                    "kp_name": row["kp_name"] or "",
+                    "grade": row["grade"],
+                    "subject": row["subject"] or "",
+                    "importance": row["importance"] or 0,
+                    "difficulty": row["difficulty"] or 0,
+                    "question_count": 0,
+                    "zero_duration_days": row["zero_duration_days"] or 0,
+                }
+            )
+        )
+    return candidates
+
+
+def build_gap_ranking_section(
+    connection: sqlite3.Connection,
+    top_n: int = GAP_RANKING_TOP_N,
+) -> Dict[str, Any]:
+    """产出 JSON 报告里的 ``gap_ranking`` 段。
+
+    结构::
+
+        {
+          "note": "…两个缺席因子的原因…",
+          "total_zero_question_kp": 244,
+          "ranked_count": 180,
+          "deferred_count": 64,
+          "top_n": 50,
+          "items": [ {kp_code, kp_name, grade, importance, difficulty,
+                  zero_days, rank, reason}, ... ]
+        }
+
+    Args:
+        connection: 已打开的 SQLite 连接。
+        top_n: ``items`` 取前 N 条。
+
+    Returns:
+        可 ``json.dumps`` 的 dict。
+    """
+    candidates = fetch_gap_candidates(connection)
+    ranking = rank_gaps(candidates)
+    items: List[Dict[str, Any]] = []
+    for result in ranking.ranked[: max(0, int(top_n))]:
+        items.append(
+            {
+                "rank": result.rank,
+                "kp_id": result.knowledge_point_id,
+                "kp_code": result.kp_code,
+                "kp_name": result.kp_name,
+                "grade": result.grade,
+                "band": result.band,
+                "importance": int(result.factors.get("importance", 0)),
+                "difficulty": int(result.factors.get("difficulty", 0)),
+                "zero_days": int(result.factors.get("zero_duration_days", 0)),
+                "reason": result.reason,
+            }
+        )
+    return {
+        "note": GAP_RANKING_NOTE,
+        "total_zero_question_kp": len(candidates),
+        "ranked_count": len(ranking.ranked),
+        "deferred_count": len(ranking.deferred),
+        "top_n": int(top_n),
+        "items": items,
+    }
+
+
 # ============================================================ 计划与写入
 def plan_targets(
     targets: Sequence[TargetRow],
@@ -492,6 +628,7 @@ def build_report(
             "after": outcome.zero_kp_after,
             "delta": outcome.zero_kp_after - outcome.zero_kp_before,
         },
+        "gap_ranking": outcome.gap_ranking,
         "questions": [
             {
                 "id": target.id,
@@ -568,6 +705,8 @@ def run_backfill(
             # 整批中止：外键校验不过，一条都不写
             outcome.validation_errors.extend(validation_errors)
             outcome.exit_code = EXIT_FK_VALIDATION_FAILED
+            # 中止时也要给出缺口榜（只读，不影响"零写入"）
+            outcome.gap_ranking = build_gap_ranking_section(connection)
             return outcome
 
         outcome.kp_counts_before = count_kp_questions(connection, TARGET_KP_CODES)
@@ -586,6 +725,9 @@ def run_backfill(
 
         outcome.kp_counts_after = count_kp_questions(connection, TARGET_KP_CODES)
         outcome.zero_kp_after = count_zero_question_kps(connection)
+        # 缺口榜：在**写完之后**取，反映报告生成时刻的库状态
+        # （dry-run 时库没变，取到的就是当前状态）。
+        outcome.gap_ranking = build_gap_ranking_section(connection)
     finally:
         connection.close()
 

@@ -261,6 +261,55 @@ def test_band_fallback_to_code_prefix_golden():
     assert band_of_candidate(by_id["kp-f"]) == "junior"  # 年级优先（7 → 初中）
 
 
+def test_f1_alias_is_primary():
+    """``F1``（分数加减）→ primary。
+
+    业务依据：**分数加减法是小学五年级内容**（人教版五年级上册）；
+    ``F1`` = Fraction 缩写，与 ``CZ_``/``HS_`` 并列属 K-12 小学体系；
+    ``grade`` 为空属历史遗留字段缺失，**不是**"学段未知"。
+    """
+    from app.engines.gap_ranking import PRIMARY_CODE_ALIASES
+
+    assert "F1" in PRIMARY_CODE_ALIASES
+
+    candidate = GapCandidate(
+        knowledge_point_id="kp-f1",
+        kp_code="F1",
+        kp_name="分数加减",
+        grade=None,
+        importance=4,
+        difficulty=3,
+    )
+    assert band_of_candidate(candidate) == "primary"
+    assert candidate.band == "primary"
+
+    # 白名单命中的点应当**进补题队列**（不被暂缓）
+    ranking = rank_gaps([candidate])
+    assert len(ranking.ranked) == 1
+    assert ranking.ranked[0].kp_code == "F1"
+    assert ranking.deferred == ()
+
+
+def test_alias_does_not_relax_the_prefix_rule():
+    """白名单**只**点名具体 code，不得放宽整体前缀规则。
+
+    守的是"认不出学段"与"确实是小学段"的边界：不在白名单里的无前缀 code
+    仍必须是 ``unknown``（进而暂缓），不能被顺手判成小学段。
+    """
+    from app.engines.gap_ranking import PRIMARY_CODE_ALIASES
+
+    # 白名单是**精确 code 集合**，不是前缀
+    assert all("F1" == alias or "*" not in alias for alias in PRIMARY_CODE_ALIASES)
+    assert not any(alias.endswith("_") for alias in PRIMARY_CODE_ALIASES)
+
+    # 别的无前缀 code 仍然是 unknown
+    for code in ("F2", "F1_X", "XYZ", "f1x"):
+        candidate = GapCandidate(
+            knowledge_point_id="kp-x", kp_code=code, kp_name="x", grade=None
+        )
+        assert band_of_candidate(candidate) == "unknown", code
+
+
 def test_junior_and_senior_are_deferred_not_dropped(ranking):
     """初中 / 高中段标记暂缓，但**不丢弃**。"""
     deferred_ids = {item.knowledge_point_id for item in ranking.deferred}

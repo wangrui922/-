@@ -43,6 +43,23 @@
 本表每一行都已按该偏移逐条核对过实际题干（核对样本见
 ``backend/tests/test_backfill_scenario_kp.py``）。
 
+关于 ``kp_verified``：**本轮不需要动它**
+----------------------------------------
+864 道场景题的 ``kp_verified`` **本来就是 1**——``generate_scenario_bank.py``
+写 INSERT 时同时写了 ``kp_verified=1``（配套还有 ``source_tag='green'``、
+``ship_ready=1``、``status='active'``）。所以 B-0 回填**只需要写
+``questions.kp_id`` 一列**：
+
+* 回填脚本的唯一写操作是
+  ``UPDATE questions SET kp_id = ? WHERE id = ? AND kp_id IS NULL``；
+* ``kp_verified`` **既不需要同步改，也不应该改**——它已经是"人工已复核"的
+  语义值，改它等于凭空制造写入；
+* "只改一列"是本轮回填的硬不变式，脚本与它的守卫测试都按**逐列比对**
+  验证这一点（备份 vs 回填后：变化列集合必须恰好等于 ``{"kp_id"}``）。
+
+⚠️ 后人若看到"回填"就顺手把 ``kp_verified`` 也刷一遍，那是**多余的写入**，
+而且会直接破坏上面那条不变式——`test_only_kp_id_column_changes` 会变红。
+
 审计
 ----
 ``export_mapping_json()`` 输出可直接归档的 JSON（含每条的 ``reason``），

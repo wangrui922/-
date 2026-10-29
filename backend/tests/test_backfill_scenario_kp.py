@@ -722,6 +722,106 @@ class TestReport:
         assert report["backup_path"] is None
 
 
+# ============================================================ 8. 缺口榜段
+class TestGapRankingSection:
+    """JSON 报告必须带 ``gap_ranking`` 段（缺口榜 PRD 交付物）。"""
+
+    def test_report_contains_gap_ranking_section(
+        self, sample_db: Path, tmp_path: Path
+    ) -> None:
+        report_path = tmp_path / "report.json"
+        bsk.main([str(sample_db), "--report", str(report_path)])
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        assert "gap_ranking" in report, "报告缺 gap_ranking 段"
+        section = report["gap_ranking"]
+        for key in ("note", "total_zero_question_kp", "items"):
+            assert key in section, f"gap_ranking 段缺 {key}"
+
+    def test_gap_ranking_note_is_non_empty_and_explains_both_absent_factors(
+        self, sample_db: Path, tmp_path: Path
+    ) -> None:
+        """``note`` 必须写明两个缺席因子的原因，且**不许伪造数据**填它们。"""
+        report_path = tmp_path / "report.json"
+        bsk.main([str(sample_db), "--report", str(report_path)])
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        note = report["gap_ranking"]["note"]
+
+        assert note.strip(), "note 不得为空"
+        assert "前置被依赖" in note
+        assert "knowledge_relations" in note
+        assert "knowledge_prerequisite" in note
+        assert "错因命中数" in note
+
+    def test_gap_ranking_items_count_is_correct(
+        self, sample_db: Path, tmp_path: Path
+    ) -> None:
+        """``items`` 条数 = min(top_n, 零题量 KP 数)，且名次连续。
+
+        样例库里有 7 个 active 知识点，回填前**一个题都没有** → 7 个缺口；
+        ``top_n`` 默认 50，所以 ``items`` 应当是 7 条。
+        """
+        report_path = tmp_path / "report.json"
+        bsk.main([str(sample_db), "--report", str(report_path)])
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        section = report["gap_ranking"]
+
+        assert section["total_zero_question_kp"] == 7
+        assert section["ranked_count"] == 7
+        assert section["deferred_count"] == 0
+        assert section["top_n"] == bsk.GAP_RANKING_TOP_N
+        assert len(section["items"]) == min(
+            bsk.GAP_RANKING_TOP_N, section["total_zero_question_kp"]
+        )
+        assert [item["rank"] for item in section["items"]] == [1, 2, 3, 4, 5, 6, 7]
+
+    def test_gap_ranking_items_have_required_fields(
+        self, sample_db: Path, tmp_path: Path
+    ) -> None:
+        """每条 item 的字段集必须齐（人工过目要看得懂）。"""
+        report_path = tmp_path / "report.json"
+        bsk.main([str(sample_db), "--report", str(report_path)])
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        for item in report["gap_ranking"]["items"]:
+            for key in (
+                "rank",
+                "kp_code",
+                "kp_name",
+                "grade",
+                "importance",
+                "difficulty",
+                "zero_days",
+                "reason",
+            ):
+                assert key in item, f"item 缺 {key}"
+            assert item["reason"].strip()
+
+    def test_gap_ranking_reflects_post_backfill_state(
+        self, sample_db: Path, tmp_path: Path
+    ) -> None:
+        """回填后那 7 个 KP 都有了题 → 不再是缺口 → ``items`` 变空。
+
+        缺口榜反映的是**报告生成时刻的库状态**，不是回填前的快照。
+        """
+        report_path = tmp_path / "report.json"
+        bsk.main([str(sample_db), "--confirm", "--report", str(report_path)])
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        section = report["gap_ranking"]
+
+        assert section["total_zero_question_kp"] == 0
+        assert section["items"] == []
+
+    def test_gap_ranking_does_not_write_anything_in_dry_run(
+        self, sample_db: Path
+    ) -> None:
+        """缺口榜是**只读**的：dry-run 后库内容必须一字未改。"""
+        before = read_questions(sample_db)
+        bsk.run_backfill(sample_db, confirm=False)
+        after = read_questions(sample_db)
+        assert before == after
+
+
 # ============================================================ 7. CLI 其它约束
 class TestCliConstraints:
     """CLI 与工程约束。"""

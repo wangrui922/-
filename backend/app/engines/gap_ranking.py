@@ -62,6 +62,8 @@ __all__ = [
     "GapCandidate",
     "GapRankResult",
     "GapRanking",
+    "PRIMARY_CODE_ALIASES",
+    "CODE_PREFIX_BAND",
     "grade_band_of",
     "band_of_candidate",
     "candidate_from_mapping",
@@ -90,6 +92,30 @@ CODE_PREFIX_BAND: Mapping[str, str] = {
     "HS_": BAND_SENIOR,
     "KP_": BAND_PRIMARY,
 }
+
+#: **显式白名单**：个别知识点的 ``code`` 既不带学段前缀、``grade`` 字段也为空，
+#: 但业务上明确属于小学段。
+#:
+#: ⚠️ 之所以**逐个点名**而不是放宽整体前缀规则：放宽规则会把两种完全不同
+#: 的情况混成一种——"**确实是小学段，只是 code 不合约定**" vs "**真的认不出
+#: 学段**"。前者可以点名确认，后者应该进人工复核。白名单保持**可审计**：
+#: 每加一个都是一次显式决策，且在下面写清理由。
+#:
+#: 目前全库只有 **1** 个这样的点（2026-08 实测：328 个 active KP 里，
+#: 非 ``KP_``/``CZ_``/``HS_`` 前缀的只有它一个）：
+#:
+#:     code=F1  name=分数加减  grade=NULL  subject=math  status=active
+#:
+#: 归小学段的依据：
+#:   * **分数加减法是小学五年级内容**（人教版五年级上册）；
+#:   * ``F1`` = **Fraction**（分数）的缩写，与 ``CZ_``（初中）/ ``HS_``（高中）
+#:     并列，语义上属 K-12 小学体系；
+#:   * ``grade`` 为空是**历史遗留的字段缺失**（该知识点由早期导入脚本写入，
+#:     没填升入年级），**不是**"学段未知"。
+#:
+#: 匹配方式为**精确 code 相等**（不是前缀），因此不会与 ``CODE_PREFIX_BAND``
+#: 的前缀规则冲突，也不会误伤将来出现的 ``F1_xxx`` 之类的新 code。
+PRIMARY_CODE_ALIASES: Tuple[str, ...] = ("F1",)
 
 #: 本轮补题只做小学段；初 / 高中段标记暂缓。
 ACTIVE_BANDS: Tuple[str, ...] = (BAND_PRIMARY,)
@@ -252,6 +278,7 @@ class GapRankResult:
         knowledge_point_id: 知识点 id。
         kp_code: 知识点 code。
         kp_name: 知识点名称。
+        grade: 升入年级（``knowledge_points.grade``；可能为空）。
         band: 学段。
         factors: 各因子的原始值（键 = 因子 key）。
         sort_key: 实际用于排序的比较键（元组）。
@@ -264,7 +291,8 @@ class GapRankResult:
     knowledge_point_id: str
     kp_code: str
     kp_name: str
-    band: str
+    grade: Optional[int] = None
+    band: str = ""
     factors: Dict[str, int] = field(default_factory=dict)
     sort_key: Tuple[Any, ...] = ()
     reason: str = ""
@@ -278,6 +306,7 @@ class GapRankResult:
             "knowledgePointId": self.knowledge_point_id,
             "kpCode": self.kp_code,
             "kpName": self.kp_name,
+            "grade": self.grade,
             "band": self.band,
             "factors": dict(self.factors),
             "sortKey": list(self.sort_key),
@@ -363,6 +392,9 @@ def band_of_candidate(candidate: GapCandidate) -> str:
     这正是库里 59 个「零题量且年级为空」的知识点的判定方式
     （它们的 code 前缀就编码了学段）。
 
+    前缀也认不出时，再查**显式白名单** ``PRIMARY_CODE_ALIASES``
+    （目前只有 ``F1`` 分数加减，见该常量处的理由）。
+
     Args:
         candidate: 候选知识点。
 
@@ -376,6 +408,8 @@ def band_of_candidate(candidate: GapCandidate) -> str:
     for prefix, prefix_band in CODE_PREFIX_BAND.items():
         if code.startswith(prefix):
             return prefix_band
+    if code in PRIMARY_CODE_ALIASES:
+        return BAND_PRIMARY
     return BAND_UNKNOWN
 
 
@@ -522,6 +556,7 @@ def rank_gaps(
             knowledge_point_id=candidate.knowledge_point_id,
             kp_code=candidate.kp_code,
             kp_name=candidate.kp_name,
+            grade=candidate.grade,
             band=band,
             factors=_factor_snapshot(candidate),
             sort_key=_sort_key(candidate),
@@ -536,6 +571,7 @@ def rank_gaps(
                     knowledge_point_id=base.knowledge_point_id,
                     kp_code=base.kp_code,
                     kp_name=base.kp_name,
+                    grade=base.grade,
                     band=band,
                     factors=base.factors,
                     sort_key=base.sort_key,
@@ -561,6 +597,7 @@ def rank_gaps(
                     knowledge_point_id=base.knowledge_point_id,
                     kp_code=base.kp_code,
                     kp_name=base.kp_name,
+                    grade=base.grade,
                     band=band,
                     factors=base.factors,
                     sort_key=base.sort_key,
@@ -582,6 +619,7 @@ def rank_gaps(
             knowledge_point_id=item.knowledge_point_id,
             kp_code=item.kp_code,
             kp_name=item.kp_name,
+            grade=item.grade,
             band=item.band,
             factors=item.factors,
             sort_key=item.sort_key,
