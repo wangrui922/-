@@ -9,6 +9,11 @@
     * C02 Phase 2 ``recompute_student_six_dim_mastery``：每日批量重算六维分维
       （concept/procedure/independent/transfer/retention）并 upsert 进
       ``student_knowledge_mastery`` 的五个预留列，口径走 ``engines.mastery_sixdim``；
+    * C02 Phase 3 ``consolidate_mastery``：L3 综合洞察层落库（错因聚类 / 薄弱链路 /
+      学习趋势三类），口径走纯函数 ``engines.mastery_synthesis``；表
+      ``student_mastery_synthesis`` **无 ORM 模型**（raw SQL 维护，见
+      ``migrations/025_student_mastery_synthesis_sqlite.sql``），带
+      ``ref_kp_ids`` / ``ref_event_ids`` 溯源边，**溯源边缺失即拒写**；
     * DNA-004 ``record_learning_event``：行为事件落库（八类枚举校验，
       practice/chat 回调埋点统一走这里，落库后同事务联动 DNA-003）；
     * DNA-005 ``get_learning_dna``：画像 + 知识点掌握汇总 + 最近事件摘要
@@ -20,6 +25,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -35,6 +41,11 @@ from app.engines.mastery_sixdim import (
     SixDimEvent,
     six_dim_mastery_for_student,
 )
+from app.engines.mastery_synthesis import (
+    SYNTHESIS_TYPES,
+    SynthesisEvent,
+    synthesize_student,
+)
 from app.models.content import KnowledgePoint
 from app.models.dna import (
     HINT_DEPENDENCY_VALUES,
@@ -44,7 +55,12 @@ from app.models.dna import (
     StudentLearningEvent,
     StudentLearningProfile,
 )
-from app.services.mastery_engine import grade_level
+from app.models.knowledge_prerequisite import KnowledgePrerequisite
+from app.services.mastery_engine import (
+    MasteryResult,
+    PrerequisiteEdge,
+    grade_level,
+)
 
 
 #: 六维事件 meta 键（与埋点 `_hint_context` / `mastery_delta_for_event` 同源）
@@ -474,11 +490,11 @@ def _build_retention_events(
     记为召回。两张表无 ORM 模型（FSRS 模块 raw SQL 维护），若尚未建表
     （测试内存库 / schema_reconcile 未跑）则优雅返回空列表，不抛错。
     """
-    bind = db.bind
-    inspector = inspect(bind)
-    if not inspector.has_table("review_logs") or not inspector.has_table("review_cards"):
+    # ⚠️ 用 ``_table_exists``（复用 session 自己的连接），不要用
+    # ``inspect(db.bind).has_table()``——后者会向连接池再借一条连接，
+    # StaticPool 单连接库归还时 rollback → 静默回滚调用方未提交的写入。
+    if not _table_exists(db, "review_logs") or not _table_exists(db, "review_cards"):
         return []
-
     rows = db.execute(
         text(
             """
@@ -582,6 +598,315 @@ def recompute_student_six_dim_mastery(
 
     db.flush()
     return updated
+
+
+# ================================================================== C02 Phase3 L3 综合层
+# L3 = L1 事件 + L2 六维 → 跨知识点 / 跨时间的综合结论（错因聚类 / 薄弱链路 /
+# 学习趋势）。设计文档：``docs/design-c02-three-layer-student-model.md`` §3/§5/§6.2。
+#
+# 与 Phase 2 的分工：
+#   * Phase 2 写 L2 的 5 个分维列（有 ORM 模型，走 SQLAlchemy Core select）；
+#   * Phase 3 写 L3 的独立表（**无 ORM 模型**，走 raw SQL upsert），因为本表
+#     由本服务独占维护、列结构带 JSON 溯源数组，交给 ORM 会逼出一堆序列化字段。
+#
+# 落库表：``student_mastery_synthesis``（raw SQL，见
+# ``migrations/025_student_mastery_synthesis_sqlite.sql``）——**没有 ORM 模型，
+# 所以 ``create_all`` 永远建不出来**，必须靠 ``scripts/schema_reconcile.py``
+# 对账补建 + 冷母库同步（铁律 3 / 11）。因此本函数对「表不存在」做优雅降级。
+def _table_exists(db: Session, table_name: str) -> bool:
+    """探测表是否存在（**必须复用 session 自己的连接**）。
+
+    ⚠️ **不要用 ``inspect(db.bind).has_table()``**：那会从连接池**再借一条连接**。
+    测试库是 ``StaticPool``（全局单连接），借出即归还，而连接池归还时的默认
+    动作是 ``rollback`` → **把调用方当前事务里尚未提交的写入全部回滚掉**
+    （静默丢数据，且只在同一事务有未提交写入时才暴露，极难定位）。
+    实测踩坑：探测动作放在 ``get_learning_dna`` 里 → 同一事务里刚 flush 的
+    掌握度行被回滚 → 前置缺口检测拿到空列表。
+
+    ``db.connection()`` 返回的是 session **已在使用**的那条连接，不会触发
+    连接池借还，探测查询也就在调用方自己的事务里跑，语义安全。
+    """
+    try:
+        return bool(inspect(db.connection()).has_table(table_name))
+    except Exception:  # noqa: BLE001 —— 探测失败按「不存在」处理，保守不写
+        return False
+
+
+def _synthesis_table_exists(db: Session) -> bool:
+    """L3 表是否存在（无 ORM 模型 → ``create_all`` 建不出来，需探测）。"""
+    return _table_exists(db, "student_mastery_synthesis")
+
+
+def _build_synthesis_events(
+    db: Session, *, student_id: uuid.UUID
+) -> List[SynthesisEvent]:
+    """读该生全量学习事件 → ``SynthesisEvent`` 列表（L1 溯源来源）。
+
+    事件类型映射：
+        * ``CORRECT`` → ``is_correct=True``；
+        * ``ERROR``   → ``is_correct=False``；
+        * 其余五类（ANSWER/HINT/REVIEW/QUESTIONVIEW/SESSION*）→ ``is_correct=None``
+          （无判定意义，不进正确率口径，只计入活跃量）。
+    """
+    rows = (
+        db.execute(
+            select(StudentLearningEvent).where(
+                StudentLearningEvent.student_id == student_id
+            )
+        )
+        .scalars()
+        .all()
+    )
+    events: List[SynthesisEvent] = []
+    for ev in rows:
+        meta = ev.meta or {}
+        if ev.event_type == "CORRECT":
+            is_correct: Optional[bool] = True
+        elif ev.event_type == "ERROR":
+            is_correct = False
+        else:
+            is_correct = None
+        events.append(
+            SynthesisEvent(
+                event_id=str(ev.id),
+                event_type=ev.event_type,
+                kp_id=str(ev.knowledge_point_id) if ev.knowledge_point_id else None,
+                occurred_at=ev.created_at,
+                is_correct=is_correct,
+                error_text=meta.get("error_text"),
+                error_type=meta.get("error_type"),
+                independent=bool(meta.get(META_KEY_INDEPENDENT, False)),
+                transfer=bool(meta.get(META_KEY_TRANSFER, False)),
+            )
+        )
+    return events
+
+
+def _build_synthesis_mastery_map(
+    db: Session, *, student_id: uuid.UUID
+) -> Dict[str, MasteryResult]:
+    """读该生 L2 掌握行 → ``{kp_id: MasteryResult}``（WEAK_CHAIN 的输入）。
+
+    口径说明：``effective_attempts`` 用 ``practice_count`` 近似（不重算时间衰减，
+    与 ``detect_prerequisite_gaps`` 的判定口径无关——它只看 ``score`` 与
+    ``attempts``）；``level`` 由 ``grade_level`` 按同一口径补算，保持与既有看板
+    档位一致。
+    """
+    rows = (
+        db.execute(
+            select(StudentKnowledgeMastery).where(
+                StudentKnowledgeMastery.student_id == student_id
+            )
+        )
+        .scalars()
+        .all()
+    )
+    out: Dict[str, MasteryResult] = {}
+    for row in rows:
+        attempts = int(row.practice_count or 0)
+        correct = int(row.correct_count or 0)
+        score = float(row.mastery or 0.0)
+        out[str(row.knowledge_point_id)] = MasteryResult(
+            score=score,
+            level=grade_level(score, float(attempts), attempts),
+            attempts=attempts,
+            correct_count=correct,
+            error_rate=round(1.0 - correct / attempts, 4) if attempts > 0 else 0.0,
+            effective_attempts=float(attempts),
+            last_practiced_at=row.last_practice_at,
+        )
+    return out
+
+
+def _build_prerequisite_edges(db: Session) -> List[PrerequisiteEdge]:
+    """读知识图谱前置边 → ``List[PrerequisiteEdge]``（全图，缺口检测自带过滤）。
+
+    本表当前只有「prerequisite」一种关系类型（见
+    ``app/models/knowledge_prerequisite.py``），整表取用即可；若将来新增其它
+    关系类型，需在此处按 ``relation_type`` 过滤，避免污染缺口判定。
+    """
+    rows = db.execute(select(KnowledgePrerequisite)).scalars().all()
+    return [
+        PrerequisiteEdge(
+            pre_kp_id=str(row.pre_kp_id),
+            kp_id=str(row.kp_id),
+            weight=float(row.weight or 1.0),
+        )
+        for row in rows
+    ]
+
+
+def _upsert_synthesis(
+    db: Session,
+    *,
+    student_id: uuid.UUID,
+    result: Any,
+    now: datetime,
+) -> None:
+    """L3 行 upsert（raw SQL；表无 ORM 模型）。
+
+    幂等口径：``UNIQUE(student_id, synthesis_type)`` → 同一学生同一类型只保留
+    一行，重复重算覆盖 ``ref_*`` / ``payload`` / ``confidence`` / ``updated_at``，
+    ``created_at`` 保留首次写入时间。
+    """
+    stamp = now.isoformat() if isinstance(now, datetime) else str(now)
+    db.execute(
+        text(
+            """
+            INSERT INTO student_mastery_synthesis
+                (id, student_id, synthesis_type, ref_kp_ids, ref_event_ids,
+                 payload, confidence, created_at, updated_at)
+            VALUES (:id, :sid, :stype, :ref_kp, :ref_evt, :payload, :conf, :ca, :ua)
+            ON CONFLICT(student_id, synthesis_type) DO UPDATE SET
+                ref_kp_ids   = excluded.ref_kp_ids,
+                ref_event_ids= excluded.ref_event_ids,
+                payload      = excluded.payload,
+                confidence   = excluded.confidence,
+                updated_at   = excluded.updated_at
+            """
+        ),
+        {
+            "id": str(uuid.uuid4()),
+            "sid": str(student_id),
+            "stype": result.synthesis_type,
+            "ref_kp": json.dumps(result.ref_kp_ids, ensure_ascii=False),
+            "ref_evt": json.dumps(result.ref_event_ids, ensure_ascii=False),
+            "payload": json.dumps(result.payload, ensure_ascii=False),
+            "conf": float(result.confidence),
+            "ca": stamp,
+            "ua": stamp,
+        },
+    )
+
+
+def consolidate_mastery(
+    db: Session, *, student_id: uuid.UUID, now: Optional[datetime] = None
+) -> int:
+    """C02 Phase 3：对一名学生做 L3 综合并落库（每类一行，upsert）。
+
+    三类综合（口径走纯函数 ``engines.mastery_synthesis``）：
+        * ``ERROR_PATTERN`` 错因模式聚类（复用 ``aggregate_error_patterns``）；
+        * ``WEAK_CHAIN``    薄弱链路（复用 ``detect_prerequisite_gaps``）；
+        * ``TREND``         学习趋势（周窗正确率线性斜率）。
+
+    **溯源边守卫（铁律 7）**：某类综合若 ``ref_kp_ids`` 与 ``ref_event_ids``
+    **同时为空**，说明它既没有 L2 行也没有 L1 事件支撑——这类"空转结论"
+    一律**不写库**（不编造无依据的 L3）。这是可变异的守卫，有专门测试反证。
+    因此**表里每类最多一行、且可能少于 3 行**（例：没有前置缺口时
+    ``WEAK_CHAIN`` 无证据 → 不写）。
+
+    **陈旧行清理**：本次没有证据支撑的类型，其旧行会被删除——否则前置缺口
+    被补上后，家长端仍会看到过期的「薄弱链路」结论。
+
+    表 ``student_mastery_synthesis`` **无 ORM 模型**（``create_all`` 建不出来），
+    表不存在时本函数优雅返回 0（不抛错），由 ``schema_reconcile.py`` 负责补建。
+
+    事务：只 ``flush``，``commit`` 由调用方收口（与 DNA-002/003/004 同约定）。
+
+    Returns:
+        实际写入（upsert）的行数。
+    """
+    if not _synthesis_table_exists(db):
+        return 0
+
+    base_now = now or datetime.now(timezone.utc)
+    events = _build_synthesis_events(db, student_id=student_id)
+    mastery = _build_synthesis_mastery_map(db, student_id=student_id)
+    edges = _build_prerequisite_edges(db)
+
+    results = synthesize_student(events, mastery, edges, now=base_now)
+
+    written = 0
+    written_types: List[str] = []
+    for result in results.values():
+        if not result.ref_kp_ids and not result.ref_event_ids:
+            # 溯源边缺失 → 拒写（该结论没有任何 L1/L2 证据支撑）
+            continue
+        _upsert_synthesis(
+            db, student_id=student_id, result=result, now=base_now
+        )
+        written += 1
+        written_types.append(result.synthesis_type)
+
+    # 清理陈旧行：本次没有证据支撑的类型 → 旧行必须删掉。
+    # （例：前置缺口被补上后 WEAK_CHAIN 结论已不成立，若只 upsert 不删，
+    #   家长端会一直看到过期的「薄弱链路」结论。）
+    stale = [t for t in SYNTHESIS_TYPES if t not in written_types]
+    if stale:
+        params: Dict[str, Any] = {"sid": str(student_id)}
+        placeholders = []
+        for idx, stype in enumerate(stale):
+            key = f"st{idx}"
+            params[key] = stype
+            placeholders.append(f":{key}")
+        db.execute(
+            text(
+                "DELETE FROM student_mastery_synthesis "
+                f"WHERE student_id = :sid AND synthesis_type IN ({', '.join(placeholders)})"
+            ),
+            params,
+        )
+
+    db.flush()
+    return written
+
+
+def _read_synthesis(
+    db: Session, *, student_id: uuid.UUID
+) -> List[Dict[str, Any]]:
+    """读该生 L3 三类综合（表不存在 → 空列表，不报错）。"""
+    if not _synthesis_table_exists(db):
+        return []
+
+    rows = db.execute(
+        text(
+            """
+            SELECT synthesis_type, ref_kp_ids, ref_event_ids, payload,
+                   confidence, created_at, updated_at
+            FROM student_mastery_synthesis
+            WHERE student_id = :sid
+            ORDER BY synthesis_type
+            """
+        ),
+        {"sid": str(student_id)},
+    ).all()
+
+    out: List[Dict[str, Any]] = []
+    for stype, ref_kp, ref_evt, payload, conf, created_at, updated_at in rows:
+        out.append(
+            {
+                "synthesis_type": stype,
+                "ref_kp_ids": _safe_json_list(ref_kp),
+                "ref_event_ids": _safe_json_list(ref_evt),
+                "payload": _safe_json_obj(payload),
+                "confidence": float(conf) if conf is not None else 0.0,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+        )
+    return out
+
+
+def _safe_json_list(raw: object) -> List[Any]:
+    """JSON 数组解析（脏数据降级为空列表，不抛错）。"""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _safe_json_obj(raw: object) -> Dict[str, Any]:
+    """JSON 对象解析（脏数据降级为空字典，不抛错）。"""
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 # ================================================================== DNA-005 聚合
@@ -691,6 +1016,9 @@ def get_learning_dna(db: Session, *, student_id: uuid.UUID) -> Dict[str, Any]:
         "profile": profile,
         "mastery_summary": mastery_summary,
         "recent_events": recent_events,
+        # C02 Phase 3：L3 综合洞察层（错因聚类 / 薄弱链路 / 学习趋势）。
+        # 表无 ORM 模型 → 由 schema_reconcile 补建；表不存在时返回空列表。
+        "synthesis": _read_synthesis(db, student_id=student_id),
     }
 
 
@@ -702,5 +1030,6 @@ __all__ = [
     "mastery_delta_for_event",
     "update_mastery_from_event",
     "recompute_student_six_dim_mastery",
+    "consolidate_mastery",
     "get_learning_dna",
 ]

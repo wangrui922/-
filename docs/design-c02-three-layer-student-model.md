@@ -1,8 +1,8 @@
 # C02 设计短文档 · 三层可检视学生模型（对接六维掌握度）
 
-> 状态：草案（待评审）
+> 状态：**Phase 1 / 2 / 3 已落地**（Phase 1 = 六维引擎，Phase 2 = 六维批量重算落库，Phase 3 = L3 综合层）；Phase 4（真实口径校准 + 前端展示）待内测数据回流
 > 来源：技术侦察 `HKUDS/DeepTutor`（Apache-2.0）的「三层可检视记忆 L1/L2/L3 + Memory Graph」思路借鉴，**仅借鉴架构思想，不引入其代码**（见 §8 许可证边界）
-> 对接：C02 六维掌握度（当前状态：依赖内测数据回流，未开工）
+> 对接：C02 六维掌握度（Phase 1–3 已上线，Phase 4 依赖内测数据回流）
 > 原则：模型 = 唯一真相源；引擎 = 纯函数；阈值经 `adaptive_config` 注入；tutor prompt 为受保护资产
 
 ---
@@ -113,30 +113,40 @@ adaptive.mastery.dim.retention_floor    = 0.4   # 复习召回低于此视为留
 
 ### 6.2 L3（新增表 + 迁移）
 ```sql
--- migrations/02x_student_mastery_synthesis.sql (SQLite) + PG 双写
-CREATE TABLE student_mastery_synthesis (
-    id                  UUID PRIMARY KEY,
-    student_id          UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+-- migrations/025_student_mastery_synthesis_sqlite.sql（SQLite 方言，实测落地）
+CREATE TABLE IF NOT EXISTS student_mastery_synthesis (
+    id                  CHAR(36) PRIMARY KEY,
+    student_id          CHAR(36) NOT NULL,
     synthesis_type      TEXT NOT NULL
                         CHECK (synthesis_type IN ('ERROR_PATTERN','WEAK_CHAIN','TREND')),
     ref_kp_ids          TEXT,                       -- JSON 数组：溯源 L2 行
     ref_event_ids       TEXT,                       -- JSON 数组：溯源 L1 事件
     payload             TEXT,                       -- JSON：综合结论
     confidence          REAL NOT NULL DEFAULT 0.0,  -- 0~1，随样本量增长
-    created_at          TIMESTAMP,
-    updated_at          TIMESTAMP,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
     UNIQUE (student_id, synthesis_type)             -- 每类每生一行，upsert
 );
-CREATE INDEX idx_sms_student ON student_mastery_synthesis(student_id);
+CREATE INDEX IF NOT EXISTS idx_sms_student ON student_mastery_synthesis(student_id);
 ```
+- **落地实况**：只出 **SQLite 方言**一份，与 `013_fsrs_cards_logs_sqlite.sql` 同范式——
+  本表**无 ORM 模型**，由 `app/services/student_dna_service.consolidate_mastery`
+  以 raw SQL 独占维护；`schema_reconcile.py` 只解析 `*_sqlite.sql`，PG 方言文件
+  对本项目无对账价值（生产库是 SQLite），故不产出半套 PG DDL。
 - **冷母库同步**：新表必须同步进 `_wt/_master_dev.db`（铁律 #4），且进 `mastery_synthesis` 的建表须走 `backend/scripts/schema_reconcile.py` 的对账（无 ORM 模型，raw SQL 维护，参照 `review_cards`/`review_logs` 既有范式）。
+  实测：冷母库 42 → 43 张表，`schema_reconcile.py` 报 `SCHEMA_OK`。
 
 ---
 
 ## 7. 接入点与调度
 
-- **写入触发**：在 `tasks/cron_jobs.daily_sync` 的每生循环里，于 `_compute_and_store` 之后调用新增的 `consolidate_mastery(db, student_id)`（独立 try/except，失败仅 warning 不阻断主流程，沿用现有容错风格）。
+- **写入触发**：在 `tasks/cron_jobs.daily_sync` 的每生循环里，于 `_compute_and_store`（及六维重算）之后调用新增的 `consolidate_mastery(db, student_id)`（独立 try/except，失败仅 warning 不阻断主流程，沿用现有容错风格）。
 - **读取出口**：`student_dna_service.get_learning_dna` 增加 `synthesis` 字段，把 L3 三类型一并返回；学情诊断报告（第二阶段 PRD）与家长端直接消费，避免重复现算。
+- **证据驱动写入（落地决定）**：某类综合若 `ref_kp_ids` 与 `ref_event_ids` **同时为空**，说明它既无 L1 事件也无 L2 行支撑——**不写库**（不编造 L3）。因此：
+  - 表里**每类最多一行，且可能少于 3 行**（例：没有前置缺口 → `WEAK_CHAIN` 无证据 → 不写；没有错题 → `ERROR_PATTERN` 无证据 → 不写）；
+  - 本次无证据的类型，其**旧行会被删除**（否则前置缺口被补上后，家长端仍会看到过期的「薄弱链路」结论）。
+  - 该守卫有**变异测试**反证：把引擎换成「产出无溯源边结论」的假引擎后，`consolidate_mastery` 必须一行都不写（铁律 #7）。
+- **表不存在时的降级**：L3 表无 ORM 模型 → `create_all` 建不出来。若 `schema_reconcile` 尚未补建，`consolidate_mastery` **返回 0 且不抛错**（不阻断掌握度主流程）。
 - **实时性边界**：L3 走每日批量（与现有掌握度重算同频），不进请求热路径；L1→L2 仍为事件驱动实时（保持现有 `record_learning_event` 联动）。
 
 ---
@@ -153,15 +163,19 @@ CREATE INDEX idx_sms_student ON student_mastery_synthesis(student_id);
 
 ---
 
-## 9. 落地分阶段（建议）
+## 9. 落地分阶段（实况）
 
-| Phase | 内容 | 产物 | 依赖 |
+| Phase | 内容 | 产物 | 状态 |
 |---|---|---|---|
-| 0 | 确认六维口径与 `synthesis_type` 枚举；补 `CONFIG_SPECS` 阈值键 | 设计冻结 | 本评审 |
-| 1 | `engines/mastery_sixdim.py` 六维评分纯函数 + `tests/engines/test_mastery_sixdim.py`（含 golden） | 引擎 + 单测 | Phase 0 |
-| 2 | `engines/mastery_synthesis.py` + 迁移 `02x` + 冷母库同步 + `schema_reconcile` | L3 表 + 对账 | Phase 1 |
-| 3 | `consolidate_mastery` 服务层 + `daily_sync` 钩子 + `get_learning_dna` 出口 | 端到端打通 | Phase 2 |
-| 4 | 前端六维展示（雷达/条形）+ 学情报告接入 + 评测 harness（C04） | 可观测 | 内测数据回流 |
+| 0 | 确认六维口径与 `synthesis_type` 枚举；补 `CONFIG_SPECS` 阈值键 | 设计冻结 | ✅ 已冻结 |
+| 1 | `engines/mastery_sixdim.py` 六维评分纯函数 + `tests/engines/test_mastery_sixdim.py`（含 golden） | 引擎 + 单测 | ✅ 2026-10-29 |
+| 2 | `engines/mastery_synthesis.py` + 迁移 `025` + 冷母库同步 + `schema_reconcile` | L3 表 + 对账 | ✅ 2026-10-29 |
+| 3 | `consolidate_mastery` 服务层 + `daily_sync` 钩子 + `get_learning_dna` 出口 | 端到端打通 | ✅ 2026-10-29 |
+| 4 | 前端六维展示（雷达/条形）+ 学情报告接入 + 评测 harness（C04）+ 口径校准 | 可观测 | ⏳ 待内测数据回流 |
+
+> 说明：本设计的 Phase 编号与最初草案略有错位——原表里「Phase 2 = L3 引擎+表、
+> Phase 3 = 服务层接线」，实际执行时把 Phase 1（六维引擎）拆成了「六维引擎」
+> 与「六维批量重算落库」两步先行完成，随后才做 L3。上表已按**实际落地顺序**重排。
 
 **关键前置**：C02 强依赖内测数据回流（当前 60 人内测进行中）。Phase 1–3 可在无真实数据时用合成事件单测先行；Phase 4 的"真实口径校准"需等内测样本。
 
@@ -173,3 +187,8 @@ CREATE INDEX idx_sms_student ON student_mastery_synthesis(student_id);
 - **不做**：用 LLM 现算 L3（成本高、不可复现）——L3 走纯规则聚合（错因聚类 + 前置缺口 + 趋势斜率），保证可检视、可回滚。
 - **风险**：meta 标记（`independent`/`transfer`）依赖埋点质量；若内测埋点缺字段，D3/D4 会普遍 NULL。应对：Phase 0 先审计 `practice_service.submit_answer` 的埋点完整性（参照 `record_learning_event` 的 `mastery_meta` 双语义约定）。
 - **风险**：L2 五维与现有 `mastery` 口径打架。应对：六维是 D0 的分解视图，不反向覆盖 D0；展示层明确"整体 vs 分维"。
+- **已踩坑（务必转发给后续改动者）**：L3 表存在性探测**不能用 `inspect(db.bind).has_table()`**——
+  那会从连接池再借一条连接，内存库（`StaticPool` 单连接）归还时默认 `rollback`，
+  **静默回滚调用方同一事务里未提交的写入**。实测表现：前置缺口检测拿到空列表、
+  `daily_sync` 的六维重算被抹掉。正确写法：`inspect(db.connection())`（复用 session
+  自己的连接）。已由 `tests/test_l3_synthesis.py::test_table_probe_does_not_rollback_pending_writes` 锁定。

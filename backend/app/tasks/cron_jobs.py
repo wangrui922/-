@@ -52,6 +52,17 @@ def daily_sync() -> Dict[str, Any]:
                     "recompute six-dim mastery for %s failed: %s", s.student_id, exc
                 )
                 db.rollback()
+            # C02 Phase 3：L3 综合洞察层落库（错因聚类/薄弱链路/趋势，独立 try）
+            try:
+                from app.services.student_dna_service import consolidate_mastery
+
+                consolidate_mastery(db, student_id=s.student_id)
+                db.flush()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "consolidate mastery synthesis for %s failed: %s", s.student_id, exc
+                )
+                db.rollback()
         db.commit()
 
         # 周日生成全部学生的本周周报
