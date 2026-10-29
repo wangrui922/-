@@ -1,4 +1,4 @@
-# ---------- 环境与密�? ----------
+# ---------- 环境与密�? ----------
 .env
 .env.local
 .env.*.local
@@ -26,7 +26,7 @@ build/
 coverage.xml
 htmlcov/
 
-# ---------- 数据�? / 运行时产�? ----------
+# ---------- 数据�? / 运行时产�? ----------
 *.db
 *.db-journal
 *.sqlite
@@ -46,17 +46,17 @@ node_modules/
 student-web/dist/
 parent-web/dist/
 admin-web/dist/
-# 构建自检产物：CI/本地�? `vite build --outDir .verify-dist` 验证编译用，不入�?
+# 构建自检产物：CI/本地�? `vite build --outDir .verify-dist` 验证编译用，不入�?
 student-web/.verify-dist/
-# ��������̬վ���������� dist/ �ؽ�������⣩
-# ͨ������ student-web-deploy* ʱ���Ŀ¼��ÿ�β��𶼻��½���
+# ��������̬վ���������� dist/ �ؽ�������⣩
+# ͨ������ student-web-deploy* ʱ���Ŀ¼��ÿ�β��𶼻��½���
 student-web-deploy*/
 student-web-dist*/
 
 # 协作过程中留下的探针/临时文件（保留在磁盘便于排查，不进仓库历史）
 student-web/.probe*.txt
 
-# ---------- 编辑�? / 系统 ----------
+# ---------- 编辑�? / 系统 ----------
 .vscode/
 .idea/
 *.swp
@@ -74,7 +74,7 @@ index.html.bak
 index.html.bak2
 
 # ---------- 2026-08-04 迁移收口补丁 ----------
-# 前端根目录调试垃圾（保留在磁盘，不进仓库历史�?
+# 前端根目录调试垃圾（保留在磁盘，不进仓库历史�?
 student-web/_*.txt
 student-web/check*.txt
 student-web/diag*.txt
@@ -89,28 +89,29 @@ student-web/npmview*.txt
 student-web/status.txt
 student-web/.probe*.txt
 student-web/dist-*/
-# 后端运行时产物（SQLite / 测试�? / 报告�?
+# 后端运行时产物（SQLite / 测试�? / 报告�?
 *.db-shm
 *.db-wal
 test_verify.db*
 pytest-full.xml
 backend/_verify_*.xml
-# 后端根目录调试垃圾（保留在磁盘，不进仓库历史�?
-# 只锚�? backend/ 直属层且必须带后缀：`_*` 这种宽泛写法会连 __init__.py 一起吃掉�?
-# 同理不用 `backend/_*.py`——它会匹�? backend/__init__.py，所以调试脚本逐个点名�?
+backend/pytest_junit_bank.xml
+# 后端根目录调试垃圾（保留在磁盘，不进仓库历史�?
+# 只锚�? backend/ 直属层且必须带后缀：`_*` 这种宽泛写法会连 __init__.py 一起吃掉�?
+# 同理不用 `backend/_*.py`——它会匹�? backend/__init__.py，所以调试脚本逐个点名�?
 backend/_*.txt
 backend/_kpstat.py
 # 部署/函数依赖
 .edgeone/
 cloud-functions/**/node_modules/
 
-# pytest��ʱ���
+# pytest��ʱ���
 backend/pytest_*.txt
 backend/_regression_driver.py
 backend/import_reports*
 .qa_cache/
 
-# ��Ƕ��Ŀ¼
+# ��Ƕ��Ŀ¼
 backend/backend/
 
 # 2026-08-12 practice module: audit temp artifacts (kept on disk, not committed)
@@ -121,20 +122,20 @@ docs/unmapped-human-triage-*.csv
 docs/audit2-*.txt
 docs/audit*.json
 
-# 2026-08-12 ��ȱ��������QA/������ʱ��������ڴ��̣�����⣩
+# 2026-08-12 ��ȱ��������QA/������ʱ��������ڴ��̣�����⣩
 .qa_backup/
 backend/repro_500.py
 backend/dev.db-shm.bak-*
 backend/dev.db-wal.bak-*
 
-# pytest 运行时临时目录（测试产生，不入库�?
+# pytest 运行时临时目录（测试产生，不入库�?
 backend/.pytest-tmp/
 
-# 2026-08-12 ����������һ������ƽű����䱸���������̣�����⣩
+# 2026-08-12 ����������һ������ƽű����䱸���������̣�����⣩
 _dbbackups/
 backend/scripts/_audit_*.py
 
-# ��˽����ػ���������־Ŀ¼��start_server.ps1 �Զ����ɣ�
+# ��˽����ػ���������־Ŀ¼��start_server.ps1 �Զ����ɣ�
 backend/logs/
 
 # ---------- T01 回填补充：构建产物与工具产物 ----------
