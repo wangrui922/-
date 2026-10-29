@@ -102,14 +102,25 @@ class SixDimMastery:
 
 
 # ==================================================================== 时间工具
+#: 子分钟级时间差视为「同一时刻」（防止 now 比事件晚几毫秒导致衰减略小于 1，
+#: 进而使 N 个事件的有效样本浮点略小于 N、恰好踩中 min_samples 阈值被误降级）。
+_ONE_MINUTE_IN_DAYS: float = 1.0 / (24.0 * 60.0)
+
+
 def _days_between(later: datetime, earlier: datetime) -> float:
-    """``later - earlier`` 的天数差（负数截断为 0）。"""
+    """``later - earlier`` 的天数差（负数 / 子分钟级差截断为 0）。
+
+    事件发生在 ``now`` 之后（时钟抖动）或几乎同时（差 < 1 分钟）时，物理上
+    应视为「新鲜」，衰减取 1.0，而不是 0.99999998 这种会被阈值误伤的极小值。
+    """
     left = as_utc(later)
     right = as_utc(earlier)
     if left is None or right is None:
         return 0.0
     delta = (left - right).total_seconds() / _SECONDS_PER_DAY
-    return delta if delta > 0.0 else 0.0
+    if delta < _ONE_MINUTE_IN_DAYS:
+        return 0.0
+    return delta
 
 
 # ==================================================================== 平滑内核

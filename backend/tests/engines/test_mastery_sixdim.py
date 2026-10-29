@@ -226,3 +226,36 @@ def test_default_config_clamps_dirty_values():
     assert cfg.min_samples == 0
     assert cfg.slip_credit == 1.0
     assert cfg.prior == 0.0
+
+
+def test_subminute_event_treated_fresh_not_degraded():
+    """回归守卫：事件比 now 晚数秒（子分钟级）不得因浮点衰减被误降级。
+
+    背景：recompute 在每日 cron 跑，事件通常发生在几毫秒~几十秒前。
+    若事件时间略晚于 now（或 now 略晚于事件），衰减应取 1.0；否则 N 个事件
+    的有效样本浮点略小于 N，恰好踩中 min_samples 阈值会把维度判成 None。
+
+    构造：3 个独立正确事件（= 默认 min_samples），occurred_at = now - 30 秒。
+    修复前 → decay≈0.99999998 → 有效样本≈2.99999994 < 3 → independent=None；
+    修复后 → 子分钟归零 → decay=1 → 有效样本=3 → independent 应被算出。
+    """
+    from datetime import timedelta
+
+    occurred = NOW - timedelta(seconds=30)
+    events = [
+        SixDimEvent(
+            kp_id="k1",
+            is_correct=True,
+            occurred_at=occurred,
+            weight=1.0,
+            independent=True,
+        )
+        for _ in range(3)
+    ]
+    res = six_dim_mastery("k1", events, now=NOW, config=DEFAULT_MASTERY_DIM_CONFIG)
+    # 3 个独立正确、无错因 → independent 应为 (0.5*3 + 3) / (3 + 3) = 4.5/6 = 0.75
+    assert res.independent is not None, "子分钟事件不应被误降级为 None"
+    assert res.independent == _round4(Decimal("4.5") / Decimal("6")), res.independent
+    # 同时 D1/D2 也应算出（4 个事件维度的总样本 >= min_samples）
+    assert res.concept is not None
+    assert res.procedure is not None

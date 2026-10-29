@@ -6,6 +6,9 @@
     * DNA-003 ``update_mastery_from_event``：掌握度增量更新（消费已埋点
       事件 ANSWER/CORRECT/ERROR，upsert 到 ``student_knowledge_mastery``，
       维护 mastery/confidence/计数/时间戳；规划 M-002/M-003 规则）；
+    * C02 Phase 2 ``recompute_student_six_dim_mastery``：每日批量重算六维分维
+      （concept/procedure/independent/transfer/retention）并 upsert 进
+      ``student_knowledge_mastery`` 的五个预留列，口径走 ``engines.mastery_sixdim``；
     * DNA-004 ``record_learning_event``：行为事件落库（八类枚举校验，
       practice/chat 回调埋点统一走这里，落库后同事务联动 DNA-003）；
     * DNA-005 ``get_learning_dna``：画像 + 知识点掌握汇总 + 最近事件摘要
@@ -21,11 +24,17 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 
 from app.core.response import ApiError, CODE_BAD_REQUEST
 from app.core import constants as C
+from app.engines.config import read_mastery_dim_config
+from app.engines.mastery_sixdim import (
+    RetentionEvent,
+    SixDimEvent,
+    six_dim_mastery_for_student,
+)
 from app.models.content import KnowledgePoint
 from app.models.dna import (
     HINT_DEPENDENCY_VALUES,
@@ -36,6 +45,35 @@ from app.models.dna import (
     StudentLearningProfile,
 )
 from app.services.mastery_engine import grade_level
+
+
+#: 六维事件 meta 键（与埋点 `_hint_context` / `mastery_delta_for_event` 同源）
+META_KEY_TRANSFER_FLAG: str = "transfer"
+
+
+def _parse_iso_ts(value: object) -> Optional[datetime]:
+    """把可能带时区的 ISO 字符串 / datetime 统一成 UTC aware datetime。
+
+    复习日志 ``review_at`` 在 SQLite 里存为 ISO 字符串（``datetime.isoformat``），
+    可能带 ``+00:00`` 或末尾 ``Z``；``datetime.fromisoformat`` 在 3.11+ 已支持
+    两种写法。无法解析时返回 None（该条召回事件降级丢弃）。
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    raw = str(value).strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 #: 最近事件摘要条数上限
 RECENT_EVENTS_LIMIT: int = 10
@@ -375,6 +413,177 @@ def update_mastery_from_event(
     }
 
 
+# ================================================================== C02 Phase2 六维批量重算
+# 设计：增量 ``update_mastery_from_event`` 只维护 ``mastery``/计数/时间戳
+# （会话内即时反馈）；六维分维（concept/procedure/independent/transfer/retention）
+# 由**每日批量重算**从全量事件 + FSRS 复习日志一次性算出并落库，口径统一走
+# ``app.engines.mastery_sixdim``（纯函数，阈值经 ``read_mastery_dim_config`` 注入）。
+#
+# 数据缺口说明（诚实标注，不编造）：
+#   * ``error_type`` 只落在错题本 ``Mistake.error_type``，练习事件 meta 不带 →
+#     D1/D2 当前对错误一律走「slip 半分」分支（概念/程序两维暂相等），待错因富化；
+#   * ``transfer`` 全库无埋点设置（仅 AI 出题 role 概念）→ D4 当前恒为 None；
+#   * 以上两项的激活属于「错因/迁移埋点增强」，列入 Phase 4 口径校准范围。
+def _build_six_dim_events(
+    db: Session, *, student_id: uuid.UUID
+) -> List[SixDimEvent]:
+    """读该生全量练习事件 → ``SixDimEvent`` 列表（仅 CORRECT/ERROR 带正确性）。
+
+    时间用事件 ``created_at``（落库即发生）；``independent`` 取自事件 meta
+    （埋点 ``_hint_context`` 已产出），``error_type`` / ``transfer`` 取 meta
+    若有（当前多为 None，引擎按 slip / 缺失降级）。
+    """
+    rows = (
+        db.execute(
+            select(StudentLearningEvent).where(
+                StudentLearningEvent.student_id == student_id,
+                StudentLearningEvent.knowledge_point_id.isnot(None),
+                StudentLearningEvent.event_type.in_(("CORRECT", "ERROR")),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    events: List[SixDimEvent] = []
+    for ev in rows:
+        meta = ev.meta or {}
+        kp_id = ev.knowledge_point_id
+        if kp_id is None:
+            continue
+        events.append(
+            SixDimEvent(
+                kp_id=str(kp_id),
+                is_correct=(ev.event_type == "CORRECT"),
+                occurred_at=ev.created_at,
+                weight=1.0,
+                error_type=meta.get("error_type"),
+                independent=bool(meta.get("independent", False)),
+                transfer=bool(meta.get(META_KEY_TRANSFER_FLAG, False)),
+            )
+        )
+    return events
+
+
+def _build_retention_events(
+    db: Session, *, student_id: uuid.UUID
+) -> List[RetentionEvent]:
+    """读该生 FSRS 复习召回 → ``RetentionEvent`` 列表（按 kp_id 聚合）。
+
+    ``review_cards.kp_id`` 直接带知识点；缺失时回退 join ``questions.
+    knowledge_point_id``。``rating == 1``（FSRS Again）记为未召回，``>= 2``
+    记为召回。两张表无 ORM 模型（FSRS 模块 raw SQL 维护），若尚未建表
+    （测试内存库 / schema_reconcile 未跑）则优雅返回空列表，不抛错。
+    """
+    bind = db.bind
+    inspector = inspect(bind)
+    if not inspector.has_table("review_logs") or not inspector.has_table("review_cards"):
+        return []
+
+    rows = db.execute(
+        text(
+            """
+            SELECT COALESCE(rc.kp_id, q.kp_id) AS kp_id,
+                   rl.rating, rl.review_at
+            FROM review_logs rl
+            JOIN review_cards rc ON rc.id = rl.card_id
+            LEFT JOIN questions q ON q.id = rc.question_id
+            WHERE rl.student_id = :sid
+            """
+        ),
+        {"sid": str(student_id)},
+    ).all()
+
+    events: List[RetentionEvent] = []
+    for kp_id, rating, review_at in rows:
+        if kp_id is None:
+            continue
+        occurred = _parse_iso_ts(review_at)
+        if occurred is None:
+            continue
+        try:
+            rating_val = int(rating) if rating is not None else 0
+        except (TypeError, ValueError):
+            rating_val = 0
+        events.append(
+            RetentionEvent(
+                kp_id=str(kp_id),
+                recalled_correctly=rating_val >= 2,
+                occurred_at=occurred,
+                weight=1.0,
+            )
+        )
+    return events
+
+
+def recompute_student_six_dim_mastery(
+    db: Session, *, student_id: uuid.UUID, now: Optional[datetime] = None
+) -> int:
+    """C02 Phase 2：对该生全量重算六维并 upsert 进 ``student_knowledge_mastery``。
+
+    落库范围（严格按 Phase 2 范围，不碰 ``mastery``/计数/时间戳，避免回归
+    增量口径）：
+        * ``concept_mastery``    ← D1
+        * ``procedure_mastery``  ← D2
+        * ``independent_mastery``← D3
+        * ``transfer_mastery``   ← D4（当前数据恒为 None）
+        * ``retention_mastery``  ← D5（依赖 FSRS 复习日志）
+
+    引擎算出的 D0（``mastery``）本函数**不写**，留待 Phase 4 口径校准时再决定
+    是否由贝叶斯值接管增量 ``mastery``。
+
+    事务：只 ``flush``，``commit`` 由调用方收口（与 DNA-002/003/004 同约定）。
+
+    Returns:
+        被更新的掌握行数。
+    """
+    base_now = now or datetime.now(timezone.utc)
+    cfg = read_mastery_dim_config(db)
+    events = _build_six_dim_events(db, student_id=student_id)
+    retention = _build_retention_events(db, student_id=student_id)
+    results = six_dim_mastery_for_student(
+        events, retention=retention, now=base_now, config=cfg
+    )
+
+    updated = 0
+    for kp_id, res in results.items():
+        try:
+            kp_uuid = uuid.UUID(kp_id)
+        except (TypeError, ValueError):
+            continue
+        row = (
+            db.execute(
+                select(StudentKnowledgeMastery).where(
+                    StudentKnowledgeMastery.student_id == student_id,
+                    StudentKnowledgeMastery.knowledge_point_id == kp_uuid,
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        if row is None:
+            # 正常流程下 CORRECT/ERROR 事件已由 update_mastery_from_event 建行；
+            # 此处仅作安全网：即便缺行也补建并带入计数，保证行自洽可读。
+            correct_n = sum(1 for e in events if e.kp_id == kp_id and e.is_correct)
+            total_n = sum(1 for e in events if e.kp_id == kp_id)
+            row = StudentKnowledgeMastery(
+                student_id=student_id,
+                knowledge_point_id=kp_uuid,
+                practice_count=total_n,
+                correct_count=correct_n,
+                wrong_count=total_n - correct_n,
+            )
+            db.add(row)
+        row.concept_mastery = res.concept
+        row.procedure_mastery = res.procedure
+        row.independent_mastery = res.independent
+        row.transfer_mastery = res.transfer
+        row.retention_mastery = res.retention
+        updated += 1
+
+    db.flush()
+    return updated
+
+
 # ================================================================== DNA-005 聚合
 def _dna_level(row: StudentKnowledgeMastery) -> int:
     """DNA 掌握度 0~1 → 展示档位 0~3。
@@ -492,5 +701,6 @@ __all__ = [
     "record_learning_event",
     "mastery_delta_for_event",
     "update_mastery_from_event",
+    "recompute_student_six_dim_mastery",
     "get_learning_dna",
 ]

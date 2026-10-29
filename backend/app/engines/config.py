@@ -603,6 +603,14 @@ def read_mastery_dim_config(db: Any) -> MasteryDimConfig:
         values = {str(key): value for key, value in rows if key is not None}
     except Exception as exc:  # noqa: BLE001 - 配置读失败按降级处理，不上抛
         logger.warning("读取 mastery_dim_config 失败，回退缺省值: %s", exc)
+        # SQLite 下查询异常会使会话事务处于「半残」态，若不显式收口，
+        # 后续同会话操作会触发隐式回滚把调用方未提交的工作一并吞掉；
+        # 这里主动 rollback 让会话回到干净可继续状态（仅回滚未提交内容，
+        # 调用方已 commit 的数据不受影响）。
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
         values = {}
     return build_mastery_dim_config(values)
 

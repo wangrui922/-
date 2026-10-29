@@ -39,6 +39,19 @@ def daily_sync() -> Dict[str, Any]:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("refresh mastery for %s failed: %s", s.student_id, exc)
                 db.rollback()
+            # C02 Phase 2：六维分维批量重算落库（独立 try，失败不连累上面缓存落库）
+            try:
+                from app.services.student_dna_service import (
+                    recompute_student_six_dim_mastery,
+                )
+
+                recompute_student_six_dim_mastery(db, student_id=s.student_id)
+                db.flush()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "recompute six-dim mastery for %s failed: %s", s.student_id, exc
+                )
+                db.rollback()
         db.commit()
 
         # 周日生成全部学生的本周周报
