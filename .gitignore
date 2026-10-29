@@ -95,7 +95,7 @@ student-web/dist-*/
 test_verify.db*
 pytest-full.xml
 backend/_verify_*.xml
-backend/pytest_junit_bank.xml
+backend/pytest_junit_*.xml
 # 后端根目录调试垃圾（保留在磁盘，不进仓库历史�?
 # 只锚�? backend/ 直属层且必须带后缀：`_*` 这种宽泛写法会连 __init__.py 一起吃掉�?
 # 同理不用 `backend/_*.py`——它会匹�? backend/__init__.py，所以调试脚本逐个点名�?

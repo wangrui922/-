@@ -25,7 +25,7 @@ import shutil
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Tuple
 
 import pytest
 
@@ -258,8 +258,6 @@ class TestMappingTable:
 
     def test_no_hardcoded_uuid_in_mapping(self) -> None:
         """映射表用 code 作键，绝不能写死 uuid。"""
-        import uuid
-
         uuid_like = {
             str(value)
             for value in mapping.SCENARIO_KP_MAPPING.values()
