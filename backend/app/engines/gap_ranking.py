@@ -546,7 +546,15 @@ def rank_gaps(
             )
             continue
         if band not in tuple(active_bands):
-            label = {"junior": "初中段", "senior": "高中段"}.get(band, "学段未识别")
+            if band == BAND_JUNIOR:
+                deferred_reason = "初中段本轮暂缓（补题队列只做小学段）"
+            elif band == BAND_SENIOR:
+                deferred_reason = "高中段本轮暂缓（补题队列只做小学段）"
+            else:
+                deferred_reason = (
+                    "学段未识别（年级为空且 code 前缀不在 CZ_/HS_/KP_ 之列）——"
+                    "本轮暂缓，待人工确认学段后再入队"
+                )
             deferred_items.append(
                 GapRankResult(
                     rank=None,
@@ -558,7 +566,7 @@ def rank_gaps(
                     sort_key=base.sort_key,
                     reason=base.reason,
                     deferred=True,
-                    deferred_reason=f"{label}本轮暂缓（补题队列只做小学段）",
+                    deferred_reason=deferred_reason,
                 )
             )
             continue
