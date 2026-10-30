@@ -1,0 +1,9 @@
+﻿kp_code,grade,scene,error_type,sentence,source,seed_batch
+KP_CALC_ADD,2,购物,计算错,有同学把 23 加 18 算成 31，进位时忘加十位了。,seed,
+KP_CALC_MUL,3,购物,方法错,有的同学先算 3 乘 4 再算 10，顺序乱了就错。,seed,
+KP_WORD_TRAVEL,5,距离,读题错,好些同学把相向而行看成同向而行，方向弄反了。,seed,
+KP_UNIT_LENGTH_BASIC,3,距离,知识点缺,有同学以为 1 千米就是 100 米，没记住进率是 1000。,seed,
+KP_UNIT_TIME_ELAPSE,4,时间,计算错,同学常把 9 点过到 9 点半算成 90 分钟，其实是 30 分。,seed,
+KP_CALC_DIV_1D,2,校园,方法错,有同学分糖果时先减后除，顺序错了结果就偏了。,seed,
+KP_CALC_DIV_1D_VERIFY,5,校园,检查漏,做完除法不少同学不验算，余数对不对全凭感觉。,seed,
+KP_UNIT_TIME,3,时间,读题错,有的同学把下午 3 时和 15 时当成两回事。,seed,
