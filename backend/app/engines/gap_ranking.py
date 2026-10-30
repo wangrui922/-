@@ -176,7 +176,10 @@ FACTOR_CHAIN: Tuple[RankingFactor, ...] = (
         order=4,
         enabled=True,
         descending=True,
-        note="该 KP 已经多少天一道题都没有；缺题越久越该先补。",
+        note="该 KP 已经多少天一道题都没有；缺题越久越该先补。"
+        "⚠️ 实测当前数据下全部零题量 KP 的建档日期同属一天，zero_duration_days 取值恒定，"
+        "该因子实际不参与排序决策（缺口榜现由「错因命中数(恒 0) > 重要度 > 难度」三者决定）；"
+        "保留它是为了让因子链在题量历史快照表补齐后能直接生效。",
     ),
     RankingFactor(
         key="prerequisite_count",

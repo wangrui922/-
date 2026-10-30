@@ -49,7 +49,7 @@ EXPECTED_MAPPING: Dict[str, Tuple[str, int]] = {
     "cake/1": ("KP_CALC_DIV_1D", 34),
     "cake/2": ("KP_CALC_DIV_1D", 38),
     "cake/3": ("KP_CALC_MUL", 31),
-    "cake/4": ("KP_CALC_DIV_1D_VERIFY", 46),
+    "cake/4": ("KP_CALC_ADD", 46),
     "cake/5": ("KP_CALC_MUL", 26),
     "distance/0": ("KP_WORD_TRAVEL", 32),
     "distance/1": ("KP_WORD_TRAVEL", 37),

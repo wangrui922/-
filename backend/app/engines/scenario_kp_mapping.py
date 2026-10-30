@@ -43,6 +43,23 @@
 本表每一行都已按该偏移逐条核对过实际题干（核对样本见
 ``backend/tests/test_backfill_scenario_kp.py``）。
 
+核对方法：**公式复算**，不是读题干猜
+--------------------------------------
+「这道题看起来像什么」不足以定 KP。每一行的数学操作都是**用生成器函数
+（``generate_scenario_bank.py`` 的 ``t_cake`` / ``t_shopping`` / ``t_time``）
+现场产出题干与官方答案，再从题干正则抽数、用显式算式复算官方答案**，
+两者一致才算这条映射成立。结论固化在 ``tests/test_backfill_scenario_kp.py``
+的 ``EXPECTED_MAPPING``（team 定稿表，逐行写死，不引用实现）里，由
+``TestMappingTable::test_mapping_matches_team_table_row_by_row`` 逐行比对映射表，
+回归时若任一模板的算式族与所归 KP 不符即红。
+
+⚠️ 这套方法抓出过一个真实错配：``cake/4`` 的题干是「平均分给 N 个小朋友，
+每人 M 块后还剩几块」，官方答案恒等于 ``总数 − 人数 × 每人份数``
+（**乘法 + 减法**，不涉及除法或余数），此前却被归到
+``KP_CALC_DIV_1D_VERIFY``（除法验算与有余数）——正好把加减法上的错误
+记到除法知识点上。现已改归 ``KP_CALC_ADD``。**教训**：见到"平均分"
+三个字就归除法，是会被公式复算当场抓出来的。
+
 关于 ``kp_verified``：**本轮不需要动它**
 ----------------------------------------
 864 道场景题的 ``kp_verified`` **本来就是 1**——``generate_scenario_bank.py``
@@ -157,9 +174,9 @@ SCENARIO_KP_RECORDS: Tuple[ScenarioKPRecord, ...] = (
     ),
     ScenarioKPRecord(
         scenario_template="cake/4",
-        kp_code="KP_CALC_DIV_1D_VERIFY",
-        math_operation="平均分后求余数",
-        reason="先按人数平均分再求剩余，核心是商余结构，归入「除法验算与有余数」。",
+        kp_code="KP_CALC_ADD",
+        math_operation="总数−人数×每人份数（乘法+减法）",
+        reason="先按每人份数×人数求已分掉的数量，再用总数相减，属乘法+减法模型，归入「加减法」。",
         expected_question_count=46,
     ),
     ScenarioKPRecord(
@@ -337,21 +354,98 @@ ANNOTATION_ISSUES: Tuple[Dict[str, Any], ...] = (
             "因此 216 道 distance 题（含 g3 标签、算式仅为「速度×时间」的题）统一归到 g5 的 KP。"
             "这会形成「低年级标签 + 高年级知识点」的张力：按 KP 聚合出的掌握度画像会把 g3 学生的"
             "行程题计入 g5 知识点。"
+            "⚠️ 但**污染的主因不是 g3/g4 标签本身，而是知识点名不符**："
+            "KP_WORD_TRAVEL 的 description 是「相遇、追及、往返，速度时间路程三量关系」，"
+            "grade=5 / difficulty=5——它讲的是**相遇追及**，而 distance 场景题里绝大多数是"
+            "**单人匀速**的「速度×时间=路程」，两者不是同一个模型。"
+            "也就是说，就算把标签问题解决了，知识点名与题目模型的错配依然存在；"
+            "真正的解法是拆出「单人匀速行程」这条 KP（g3/g4），而不是调标签。"
         ),
-        "action": "本轮不改 grade；仅登记。后续可考虑新增 g3 行程 KP 或为 distance 场景独立标记。",
+        "action": "本轮不改 grade；仅登记。后续可考虑新增 g3 单人匀速行程 KP "
+        "（或把 KP_WORD_TRAVEL 的 description 收窄到相遇追及），再重做 distance 拆分。",
     },
     {
         "issue_id": "distance_template_mixed_operation",
-        "severity": "low",
-        "scope": "distance/0~distance/5",
+        "severity": "medium",
+        "scope": "distance/0~distance/5（216 题中 69 题算式不是行程三量）",
         "summary": "distance 场景由 t_distance / t_distance2 双模板按 cell 奇偶交替生成，"
-        "同一 scenario_template 下混有两种算式。",
+        "同一 scenario_template 下混有两种算式；且其中 69 题的算式根本不是行程问题。",
         "detail": (
             "generate_scenario_bank.py::t_distance_dual 以 cell 奇偶切换两套模板，"
             "而落库索引为 (kind+1)%6，导致同一子模板下既有「速度×时间」也有「千米/米单位换算」"
-            "「两段路程相加」等变体。本轮 distance 全族 KP 相同，故不影响归因结果。"
+            "「两段路程相加」等变体。"
+            "**实测（公式复算官方答案，按题干模式分类）216 题的构成**："
+            "行程三量 147 题（67.9%）、长度单位换算 47 题、两段路程相加 22 题（纯加法）；"
+            "即 **69 题（31.9%）的算式不是行程三量**，却被挂到了「行程问题」KP 上。"
+            "两类非行程题的**建议归入知识点**（库里已存在，可直接用）："
+            "长度单位换算 → KP_UNIT_LENGTH（g3「长度单位」，现有 237 题）/ "
+            "KP_UNIT_LENGTH_BASIC（g3「毫米分米千米」，0 题）/ "
+            "KP_UNIT_COMPOUND_BASIC（g4「单位换算综合」，0 题）；"
+            "两段路程相加 → KP_CALC_ADD（g3「加减法」，现有 420 题）。"
+            "**拆分前提**：这 69 题并不是独立子模板——它们**散落在 distance/1、distance/2、"
+            "distance/4、distance/5 四个子模板内部**（因为双模板按 cell 奇偶交替），"
+            "所以不能靠改 scenario_template 索引来切，"
+            "必须在**同一子模板内按题干模式做二次切分**（生成时记录 question_form 字段，"
+            "或回填时按题干正则二次归类），改动面远大于本轮的一次性回填。"
+            "另：distance 全族本轮 KP 相同，故本次归因**结果**不受影响（错归的是知识点，"
+            "不是题量），但学情画像会把单位换算/加法的错误记到行程知识点上。"
         ),
-        "action": "本轮不影响归因；仅登记，供后续细化子模板粒度时参考。",
+        "action": "本轮不改（需同子模板内二次切分，改动面大）；仅登记，留到下期按算式拆分。",
+    },
+    {
+        "issue_id": "distance_length_conversion_answer_bug",
+        "severity": "medium",
+        "scope": "distance/2（13 道长度单位换算题中 5 道官方答案错误）",
+        "summary": "题库既有 bug：长度单位换算题的官方答案与题面算式不自洽（老 bug，非本轮引入）。",
+        "detail": (
+            "generate_scenario_bank.py::t_distance2 的 kind==3 分支里，题面后缀与答案分别调用了"
+            "**两次独立的** rng.choice(['', '500米']) 与 rng.choice([0, 500])，两者可能不一致——"
+            "于是出现「题面写 N 千米、答案却是 N×1000+500」或「题面写 N 千米500米、答案却是 N×1000」。"
+            "**实测（逐题复算官方答案）**：distance 族 47 道长度单位换算题中，"
+            "**5 道官方答案与题面算式不符**（如「5千米等于多少米？」官方答案 5500、应为 5000；"
+            "「2千米500米等于多少米？」官方答案 2000、应为 2500），全部落在 distance/2。"
+            "⚠️ 这不是「10 道」：QA 的公式正则只覆盖了「N千米等于多少米」形态，"
+            "把另外 8 道「N千米500米等于多少米」（其中 5 道答案其实是对的）也计成了不符——"
+            "两种形态都重算后，实际不符的是 5 道。"
+            "**回填后的叠加污染**：这 5 道题挂到 KP_WORD_TRAVEL 后，学生**答对反而被判错**，"
+            "错误事件会记到行程知识点上，与上一条的「69 题算式不是行程」叠加放大污染。"
+        ),
+        "action": "本轮只写 kp_id、不改答案，仅登记；留到下期修生成器"
+        "（题面后缀与答案用同一个随机结果）并重刷这 5 道题的官方答案。",
+    },
+    {
+        "issue_id": "archived_zero_exception_is_indirect",
+        "severity": "info",
+        "scope": "错题本 / 抽题 / 推荐三处 archived 题的 0 例外",
+        "summary": "「archived 题 0 例外」是**间接保证**，不是 list_mistakes 过滤了 status。",
+        "detail": (
+            "app/services/learning_service.py::list_mistakes 只按 state / kp_id 筛选，"
+            "**不按 question.status 过滤**——若直接给 archived 题记一条错题，它会立刻出现在错题本里。"
+            "真正的边界是「archived 题**抽不出来**」：候选池 "
+            "（practice_service._candidate_rows）硬过滤 q.status='active'，"
+            "所以归档前做过的题仍留在错题本里（既有行为，非本轮引入），"
+            "归档后则既抽不到、也不会新记。"
+            "换句话说，0 例外来自「抽题池过滤」这条**间接链路**，"
+            "读报告时不能理解成「list_mistakes 会过滤 archived」。"
+        ),
+        "action": "仅登记边界口径；不改代码（既有行为，不在本轮范围）。",
+    },
+    {
+        "issue_id": "scenario_template_diversity_low",
+        "severity": "info",
+        "scope": "回填后 7 个目标 KP 的题量来源",
+        "summary": "回填后各 KP 的题量集中在少数场景族，单一 KP 内部模板重复度高。",
+        "detail": (
+            "回填把 864 道场景题挂到 7 个 KP 上，每个 KP 的题**全部来自同一场景族**"
+            "（cake / shopping / time / distance），且其中两个 KP 只由**单个子模板**供题："
+            "KP_CALC_DIV_1D_VERIFY 的 41 题全部来自 cake/0、KP_UNIT_TIME 的 8 题全部来自 time/4"
+            "（「N小时等于多少分钟？」一个模板）；KP_UNIT_TIME_ELAPSE 的 151 题来自 time/0~time/2 三个模板；"
+            "KP_CALC_DIV_1D 的 102 题来自 cake/1、cake/2、shopping/3 三个除法模板。"
+            "学生连做同一 KP 时会反复看到「同一句话换数字」。"
+            "⚠️ 这是**净改善而非回归**：这 7 个 KP 回填前的题量都是 0（零题量知识点），"
+            "回填把它们从 0 变成有题；但**模板多样性**的问题被原样带进来了。"
+        ),
+        "action": "仅登记；下期补题时按 KP 扩模板族（扩场景模板 / 换生成器 kind 覆盖度）。",
     },
     {
         "issue_id": "shopping_subtraction_inconsistent_kp",
@@ -362,18 +456,21 @@ ANNOTATION_ISSUES: Tuple[Dict[str, Any], ...] = (
             "shopping/0、shopping/1 需要先算「单价×件数」再相减，映射到乘法侧 KP_CALC_MUL；"
             "shopping/5 满减只做一次减法，映射到 KP_CALC_ADD。同一「减法」语义落在两个 KP 上，"
             "聚合口径上会让「加减法」与「乘除法」各持一部分找零/剩余题。"
+            "（本轮 cake/4 也改归 KP_CALC_ADD，见下方映射表；它同样是「先乘后减」，"
+            "与 shopping/0、shopping/1 的处理**并不一致**——后者仍归乘法侧，见本轮返修说明。）"
         ),
         "action": "保持现状（映射按 team 决议定稿）；仅登记，供人工复核时判断是否统一。",
     },
     {
         "issue_id": "kp_name_broader_than_operation",
         "severity": "info",
-        "scope": "KP_CALC_MUL（546 题）/ KP_CALC_ADD（505 题）",
+        "scope": "KP_CALC_MUL（546 题）/ KP_CALC_ADD（551 题）",
         "summary": "KP 名称口径宽于本轮映射的算式粒度。",
         "detail": (
             "KP_CALC_MUL 名为「乘除法」、KP_CALC_ADD 名为「加减法」，实际覆盖面远大于"
             "本轮映射到的乘法 / 加减法算式，因此归因粒度粗于模板粒度——这是知识点表本身的"
             "粒度问题，不是回填引入的。"
+            "（题量为回填后的口径：KP_CALC_ADD 420→551、KP_CALC_MUL 331→546。）"
         ),
         "action": "仅登记；不修改知识点表（超本轮范围）。",
     },
