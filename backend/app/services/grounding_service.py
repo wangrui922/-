@@ -68,6 +68,7 @@ from app.engines.grounding_materials import (
     grade_window,
     render_materials_for_prompt,
 )
+from app.services.peer_corpus_service import retrieve_released
 from app.engines.grounding_retrieval import bigrams, like_terms, score_text
 from app.models.content import KnowledgePoint, Question
 
@@ -119,6 +120,10 @@ class GroundingQuery:
         difficulty: 难度（1/3/5），结构化粗筛字段。
         grade_width: 年级窗口半宽，默认 1。
         top_k: 最终返回候选数。
+        error_type: 该生该题的错因类型（读题错/方法错/计算错/知识点缺/检查漏），
+            可选；传入则同伴视角句优先匹配同错因。
+        scene: 场景标签（购物/时间/距离/吃/穿/游戏/校园/家务/手工），可选；
+            传入则同伴视角句优先匹配同场景。
     """
 
     text: str = ""
@@ -128,6 +133,8 @@ class GroundingQuery:
     difficulty: Optional[int] = None
     grade_width: int = 1
     top_k: int = DEFAULT_TOP_K
+    error_type: Optional[str] = None
+    scene: Optional[str] = None
 
     def fingerprint(self, pool: str) -> str:
         """检索缓存键（不含 TTL / 库版本）。
@@ -458,6 +465,23 @@ def _peer_corpus_available(db: Session) -> bool:
     return table_exists(db, PEER_CORPUS_TABLE)
 
 
+def _resolve_kp_code(db: Session, kp_id: Any) -> Optional[str]:
+    """知识点 id → code（同伴视角语料按 code 检索，库里存的是 code）。
+
+    解析失败（表/题型异常）返回 ``None``，调用方据此退化为空段。
+    """
+    if not kp_id:
+        return None
+    try:
+        row = db.execute(
+            select(KnowledgePoint.code).where(KnowledgePoint.id == str(kp_id))
+        ).first()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("解知识点 code 失败(kp_id=%s): %s", kp_id, exc)
+        return None
+    return row[0] if row else None
+
+
 def build_grounding_materials(
     db: Session,
     query: GroundingQuery,
@@ -473,7 +497,9 @@ def build_grounding_materials(
        4 个小朋友」，借它的场景，讲解立刻就接地气了。
     2. **kp_anchor（知识点释义）**：来自 ``knowledge_points.description``，
        数字已剥离（释义里的数字可能是本题答案）。
-    3. **peer_misconception / personal_error**：本期恒空（无放行语料、无个体数据）。
+    3. **peer_misconception**：A-2 落表后从「已放行（released）」语料按知识点 +
+       年级窗口取一条；表未落 / 无命中 → 空段（不报错）。
+       **personal_error**：恒空（无个体数据）。
 
     Args:
         db: 调用方传入的数据库会话。
@@ -513,12 +539,22 @@ def build_grounding_materials(
                 kp_description = description
                 break
 
-    # 4) peer 段：语料表未落 → 空段（不报错）
+    # 4) peer 段：A-2 落表后，从「已放行」语料里按知识点 + 年级窗口取一条同伴视角句。
+    #    表未落 / kp 解不出 / 查不到 → 空段，不报错（fail-safe）。
     peer_sentence = ""
-    if _peer_corpus_available(db):
-        # A-2 期在这里接「已放行（active）语料」的检索结果；
-        # 本期不落表，分支恒不进入。
-        peer_sentence = ""
+    if _peer_corpus_available(db) and query.kp_id:
+        kp_code = _resolve_kp_code(db, query.kp_id)
+        if kp_code:
+            max_grade = (
+                min(query.student_grade + query.grade_width, PRIMARY_MAX_GRADE)
+                if query.student_grade is not None
+                else PRIMARY_MAX_GRADE
+            )
+            hits = retrieve_released(
+                db, kp_code=kp_code, max_grade=max_grade,
+                error_type=query.error_type, scene=query.scene,
+            )
+            peer_sentence = hits[0] if hits else ""
 
     return GroundingMaterials(
         peer_misconception=peer_sentence,

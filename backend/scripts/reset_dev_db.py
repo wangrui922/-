@@ -88,7 +88,7 @@ DEFAULT_TARGET: Path = _BACKEND_DIR / "dev.db"
 EXPECTED_QUESTIONS: int = 4166
 
 #: 母版应有的表数
-EXPECTED_TABLES: int = 38
+EXPECTED_TABLES: int = 39  # 026 peer_view_corpus 落表后 38 → 39
 
 
 def resolve_master(explicit: Optional[str] = None) -> Path:

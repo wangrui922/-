@@ -153,14 +153,14 @@ def test_engines_layer_has_no_orm_or_env_import():
 # ============================================================
 
 
-def test_peer_misconception_is_always_empty_in_a1():
-    """同伴视角句：A-1 期恒空（语料库零条，人工抽检属 A-2）。
+def test_peer_misconception_surfaces_released_sentence_in_a2():
+    """同伴视角句：A-2 期原样返回已放行语料句（空 / None 返回空串）。
 
-    即使传入了语料句也必须返回空串 —— 因为**没有放行记录**，
-    用了就是「未放行内容进线上讲解」。
+    放行闸门前移到 ``peer_corpus_service.retrieve_released``（只取
+    ``status='released'``），本函数只负责原样返回，不再二次拦截。
     """
     assert build_peer_misconception() == ""
-    assert build_peer_misconception("好多同学都会把余数算错") == ""
+    assert build_peer_misconception("好多同学都会把余数算错") == "好多同学都会把余数算错"
     assert build_peer_misconception("") == ""
 
 

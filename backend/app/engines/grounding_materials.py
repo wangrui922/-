@@ -36,8 +36,9 @@
   不是分析文本。
 * ``kp_anchor`` 的素材源是 ``knowledge_points.description``。
 
-A-2 期（同伴视角语料库 026 迁移）落地时，**只需替换
-``build_peer_misconception`` 的数据来源**，四段结构、渲染与注入链路一行都不用改。
+A-2 期（同伴视角语料库 026 迁移）已落地：**``build_peer_misconception`` 直接返回
+已放行语料句**（由 ``grounding_service`` 经 ``peer_corpus_service.retrieve_released``
+取来），四段结构、渲染与注入链路一行未改。
 """
 
 from __future__ import annotations
@@ -925,24 +926,25 @@ def passes_red_lines(text: Optional[str]) -> bool:
 
 
 def build_peer_misconception(corpus_sentence: Optional[str] = None) -> str:
-    """同伴视角句 —— **A-1 期恒返回空串**。
+    """同伴视角句 —— A-2 期已接入 ``peer_view_corpus``，原样返回已放行语料句。
 
-    原因（不是偷懒，是产品约束）：库内同伴视角语料实测 **0 条**；PRD 要求的
-    首批 ≥200 条需要运营人工种子 + 人工抽检，工程师无法自证。更重要的是，
-    **用模板假装同伴说话正是 PRD 要防的编造风险**（「好多同学都会……」这种话
-    没有真实语料支撑，就是在编）。
+    设计来源：``07-项目文档/规格-同伴视角语料库-20261029.md``（PRD1 P0-5b）。
 
-    A-2 期（同伴视角语料库 + 026 迁移 + 人工放行闸门）落地时，只需把
-    ``corpus_sentence`` 换成从语料库检索到的**已放行**句子，本函数签名与
-    四段结构都不用改。
+    放行闸门前移到 **数据源**：调用方（``grounding_service``）只会把
+    :func:`app.services.peer_corpus_service.retrieve_released` 返回的
+    ``status='released'`` 行传进来，未放行语料天然到不了这里。所以本函数
+    只负责「原样返回」，不再做二次拦截 —— 拦截在检索层已完成。
+
+    A-1 期的「恒返回空串」是当时语料库零条、且未落表的临时状态；A-2 落表
+    后，传进来的就是真实已放行句，原样返回即可（空则空段）。
 
     Args:
-        corpus_sentence: A-2 期传入的已放行语料句；A-1 期不传。
+        corpus_sentence: A-2 期传入的已放行语料句；不传 / 传空 → 返回空串。
 
     Returns:
-        ``""``（恒定）。
+        传入的语料句原样（``None`` / 空串 → ``""``）。
     """
-    return ""
+    return corpus_sentence or ""
 
 
 def build_personal_error(error_text: Optional[str] = None) -> str:
