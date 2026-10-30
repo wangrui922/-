@@ -141,6 +141,7 @@ def main() -> int:
     imported = archived = drafted = skipped = duplicates = 0
     skipped_rows: list[tuple[int, str]] = []
     draft_rows: list[tuple[int, str, list[str]]] = []
+    dup_rows: list[tuple[int, str, int, str]] = []  # (行, kp_code, grade, sentence) 去重跳过
 
     with SessionLocal() as db:
         with open(csv_path, "r", encoding="utf-8-sig", newline="") as fh:
@@ -182,7 +183,7 @@ def main() -> int:
                     ).fetchone()
                     if exists:
                         duplicates += 1
-                        skipped_rows.append((i, "已存在相同 (kp_code,grade,sentence)，去重跳过"))
+                        dup_rows.append((i, kp_code, grade, sentence))
                         continue
 
                 try:
@@ -224,11 +225,15 @@ def main() -> int:
     print(f"  去重跳过（已存在）          ：{duplicates}")
     print(f"  跳过（字段非法）            ：{skipped}")
     if draft_rows:
-        print("\n--- 命中红线被拦截（draft，须修正后重提）---")
+        print("\n--- 命中红线被拦截（draft，须修正后重提，不进检索池）---")
         for ln, sent, viol in draft_rows:
             print(f"  行{ln} [{','.join(viol)}] {sent}")
+    if dup_rows:
+        print("\n--- 去重跳过（已存在相同 kp_code+grade+sentence，将不写入）---")
+        for ln, kp, g, sent in dup_rows:
+            print(f"  行{ln} [{kp} g{g}] {sent}")
     if skipped_rows:
-        print("\n--- 跳过行 ---")
+        print("\n--- 字段非法跳过 ---")
         for ln, reason in skipped_rows:
             print(f"  行{ln} {reason}")
     print("\n下一步：确认无误后加 --confirm 落库；再用 --list / --release-all --reviewer X 放行。")

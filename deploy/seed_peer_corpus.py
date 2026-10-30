@@ -87,6 +87,8 @@ def main() -> None:
     ap.add_argument("--release", action="store_true", help="导入后整批人工放行 archived")
     ap.add_argument("--coverage", action="store_true", help="只读：打印生产放行覆盖验收")
     ap.add_argument("--list", action="store_true", help="只读：列出生产待审 archived")
+    ap.add_argument("--dedup-report", action="store_true",
+                    help="只读：导入前预览分类（列出新增/拦截/去重清单，不落库）")
     args = ap.parse_args()
 
     # ---- 只读子命令 ----
@@ -95,6 +97,20 @@ def main() -> None:
         return
     if args.list:
         ssh(f"cd {REMOTE} && {COMPOSE} exec -T backend python /app/scripts/import_peer_corpus.py --list")
+        return
+
+    # ---- 导入前预览（只读，供二次确认）----
+    if args.dedup_report:
+        if not args.csv:
+            raise SystemExit("--dedup-report 必填 --csv（预览用）")
+        if not Path(args.csv).exists():
+            raise SystemExit(f"本地 CSV 不存在：{args.csv}")
+        basename = Path(args.csv).name
+        remote_csv = f"{DATA_VOLUME_HOST}/{basename}"
+        container_csv = f"/app/data/{basename}"
+        scp(args.csv, remote_csv)
+        print("\n[dry-run] 以下为导入前预览（只读，未落库）；确认无误后去掉 --dedup-report 并加 --confirm 执行")
+        ssh(f"cd {REMOTE} && {COMPOSE} exec -T backend python /app/scripts/import_peer_corpus.py --csv {container_csv}")
         return
 
     # ---- 导入子命令 ----
