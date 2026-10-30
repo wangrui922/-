@@ -100,6 +100,8 @@ __all__ = [
     "resolve_kp_codes",
     "resolve_kp_code",
     "validate_mapping_table",
+    "DISTANCE_FORM_KP_MAP",
+    "classify_distance_form",
 ]
 
 
@@ -340,6 +342,27 @@ EXPECTED_QUESTION_COUNT: int = sum(
 )
 
 
+# ============================================================ distance 族二次拆分（B 下期）
+#: distance 场景下「按算式二次分类」→ 目标知识点 code 的映射。
+#:
+#: distance 全族 216 题由 ``t_distance`` / ``t_distance2`` 双模板按 cell 奇偶交替
+#: 生成（见 ``generate_scenario_bank.py::t_distance_dual``），同一子模板内混入多种
+#: 算式；其中 69 题的算式并非行程三量。本表给出按算式二次归类的目标知识点
+#: （库里已存在的 code，可直接用），供 ``classify_distance_form`` 与回填脚本使用。
+#:
+#:   * 长度单位换算（"N千米(500米)?等于多少米" / "a千米b百米，等于多少米"）
+#:     → ``KP_UNIT_LENGTH_BASIC``（g3「毫米分米千米」）；
+#:   * 两段路程相加（"先走了…又走了…一共走了多少千米"）
+#:     → ``KP_CALC_ADD``（g3「加减法」）；
+#:   * 行程三量（速度×时间=路程 / 路程÷速度=时间 / 路程÷时间=速度 等）
+#:     → ``KP_WORD_TRAVEL``（维持 B-0 现状）。
+DISTANCE_FORM_KP_MAP: Dict[str, str] = {
+    "length_conversion": "KP_UNIT_LENGTH_BASIC",
+    "two_segment_add": "KP_CALC_ADD",
+    "travel": "KP_WORD_TRAVEL",
+}
+
+
 # ============================================================ 标注问题登记
 #: 本轮**不回改**任何题的 ``grade`` 或其它字段；以下问题仅登记到回填报告的
 #: ``annotation_issue`` 段，供后续人工治理批次处理。
@@ -390,7 +413,9 @@ ANNOTATION_ISSUES: Tuple[Dict[str, Any], ...] = (
             "另：distance 全族本轮 KP 相同，故本次归因**结果**不受影响（错归的是知识点，"
             "不是题量），但学情画像会把单位换算/加法的错误记到行程知识点上。"
         ),
-        "action": "本轮不改（需同子模板内二次切分，改动面大）；仅登记，留到下期按算式拆分。",
+        "action": "已由 B 下期 relabel_distance_kp.py 按 classify_distance_form 做二次拆分"
+        "（dev-only，只改 kp_id 一列，幂等），69 道非行程题重贴到 "
+        "KP_UNIT_LENGTH_BASIC / KP_CALC_ADD；其余仍留 KP_WORD_TRAVEL。",
     },
     {
         "issue_id": "distance_length_conversion_answer_bug",
@@ -410,8 +435,11 @@ ANNOTATION_ISSUES: Tuple[Dict[str, Any], ...] = (
             "**回填后的叠加污染**：这 5 道题挂到 KP_WORD_TRAVEL 后，学生**答对反而被判错**，"
             "错误事件会记到行程知识点上，与上一条的「69 题算式不是行程」叠加放大污染。"
         ),
-        "action": "本轮只写 kp_id、不改答案，仅登记；留到下期修生成器"
-        "（题面后缀与答案用同一个随机结果）并重刷这 5 道题的官方答案。",
+        "action": "生成器 bug 已在 B 下期修复（t_distance2 kind==3 改用单次 "
+        "has_500 同时决定题面后缀与答案，见本文件 t_distance2 分支）。"
+        "既有 dev 库里那 5 道历史错误答案需另走内容级重生成"
+        "（删除旧 INSERT 后重跑 generate_scenario_bank.py），不在 kp 重贴脚本"
+        "范围内（relabel_distance_kp.py 只改 kp_id 一列）。",
     },
     {
         "issue_id": "archived_zero_exception_is_indirect",
@@ -519,6 +547,46 @@ def resolve_kp_code(scenario_template: str) -> str:
     if key not in SCENARIO_KP_MAPPING:
         raise KeyError(f"映射表未覆盖场景子模板: {scenario_template!r}")
     return SCENARIO_KP_MAPPING[key]
+
+
+# ============================================================ distance 族「按算式二次拆分」（B 下期）
+def classify_distance_form(content: str) -> str:
+    """把一道 distance 场景题按其**题干算式**二次归类。
+
+    背景（见 ``ANNOTATION_ISSUES`` 的 ``distance_template_mixed_operation``）：
+    distance 全族 216 题由 ``t_distance`` / ``t_distance2`` 双模板按 cell 奇偶交替
+    生成，同一 ``scenario_template`` 下混入多种算式，其中 69 题的算式并非行程三量，
+    却被 B-0 一律挂到了 ``KP_WORD_TRAVEL``。本函数**按题干模式**二次分类，
+    不依赖 ``scenario_template`` 索引（因为 69 题散落在该族四个子模板内部）。
+
+    分类依据（公式复算 + 抽样确认，覆盖 147 行程三量 / 47 长度换算 / 22 两段相加）：
+
+        * ``"length_conversion"`` —— 长度单位换算；题面含「等于多少米」
+          （形如 ``"N千米等于多少米"`` / ``"N千米500米等于多少米"`` /
+          ``"小明家到学校a千米b百米，等于多少米"``）；
+        * ``"two_segment_add"`` —— 两段路程相加；含「先走了」且「又走了」
+          （``"小丽先走了a千米，又走了b千米，一共走了多少千米"``）；
+        * ``"travel"`` —— 行程三量（速度×时间 / 路程÷速度 / 路程÷时间），
+          即以上两者都不命中的 distance 题。
+
+    ⚠️ 铁律：本函数**纯标准库**、不碰数据库；调用方（回填脚本）负责把返回值
+    经 ``DISTANCE_FORM_KP_MAP`` 映射到知识点 code。
+
+    Args:
+        content: 题干文本。
+
+    Returns:
+        ``"travel"`` / ``"length_conversion"`` / ``"two_segment_add"`` 之一。
+    """
+    c = (content or "").strip()
+    # 1) 长度单位换算：所有换算题都以「等于多少米」收尾（含 500米 变体 / 千米百米变体）
+    if "等于多少米" in c:
+        return "length_conversion"
+    # 2) 两段路程相加：先走了…又走了…（纯加法，无速度/时间三量）
+    if "先走了" in c and "又走了" in c:
+        return "two_segment_add"
+    # 3) 其余 distance 题即行程三量
+    return "travel"
 
 
 @dataclass(frozen=True)
