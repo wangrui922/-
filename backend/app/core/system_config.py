@@ -49,6 +49,15 @@ DEFAULTS: Dict[str, tuple] = {
     # 题也给高置信度），按「不确定性默认不挡用户」灰度——运营/内测验证后按需开启
     # （建议 0.6）。与 CONSENT_GATE_ENABLED 同一灰度思路。
     "CONFIDENCE_RETHRESHOLD": ("-1", float),
+    # A-1 轻量 RAG「接地气讲解」（灰度开关，默认关）：
+    #   * RAG_GROUNDING_ENABLED —— 打开后，tutor 在 **DEMO / JUDGE** 模式下
+    #     追加一段接地气素材（生活类比 + 知识点释义）作为 system 提示的
+    #     第 5 段后缀；GUIDE / HINT 一律零注入。
+    # 默认关的理由（灰度口径）：开关打开前，线上输出与改造前**逐字一致**
+    # （空素材 = 不追加任何后缀），这是验收硬要求；先小流量验证「讲解更像
+    # 接地气的好老师」再放量。
+    # cast 用 _to_bool 而非 bool，原因见 _to_bool 文档字符串。
+    "RAG_GROUNDING_ENABLED": ("false", _to_bool),
 }
 
 # 进程内缓存
