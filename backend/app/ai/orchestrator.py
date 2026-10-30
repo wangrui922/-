@@ -445,6 +445,35 @@ def _to_history(messages: List[AiMessage]) -> List[Dict[str, str]]:
     return [{"role": m.role, "content": m.content} for m in messages]
 
 
+def _grounding_segment(
+    *,
+    db: Session,
+    session: AiSession,
+    mode: Optional[str],
+) -> str:
+    """取本轮的接地气素材段（A-1 轻量 RAG）。
+
+    返回空串 = **不注入**，此时 tutor 的 system 提示与改造前逐字一致。
+    本函数**绝不抛错**：素材是「锦上添花」，取不到就当没有。
+
+    延迟导入 ``app.services.grounding_service``：与本文件里
+    ``explanation_quality`` 同一处理，避免 ``app.ai`` ↔ ``app.services``
+    在模块级形成 import 环。
+    """
+    try:
+        from app.services import grounding_service
+
+        return grounding_service.render_session_grounding_segment(
+            db,
+            mode=mode,
+            question_id=session.question_id,
+            student_id=session.student_id,
+        )
+    except Exception as exc:  # pragma: no cover - 兜底：素材取不到不影响主流程
+        logger.warning("接地气素材段构建失败(session=%s): %s", session.id, exc)
+        return ""
+
+
 def start_session(
     *,
     student_id: Any,
@@ -708,6 +737,9 @@ def continue_session(
         state=state,
         mode=active_mode,
         error_type=error_type,
+        grounding_segment=_grounding_segment(
+            db=db, session=session, mode=active_mode
+        ),
     )
 
     # #67→生产流：DEMO 讲解过质量闸门（低于阈值自动重讲一次），默认关闭需显式开启
@@ -828,6 +860,9 @@ async def continue_session_async(
         state=state,
         mode=active_mode,
         error_type=error_type,
+        grounding_segment=_grounding_segment(
+            db=db, session=session, mode=active_mode
+        ),
     )
 
     # #67→生产流：DEMO 讲解过质量闸门（低于阈值自动重讲一次），默认关闭需显式开启
@@ -939,6 +974,9 @@ def _apply_demo_quality_gate(
             session_messages=history + [{"role": "user", "content": student_text}],
             state=session.session_state,
             mode=MODE_DEMO,
+            grounding_segment=_grounding_segment(
+                db=db, session=session, mode=MODE_DEMO
+            ),
         )
 
     final_text, quality = explanation_quality.ensure_explanation_quality(
@@ -986,6 +1024,9 @@ async def _apply_demo_quality_gate_async(
             session_messages=history + [{"role": "user", "content": student_text}],
             state=session.session_state,
             mode=MODE_DEMO,
+            grounding_segment=_grounding_segment(
+                db=db, session=session, mode=MODE_DEMO
+            ),
         )
 
     final_text, quality = await explanation_quality.ensure_explanation_quality_async(

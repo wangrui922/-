@@ -35,7 +35,6 @@
 
 from __future__ import annotations
 
-import itertools
 import uuid
 from typing import List, Optional
 
@@ -60,40 +59,19 @@ from app.services.grounding_service import (
 )
 from app.models.content import KnowledgePoint, Question
 from app.models.system_config import SystemConfig
+from rag_tagging import new_tag, rag_cleanup, track_config_key, track_kp, track_question
 
 
 # ============================================================
 # 造数工具
 # ============================================================
 
-#: 全局唯一标记的序号。
-_TAG_SEQ = itertools.count(1)
-
-#: 造标记用的**生僻字**（避开小学数学题面里会出现的字）。
-_RARE_CHARS = (
-    "鼬鼯貔貘鬣麟麒犊狍麂狈獾鼍蟾蝾蚰蜈蚺蟒鸢鸶鹱鸻鹞鹧鹣鹦鹕鹩鹫鹇鹈鹉鹌鹊鹃鹑鹒鹓鹬鹭鹰鹳鹾麸黉齑龋龌龑龚龛"
-)
-
-
-def _tag() -> str:
-    """产出一个全局唯一的中文标记（**两个生僻字**，如 ``鼬貔``）。
-
-    为什么必须是「生僻字 + 只有两个」：
-    * 检索层的相关性下限是「与目标串**至少有一个共同的 2 字词**」。
-      所以标记必须**不与库里任何其它文本共享 2 字词**，否则断言会命中
-      别的模块造的题（假失败），或命中自己别的用例的题（顺序漂移）。
-    * **生僻字**：保证不与真实题面 / 其它模块的题面撞；
-    * **只有两个字**：整串就一个 2 字词，不存在「共享前缀」这种串味
-      （早先版本用「梧桐签甲乙」这种带固定前缀的标记，结果所有标记
-      互相共享「梧桐」「桐签」两个 2 字词 → 全部串味）。
-
-    标记里**不含数字**：素材断言会扫数字。
-    """
-    index = next(_TAG_SEQ)
-    size = len(_RARE_CHARS)
-    first = _RARE_CHARS[(index // size) % size]
-    second = _RARE_CHARS[index % size]
-    return f"{first}{second}"
+#: 全局唯一中文标记（**跨测试文件共享**，见 ``tests/rag_tagging.py``）。
+#:
+#: 早先本文件自带一套标记（从 1 开始数），与 ``test_grounding_injection.py``
+#: 的标记**完全撞车** → 两个文件造的题互相命中 → 全量跑时 2 条用例变红。
+#: 现在统一走共享计数器。
+_tag = new_tag
 
 
 def _uid() -> str:
@@ -112,7 +90,7 @@ def _make_kp(
     kp = KnowledgePoint(name=f"{name}{_uid()}", description=description, grade=grade)
     db.add(kp)
     db.flush()
-    return kp
+    return track_kp(kp)
 
 
 def _make_question(
@@ -136,7 +114,17 @@ def _make_question(
     )
     db.add(question)
     db.flush()
-    return question
+    return track_question(question)
+
+
+@pytest.fixture(autouse=True)
+def _auto_cleanup(rag_cleanup):
+    """每个用例结束后清掉本模块造的题 / 知识点 / 配置行。
+
+    会话级共享内存库不清理就会污染后续模块（本分支实测踩过：
+    ``RAG_GROUNDING_ENABLED=true`` 被 commit 出去，后续模块读到「开关已开」）。
+    """
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -300,6 +288,7 @@ def test_materials_for_primary_student_contain_no_junior_high(db: Session):
     )
     db.add(junior_kp)
     db.flush()
+    track_kp(junior_kp)
     _make_question(
         db,
         content=f"小明在文具店买了 3 支铅笔。{tag}",
@@ -326,6 +315,7 @@ def test_junior_high_kp_never_reaches_primary_student(db: Session):
     )
     db.add(junior_kp)
     db.flush()
+    track_kp(junior_kp)
 
     materials = build_grounding_materials(
         db,
@@ -560,6 +550,7 @@ def _set_switch(db: Session, value: str) -> None:
     else:
         row.value = value
     db.flush()
+    track_config_key(GROUNDING_CONFIG_KEY)
 
 
 def test_switch_defaults_to_off(db: Session):

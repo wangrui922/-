@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from app.ai.answer_guard import generate_guarded_reply, generate_guarded_reply_async
+from app.ai.intent import UNGUARDED_MODES
 from app.ai.prompts.tutor import PROMPT as TUTOR_PROMPT
 from app.ai.state_machine import (
     SESSION_STATE_GUIDING,
@@ -67,6 +68,31 @@ def _sanitize(session_messages: Optional[List[Dict[str, Any]]]) -> List[Dict[str
     return cleaned[-MAX_HISTORY:]
 
 
+def _grounding_suffix(mode: Optional[str], segment: str) -> str:
+    """接地气素材后缀（system 提示的**第 5 段**）。
+
+    两道闸门：
+
+    1. **只在 ``DEMO`` / ``JUDGE`` 注入** —— 这两个模式在
+       ``app.ai.intent`` 里属于 ``UNGUARDED_MODES``，整段跳过答案泄漏
+       检查；而 ``GUIDE`` / ``HINT`` 严格查 ``has_answer_leak``，
+       素材段一旦把答案带出来就会触发重生成，白白多一次模型往返，
+       甚至退化成兜底话术。素材是「讲解素材」，讲解场景才用得上。
+    2. **素材为空就不注入** —— 开关关闭 / 检索不到时 ``segment`` 是空串，
+       此时 system 提示与改造前**逐字一致**。
+
+    Args:
+        mode: 本轮响应模式。
+        segment: 已渲染好的素材段（由服务层产出，本模块不碰 DB）。
+
+    Returns:
+        要追加的后缀文本；不该注入时返回 ``""``。
+    """
+    if mode not in UNGUARDED_MODES:
+        return ""
+    return (segment or "").strip()
+
+
 def _build_request(
     *,
     session_messages: List[Dict[str, Any]],
@@ -74,6 +100,7 @@ def _build_request(
     state: Optional[str],
     mode: Optional[str],
     error_type: Optional[str] = None,
+    grounding_segment: str = "",
 ) -> tuple[List[Dict[str, str]], str, bool]:
     """组装发给 guard 的 ``(messages, system, strict)``（同步 / 异步共用）。
 
@@ -85,6 +112,9 @@ def _build_request(
         error_type: 错因机器码（方向八新增，逐个见
             ``app.core.error_categories`` 五码）；可为空，为空时不追加
             「诊断式追问」后缀，行为与改造前完全一致。
+        grounding_segment: 接地气素材段（A-1 轻量 RAG）。为空串 = 不注入；
+            非空时**只有** ``DEMO`` / ``JUDGE`` 会真正追加（见
+            :func:`_grounding_suffix`）。
 
     Returns:
         ``(messages, system, strict)`` 三元组。
@@ -100,14 +130,18 @@ def _build_request(
         messages.append({"role": "user", "content": "我们开始吧，请你先问我第一个问题。"})
 
     # 系统提示拼接顺序固定：核心提示词 → 阶段后缀 → 模式后缀 → 诊断式追问后缀
-    # （诊断最后 = 粒度最细、优先级最高，只按错因 × 模式收紧本轮的「问法」；
-    #   error_type 未提供时完全不追加 = 行为与改造前一致）
+    # → 接地气素材后缀
+    # （诊断在素材之前 = 错因结论先立住，素材只是「讲的时候可以借的比喻」；
+    #   error_type 未提供时完全不追加 = 行为与改造前一致；
+    #   grounding_segment 为空 / 模式不在 DEMO·JUDGE 时完全不追加 =
+    #   输出与改造前逐字一致）
     suffixes = [
         part
         for part in (
             state_prompt(state) if state else "",
             mode_prompt(mode),
             diagnostic_tactic_prompt(mode, error_type=error_type) if error_type else "",
+            _grounding_suffix(mode, grounding_segment),
         )
         if part
     ]
@@ -126,6 +160,7 @@ def next_question(
     state: Optional[str] = None,
     mode: Optional[str] = None,
     error_type: Optional[str] = None,
+    grounding_segment: str = "",
 ) -> str:
     """生成下一句引导语（经答案泄漏检查器兜底）。
 
@@ -142,6 +177,9 @@ def next_question(
             ``None`` = 未指定 = 行为与改造前完全一致。本函数只透传，不改写。
         error_type: 错因机器码（方向八新增，见 ``app.core.error_categories``），
             非空时注入「诊断式追问」后缀；为空行为与改造前完全一致。
+        grounding_segment: 接地气素材段（A-1 轻量 RAG）。**默认空串**；
+            空串 = 完全不注入 = 输出与改造前逐字一致；非空时也只有
+            ``DEMO`` / ``JUDGE`` 会真正追加。
 
     Returns:
         一句引导语（已 strip）；命中泄漏且重生成耗尽时给 ``FALLBACK_REPLY`` 兜底。
@@ -156,6 +194,7 @@ def next_question(
         state=state,
         mode=mode,
         error_type=error_type,
+        grounding_segment=grounding_segment,
     )
     return generate_guarded_reply(
         messages=messages,
@@ -173,6 +212,7 @@ async def next_question_async(
     state: Optional[str] = None,
     mode: Optional[str] = None,
     error_type: Optional[str] = None,
+    grounding_segment: str = "",
 ) -> str:
     """``next_question`` 的异步版：await async guard，不阻塞事件循环。
 
@@ -191,6 +231,7 @@ async def next_question_async(
         state=state,
         mode=mode,
         error_type=error_type,
+        grounding_segment=grounding_segment,
     )
     return await generate_guarded_reply_async(
         messages=messages,

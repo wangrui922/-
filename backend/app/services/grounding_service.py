@@ -554,6 +554,102 @@ def render_grounding_segment(db: Session, query: GroundingQuery) -> str:
         return ""
 
 
+def _load_question_context(
+    db: Session, question_id: Optional[Any]
+) -> Tuple[str, Optional[str]]:
+    """取会话关联题的「题面 + 知识点 id」（取不到返回空）。"""
+    qid = _to_uuid(question_id)
+    if qid is None:
+        return "", None
+    try:
+        row = db.execute(
+            select(Question.content, Question.kp_id).where(Question.id == qid)
+        ).first()
+    except Exception as exc:
+        logger.warning("取题面失败(question_id=%s): %s", question_id, exc)
+        return "", None
+    if row is None:
+        return "", None
+    return (row[0] or ""), (str(row[1]) if row[1] else None)
+
+
+def _load_student_grade(db: Session, student_id: Optional[Any]) -> Optional[int]:
+    """取学生年级（取不到返回 ``None`` = 未知 → 年级窗口取小学全段）。
+
+    年级未知**不是**事故：窗口上限恒为 6，拿不到年级时最多只能拿到
+    小学题，绝不会漏进初高中内容。
+    """
+    sid = _to_uuid(student_id)
+    if sid is None:
+        return None
+    try:
+        from app.models.user import Student
+
+        grade = db.execute(
+            select(Student.grade).where(Student.id == sid)
+        ).scalar_one_or_none()
+    except Exception as exc:
+        logger.warning("取学生年级失败(student_id=%s): %s", student_id, exc)
+        return None
+    if grade is None:
+        return None
+    try:
+        return int(grade)
+    except (TypeError, ValueError):
+        return None
+
+
+def render_session_grounding_segment(
+    db: Session,
+    *,
+    mode: Optional[str],
+    question_id: Optional[Any] = None,
+    student_id: Optional[Any] = None,
+    fallback_text: str = "",
+) -> str:
+    """按「会话上下文」检索并渲染接地气素材段（tutor 注入用）。
+
+    调用方（orchestrator）只管传会话 id，**不碰检索细节**。
+
+    三道闸门（任一不满足 → 返回空串 = 不注入）：
+
+    1. **模式闸门**：只有 ``DEMO`` / ``JUDGE`` 注入。这两个模式在
+       ``app.ai.intent`` 里整段跳过答案泄漏检查；``GUIDE`` / ``HINT``
+       严格查 ``has_answer_leak``，素材段一旦把答案带出来就会触发
+       重生成，白白多一次模型往返。
+    2. **开关闸门**：``RAG_GROUNDING_ENABLED`` 关闭 → 完全不注入，
+       线上输出与改造前**逐字一致**。
+    3. **年级闸门**：由 :func:`build_grounding_materials` 负责
+       （学生年级 > 6 → 空包；候选题年级恒 ≤ 6）。
+
+    Args:
+        db: 调用方传入的数据库会话。
+        mode: 本轮响应模式（``GUIDE`` / ``HINT`` / ``DEMO`` / ``JUDGE``）。
+        question_id: 会话关联的题目 id（可为空）。
+        student_id: 学生 id（可为空 → 年级未知）。
+        fallback_text: 没有关联题时，用它当检索目标串。
+
+    Returns:
+        渲染文本；任何闸门不满足 / 检索失败 → ``""``。
+    """
+    try:
+        from app.ai.intent import UNGUARDED_MODES
+
+        if mode not in UNGUARDED_MODES:
+            return ""
+        content, kp_id = _load_question_context(db, question_id)
+        grade = _load_student_grade(db, student_id)
+        query = GroundingQuery(
+            text=content or (fallback_text or ""),
+            kp_id=kp_id,
+            student_grade=grade,
+        )
+        return render_grounding_segment(db, query)
+    except Exception as exc:
+        logger.warning("接地气素材段构建失败: %s", exc)
+        return ""
+
+
 # =============================================================================
 # 灰度开关
 # =============================================================================
@@ -607,6 +703,7 @@ __all__ = [
     "search_candidates",
     "build_grounding_materials",
     "render_grounding_segment",
+    "render_session_grounding_segment",
     "grounding_enabled",
     "clear_grounding_cache",
 ]

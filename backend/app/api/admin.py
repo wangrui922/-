@@ -981,6 +981,7 @@ _CONFIG_DESCRIPTIONS: Dict[str, str] = {
     "CONSENT_GATE_ENABLED": "监护人同意门控总开关（灰度，默认关）",
     "CONSENT_VERSION": "监护人同意规则版本号（变更后旧版本同意记录一律失效）",
     "CONFIDENCE_RETHRESHOLD": "拍题分析置信度阈值（低于此值引导重拍，-1 关闭）",
+    "RAG_GROUNDING_ENABLED": "轻量RAG接地气讲解开关（灰度，默认关；开启后仅在讲解/评判模式追加素材）",
 }
 
 #: bool 键认得的 token（与 ``_to_bool`` 语义一致）。不设白名单的话，
