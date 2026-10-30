@@ -37,11 +37,12 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Dict, Tuple
 
 import pytest
 
 from app.engines.grounding_materials import (
-    ANALOGY_TEMPLATES,
+    CATEGORY_OF_SKELETON,
     CN_NUMERAL_CHARS,
     DIGIT_CHARS,
     INTERNAL_HINT,
@@ -52,6 +53,7 @@ from app.engines.grounding_materials import (
     PRIMARY_MAX_GRADE,
     RED_LINE_CHECKERS,
     SCENE_SKELETONS,
+    SCENE_TEMPLATES,
     GroundingMaterials,
     build_analogy,
     build_grounding_materials,
@@ -246,24 +248,37 @@ def test_extract_scene_anchor_strips_promo_tail():
     [
         (
             "去文具店买文具",
-            "就像去文具店买文具那样，先想清楚要什么，再看还剩多少。",
+            "就像去文具店买文具那样，先想好要买哪些文具，再慢慢挑。",
         ),
         (
             "把东西平均分给同学",
-            "就像把东西平均分给同学那样，先算清要分给几个人。",
+            "就像把东西平均分给同学那样，先数清共有多少，再平均分给几个人。",
         ),
         (
             "看小树长高",
-            "就像看小树长高那样，得慢慢等它长。",
+            "就像看小树长高那样，先看看小树，再等它慢慢长高。",
         ),
         (
             "看看手里还剩多少",
-            "就像看看手里还剩多少那样，先看原来有多少再减掉用掉的。",
+            "就像看看手里还剩多少那样，先看看原来有多少，再减掉已经用掉的。",
+        ),
+        # —— team-lead 点名的三个「空话」骨架：句子必须**贴着这个场景** ——
+        (
+            "跟同学分东西",
+            "就像跟同学分东西那样，先看清要分给同学多少，再逐份分。",
+        ),
+        (
+            "在黑板上写",
+            "就像在黑板上写那样，先想好要写什么，再逐笔写在黑板上。",
+        ),
+        (
+            "排好队按次序来",
+            "就像排好队按次序来那样，先按次序排好队，再照次序轮着来。",
         ),
     ],
 )
 def test_build_analogy_golden(anchor, expected):
-    """生活类比句：逐条手算真值（骨架 → 类别 → 模板）。"""
+    """生活类比句：逐条手算真值（骨架 → 专属句式）。"""
     assert build_analogy(anchor) == expected
 
 
@@ -342,7 +357,7 @@ def test_build_grounding_materials_fills_each_section():
         content="小明在文具店买了 3 支铅笔，一共花了 5 元。",
         kp_description="四则运算、口算笔算、简便运算与运算定律",
     )
-    assert materials.analogy == "就像去文具店买文具那样，先想清楚要什么，再看还剩多少。"
+    assert materials.analogy == "就像去文具店买文具那样，先想好要买哪些文具，再慢慢挑。"
     assert materials.kp_anchor == "四则运算、口算笔算、简便运算与运算定律"
     # A-1 期没有语料与个体数据 → 两段恒空
     assert materials.peer_misconception == ""
@@ -479,8 +494,8 @@ def test_all_skeletons_and_templates_are_digit_free():
     """
     for word, (_tier, _category, skeleton) in SCENE_SKELETONS.items():
         assert not _ANY_DIGIT.search(skeleton), (word, skeleton)
-    for category, template in ANALOGY_TEMPLATES.items():
-        assert not _ANY_DIGIT.search(template), (category, template)
+    for skeleton, template in SCENE_TEMPLATES.items():
+        assert not _ANY_DIGIT.search(template), (skeleton, template)
 
 
 def test_strip_numbers_removes_arabic_and_cn_quantities():
@@ -608,6 +623,10 @@ def test_clean_text_passes_red_lines(text):
         (6, 10, (1, 2, 3, 4, 5, 6)),
         # 年级未知 → 全段 1~6（仍不越 6）
         (None, 1, (1, 2, 3, 4, 5, 6)),
+        # 超纲学生（初中/高中）→ **空窗口**（本期只服务小学）
+        (7, 1, ()),
+        (12, 1, ()),
+        (7, 10, ()),
     ],
 )
 def test_grade_window_golden(student_grade, width, expected):
@@ -616,7 +635,10 @@ def test_grade_window_golden(student_grade, width, expected):
 
 
 def test_grade_window_never_exceeds_primary_max_grade():
-    """任何年级组合下窗口都不得越过 PRIMARY_MAX_GRADE（=6）。"""
+    """任何年级组合下窗口都不得越过 PRIMARY_MAX_GRADE（=6）。
+
+    超纲学生（>6）→ 空窗口（本期只服务小学）。
+    """
     for student_grade in range(1, 13):
         for width in range(0, 6):
             window = grade_window(student_grade, width=width)
@@ -625,6 +647,8 @@ def test_grade_window_never_exceeds_primary_max_grade():
                 width,
                 window,
             )
+            if student_grade > PRIMARY_MAX_GRADE:
+                assert window == (), (student_grade, width, window)
 
 
 # ============================================================
@@ -654,3 +678,194 @@ def test_render_uses_section_labels():
     # A-1 期这两段恒空 → 标签不得出现
     assert "【同伴提醒】" not in rendered
     assert "【个人错因】" not in rendered
+
+
+# ============================================================
+# 8. 类比句「语义相关 + 信息增量」守卫（team-lead 验收项）
+# ============================================================
+
+#: 全部去重后的情境骨架（每个骨架都必须有专属句式）。
+_ALL_SKELETONS = sorted({skeleton for _, _, skeleton in SCENE_SKELETONS.values()})
+
+#: 「放之四海皆准」的套话黑名单。
+#:
+#: 为什么要有黑名单：早期版本按 category 配 11 套模板，
+#: school 类拿到的是「先看清题目问的是什么」—— **换掉骨架照样成立**，
+#: 对孩子零信息量。这类句子必须**再也写不进去**。
+_VACUOUS_FILLERS: Tuple[str, ...] = (
+    "先看清题目问的是什么",
+    "先把步骤看明白再动手",
+    "得慢慢等它长",
+    "先想清楚要什么",
+    "先算清要分给几个人",
+    "先把要做的活儿按顺序排好",
+)
+
+
+def _bigrams(text: str) -> set:
+    """中文 2 字词集合（守卫用的最小语义单位）。"""
+    return {text[i : i + 2] for i in range(len(text) - 1)}
+
+
+def _scene_tail(template: str) -> str:
+    """取模板的**固定部分**（去掉 ``{anchor}`` 与「就像…那样，」外壳）。"""
+    tail = template.split("{anchor}", 1)[-1]
+    for shell in ("那样，", "那样"):
+        if tail.startswith(shell):
+            tail = tail[len(shell) :]
+            break
+    return tail.strip("。 ")
+
+
+def test_every_skeleton_has_its_own_template():
+    """每个骨架都必须有**专属**句式（不许共用一套 category 模板）。
+
+    共用模板 = 语义泛化的骨架会拿到同一句话 = 空话回归。
+    """
+    assert set(SCENE_TEMPLATES) == set(_ALL_SKELETONS)
+
+
+@pytest.mark.parametrize("skeleton", _ALL_SKELETONS)
+def test_analogy_template_is_semantically_relevant(skeleton):
+    """类比句必须**贴着这个骨架**说：固定部分与骨架共享至少一个 2 字词。
+
+    这是 team-lead 点名的验收标准：「句子里的动词/动作词要出现在该
+    category 的骨架里」—— 这里按更严的口径做到**每个骨架**。
+    """
+    template = SCENE_TEMPLATES[skeleton]
+    tail = _scene_tail(template)
+    shared = _bigrams(tail) & _bigrams(skeleton)
+    assert shared, f"「{skeleton}」的类比句与骨架没有共同词，是空话: {template}"
+
+
+@pytest.mark.parametrize("skeleton", _ALL_SKELETONS)
+def test_analogy_template_adds_information_beyond_anchor(skeleton):
+    """类比句必须比骨架本身**多给一点信息**。
+
+    判据：固定部分必须引入至少一个骨架里没有的字 —— 否则这句话
+    只是把骨架原样念一遍（换掉骨架照样成立）。
+    """
+    template = SCENE_TEMPLATES[skeleton]
+    tail = _scene_tail(template)
+    new_chars = set(tail) - set(skeleton) - set("，。、")
+    assert new_chars, f"「{skeleton}」的类比句只是把骨架念了一遍: {template}"
+
+
+@pytest.mark.parametrize("skeleton", _ALL_SKELETONS)
+def test_analogy_template_is_not_vacuous_filler(skeleton):
+    """套话黑名单：这些「换掉骨架照样成立」的句子不得再出现。"""
+    template = SCENE_TEMPLATES[skeleton]
+    for filler in _VACUOUS_FILLERS:
+        assert filler not in template, f"「{skeleton}」的类比句退化成套话: {template}"
+
+
+def test_every_category_has_semantically_relevant_analogy():
+    """每个 category 至少要有一个骨架，其类比句与该骨架语义相关。
+
+    team-lead 的原话口径（这里按更严的「每个骨架」执行）。
+    """
+    by_category: Dict[str, set] = {}
+    for _tier, category, skeleton in SCENE_SKELETONS.values():
+        by_category.setdefault(category, set()).add(skeleton)
+    assert by_category, "场景类别表空了"
+    for category, skeletons in by_category.items():
+        relevant = [
+            skeleton
+            for skeleton in skeletons
+            if _bigrams(_scene_tail(SCENE_TEMPLATES[skeleton]))
+            & _bigrams(skeleton)
+        ]
+        assert relevant, f"类别 {category} 的类比句全部与骨架无关"
+
+
+@pytest.mark.parametrize("skeleton", _ALL_SKELETONS)
+def test_analogy_sentence_length_and_red_lines(skeleton):
+    """每个骨架生成的类比句：≤40 字 + 过 6 条硬红线。"""
+    sentence = build_analogy(skeleton)
+    assert sentence, f"「{skeleton}」没有生成类比句"
+    assert len(sentence) <= MAX_SENTENCE_CHARS, sentence
+    assert find_red_line_violations(sentence) == [], sentence
+
+
+# ============================================================
+# 9. 素材包整体非空率（防「骨架表被改坏导致大面积空包」）
+# ============================================================
+
+#: 构造语料：有生活场景的题面（类比段应当有内容）。
+_SCENE_CONTENTS: Tuple[str, ...] = (
+    "小明在文具店买了 3 支铅笔。",
+    "王芳在超市买了 4 盒牛奶。",
+    "妈妈买了 3 千克苹果，一共 12 元。",
+    "老师把 12 个苹果平均分给 4 个小朋友。",
+    "把一个蛋糕分给 5 个小朋友。",
+    "一根绳子长 5 米，剪去 2 米，还剩多少米？",
+    "小树每天长高 3 厘米。",
+    "在黑板上写出得数。",
+    "同学们排好队按次序来。",
+    "小红帮妈妈擦桌子。",
+)
+
+#: 构造语料：没有生活场景的题面（类比段会空，靠知识点释义兜住）。
+_PLAIN_CONTENTS: Tuple[str, ...] = (
+    "在括号里填上 >、< 或 =。",
+    "计算下面各题。",
+    "把下面算式补充完整。",
+    "列式计算。",
+    "看图列式。",
+)
+
+
+def _build_sample_corpus():
+    """构造一份**分布贴近真库**的语料（100 条）。
+
+    真库实测：题面自身能抽出场景骨架 21.5%（小学段 26.7%），知识点释义
+    覆盖 99.7%，素材包整体非空率 94.8%（小学段 93.4%）。本构造语料取
+    「场景题 45% + 无场景但有释义 50% + 完全没素材 5%」，
+    与真库口径同量级。
+    """
+    corpus = []
+    for content in (_SCENE_CONTENTS * 5)[:45]:
+        corpus.append((content, "两位数乘除法"))
+    plain_with_kp = list(_PLAIN_CONTENTS) * 10
+    for content in plain_with_kp[:50]:
+        corpus.append((content, "整除特征与奇数偶数"))
+    # 最后 5 条：既无场景又无释义 → 素材包必然为空（对应真库那 5.2%）
+    for content in plain_with_kp[50:55]:
+        corpus.append((content, ""))
+    return corpus
+
+
+def test_material_package_non_empty_rate_at_least_90_percent():
+    """素材包整体非空率 ≥ 90%（防「骨架表被改坏导致大面积空包」）。
+
+    真库实测全库 94.8% / 小学段 93.4%，本断言留了余量但仍能抓住
+    「骨架识别整体失效」这类回归。
+    """
+    corpus = _build_sample_corpus()
+    packages = [
+        build_grounding_materials(content=content, kp_description=description)
+        for content, description in corpus
+    ]
+    non_empty = [pkg for pkg in packages if not pkg.is_empty()]
+    rate = len(non_empty) / len(packages)
+    assert rate >= 0.90, f"素材包整体非空率 {rate:.1%} < 90%（骨架表可能坏了）"
+
+
+def test_analogy_section_coverage_on_sample_corpus():
+    """类比段覆盖率不得低于「场景题占比」的下限（防骨架识别整体失效）。
+
+    构造语料里 45% 的题面带生活场景，这些题**必须**都拿到类比句。
+    """
+    corpus = _build_sample_corpus()
+    scene_total = sum(
+        1 for content, _ in corpus if extract_scene_anchor(content)
+    )
+    assert scene_total >= 40, f"构造语料里只有 {scene_total} 条认得出场景"
+
+    analogy_hits = sum(
+        1
+        for content, _ in corpus
+        if build_analogy(extract_scene_anchor(content))
+    )
+    rate = analogy_hits / len(corpus)
+    assert rate >= 0.40, f"类比段覆盖率 {rate:.1%} 过低（骨架识别可能坏了）"
