@@ -667,6 +667,71 @@ export async function finishAndExit(): Promise<boolean> {
   }
 }
 
+// ---- 后台 / 关闭自动结算（移动端进度保存关键补丁） -----------------------
+//
+// 痛点：移动端 WebView 被系统后台回收时，用户来不及点「交卷 / 保存并退出」，
+// 导致 POST /api/practice/finish 永不发送 → 错题不入本、掌握度不更新、复习卡
+// 不生成。桌面端用户会主动点按钮，移动端不会。这里在「页面不可见 / 卸载」时
+// 把当前会话自动结算掉，让错题本等学习成果照样落库。
+//
+// 安全前提：后端 /finish 幂等（重复 finish 不会重复入本，mistakes_created=0），
+// 因此 visibilitychange + pagehide 即使都触发、或之后用户又手动交卷都安全。
+//
+// 用 fetch + keepalive 而非 axios：卸载阶段 axios 连接可能被中断，而
+// fetch(keepalive) 是规范允许的「页面已不可见仍能把请求发到后端」的方式。
+// 仅当同源（生产 /api 经 nginx 反代）时无需 CORS 预检；若前端与 API 不同源，
+// 需把前端源加入后端 CORS_EXTRA_ORIGINS（见部署说明）。
+
+const EXIT_FLUSH_TOKEN_KEY = 'aicoach.student.token'
+let exitFlushArmed = false
+
+function flushPracticeOnExit(): void {
+  // 只在「进行中」且有活跃会话、且确实做过至少一题（已有判分结果）时才结算，
+  // 避免对「刚进页面就关掉」的空会话发无意义请求。
+  if (practiceState.phase !== 'doing' || !practiceState.session_id) return
+  if (practiceState.finishing) return
+  if (Object.keys(practiceState.feedback ?? {}).length === 0) return
+
+  let token = ''
+  try {
+    token = localStorage.getItem(EXIT_FLUSH_TOKEN_KEY) || ''
+  } catch {
+    token = ''
+  }
+  if (!token) return
+
+  const base = import.meta.env.VITE_API_BASE || '/api'
+  const url = `${base}/practice/finish`
+  const payload = JSON.stringify({ session_id: practiceState.session_id })
+  try {
+    void fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: payload,
+      keepalive: true,
+    })
+  } catch {
+    /* 卸载阶段尽力而为，忽略失败 */
+  }
+}
+
+function armExitFlush(): void {
+  if (exitFlushArmed || typeof document === 'undefined' || typeof window === 'undefined') return
+  exitFlushArmed = true
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushPracticeOnExit()
+  })
+  // pagehide 覆盖「标签关闭 / 浏览器退出」等 beforeunload 不可靠的场景
+  window.addEventListener('pagehide', flushPracticeOnExit)
+  // 旧版移动 WebView 仅触发 beforeunload 时的兜底（不调 preventDefault，不弹确认框）
+  window.addEventListener('beforeunload', flushPracticeOnExit)
+}
+
+armExitFlush()
+
 /** 回到筛选页重新挑条件（同时退出知识点直达上下文）。 */
 export function backToFilter(): void {
   clearSession()
