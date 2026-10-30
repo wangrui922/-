@@ -344,9 +344,14 @@ def t_distance2(cell: int, rng: random.Random):
         )
     if kind == 3:
         km = rng.randint(1, 15)
-        m = km * 1000 + rng.choice([0, 500])
+        # ⚠️ 单次随机同时决定「题面后缀」与「答案加数」，杜绝题面与答案不自洽。
+        # 旧实现是两次独立 rng.choice，曾导致「题面写 N千米500米、答案却只算
+        # N×1000（或反之）」的 5/47 道答案错误。
+        has_500 = rng.choice([False, True])
+        m = km * 1000 + (500 if has_500 else 0)
+        suffix = "500米" if has_500 else ""
         return (
-            f"{km}千米{rng.choice(['', '500米'])}等于多少米？",
+            f"{km}千米{suffix}等于多少米？",
             str(m),
             [str(m - 1000), str(m + 1000), str(m // 1000 + 100)],
         )
