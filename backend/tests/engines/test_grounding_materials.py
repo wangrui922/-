@@ -765,7 +765,7 @@ def test_every_category_has_semantically_relevant_analogy():
     team-lead 的原话口径（这里按更严的「每个骨架」执行）。
     """
     by_category: Dict[str, set] = {}
-    for _tier, category, skeleton in SCENE_SKELETONS.values():
+    for skeleton, category in CATEGORY_OF_SKELETON.items():
         by_category.setdefault(category, set()).add(skeleton)
     assert by_category, "场景类别表空了"
     for category, skeletons in by_category.items():
