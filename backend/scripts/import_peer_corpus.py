@@ -72,6 +72,8 @@ def _build_arg_parser() -> argparse.Namespace:
     ap.add_argument("--reject-all", action="store_true", help="退回全部 draft")
     ap.add_argument("--coverage", action="store_true", help="打印放行覆盖验收")
     ap.add_argument("--reviewer", default=None, help="审核人（release/reject 必填）")
+    ap.add_argument("--no-dedup", action="store_true",
+                    help="关闭去重（默认按 kp_code+grade+sentence 跳过已存在行，防重复批次）")
     return ap.parse_args()
 
 
@@ -88,6 +90,7 @@ def main() -> int:
 
     # app.db / service 依赖数据库连接与项目包路径，放到参数解析后、env 就绪再 import
     sys.path.insert(0, str(BACKEND_ROOT))
+    from sqlalchemy import text  # noqa: E402
     from app.db import SessionLocal  # noqa: E402
     import app.services.peer_corpus_service as svc  # noqa: E402
 
@@ -135,7 +138,7 @@ def main() -> int:
         return 2
     batch = args.batch or _default_batch(csv_path)
 
-    imported = archived = drafted = skipped = 0
+    imported = archived = drafted = skipped = duplicates = 0
     skipped_rows: list[tuple[int, str]] = []
     draft_rows: list[tuple[int, str, list[str]]] = []
 
@@ -166,6 +169,21 @@ def main() -> int:
                     skipped += 1
                     skipped_rows.append((i, f"grade 非整数：{grade_raw!r}"))
                     continue
+
+                # 去重（默认开）：同 (kp_code, grade, sentence) 已存在则跳过，
+                # 防止同一份 CSV 重复批次灌入导致语料翻倍。
+                if not args.no_dedup:
+                    exists = db.execute(
+                        text(
+                            "SELECT 1 FROM peer_view_corpus "
+                            "WHERE kp_code=:kp AND grade=:g AND sentence=:s LIMIT 1"
+                        ),
+                        {"kp": kp_code, "g": grade, "s": sentence},
+                    ).fetchone()
+                    if exists:
+                        duplicates += 1
+                        skipped_rows.append((i, "已存在相同 (kp_code,grade,sentence)，去重跳过"))
+                        continue
 
                 try:
                     res = svc.ingest_sentence(
@@ -200,9 +218,10 @@ def main() -> int:
             print("[dry-run] 未落库（预览如下）；加 --confirm 才真正写入")
 
     # ---- 汇总（无论 dry-run 都打印，便于人工核对）----
-    print(f"\n=== 导入预览（共解析 {imported + skipped} 行）===")
+    print(f"\n=== 导入预览（共解析 {imported + skipped + duplicates} 行）===")
     print(f"  将入 archived（待人工放行）：{archived}")
     print(f"  将入 draft（命中红线拦截）  ：{drafted}")
+    print(f"  去重跳过（已存在）          ：{duplicates}")
     print(f"  跳过（字段非法）            ：{skipped}")
     if draft_rows:
         print("\n--- 命中红线被拦截（draft，须修正后重提）---")
