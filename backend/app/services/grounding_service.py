@@ -52,10 +52,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from sqlalchemy import inspect, or_, select
+from sqlalchemy import case, inspect, or_, select
 from sqlalchemy.orm import Session
 
 from app.engines.grounding_materials import (
@@ -236,11 +237,29 @@ def table_exists(db: Session, table_name: str) -> bool:
 # =============================================================================
 
 
+def _to_uuid(value: Optional[str]) -> Optional[Any]:
+    """把 kp_id 字符串转成 UUID 对象（转不了就返回 ``None``）。
+
+    为什么必须转：``questions.kp_id`` 与 ``knowledge_points.id`` 都是
+    ``GUID`` 列（SQLite 落 ``CHAR(36)``、PG 落 ``UUID``），SQLAlchemy 的
+    ``GUID.process_bind_param`` 会对传入值做 ``uuid.UUID(str(value))``——
+    传一个非 UUID 字符串会直接抛 ``ValueError``，把整条检索带崩。
+    转不了（脏数据 / 调用方传了裸 key）就返回 ``None``，由调用方决定
+    是「不过滤」还是「查不到」。
+    """
+    if not value:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 def _build_candidates_query(
     *,
     pool: str,
     window: Sequence[int],
-    kp_id: Optional[str],
+    kp_uuid: Optional[Any],
     question_type: Optional[str],
     difficulty: Optional[int],
     like_words: Sequence[str],
@@ -248,8 +267,23 @@ def _build_candidates_query(
     """组装结构化粗筛 + LIKE 精排的 SQL（**不执行**，返回可执行语句）。
 
     结构化粗筛字段：``status`` / ``grade`` / ``kp_id`` / ``type`` / ``difficulty``。
-    LIKE 精排：目标串里最长的几个词做「或」匹配（无索引，全表扫，
+    LIKE 精排：目标串里区分度最高的几个词做「或」匹配（无索引，全表扫，
     实测 median 0.391ms，4166 行规模完全够用）。
+
+    ⚠️ **LIKE 只做排序加权，绝不做硬过滤**（这是 A-1 期的关键修正）：
+    早期版本把 LIKE 放进 ``WHERE``，结果「当前题面没场景 → 借兄弟题的场景」
+    这条核心链路**完全失效** —— 当前题面是「在括号里填上 > < 或 =」，
+    兄弟题是「在文具店买了 3 支铅笔」，两者没有任何 3 字以上的共同片段，
+    LIKE 硬过滤把兄弟题（也就是唯一有生活场景的题）全部筛掉了，
+    素材包直接空掉。
+    现在的口径：**结构化字段负责「谁能进候选」，LIKE 负责「谁排前面」**，
+    相关性最终由 Python 层的 bigram 覆盖度 + 相关性下限判定。
+
+    ⚠️ **讲解素材池不按 kp_id 收窄**（口径铁律）：
+    讲解池 = 全量 ``active`` 题，**必须含 kp_id 为空的题**（实测 864 道
+    scenario 题 —— shopping / cake / distance / time 这类生活场景题大量集中
+    在这一批，它们的场景词最丰富，正是「接地气」的来源）。
+    归因池才强制 ``kp_id IS NOT NULL``。
     """
     stmt = select(Question).where(
         Question.status == "active",
@@ -258,18 +292,18 @@ def _build_candidates_query(
     if pool == POOL_ATTRIBUTION:
         # 归因类素材池：必须挂得上知识点
         stmt = stmt.where(Question.kp_id.isnot(None))
-    elif kp_id:
-        # 讲解池：给了 kp 就收窄到同 KP；没给就保持全量（含 864 道无 kp 题）
-        stmt = stmt.where(Question.kp_id == kp_id)
+        if kp_uuid is not None:
+            stmt = stmt.where(Question.kp_id == kp_uuid)
     if question_type:
         stmt = stmt.where(Question.type_ == question_type)
     if difficulty is not None:
         stmt = stmt.where(Question.difficulty == difficulty)
     if like_words:
-        stmt = stmt.where(
-            or_(*[Question.content.like(f"%{word}%") for word in like_words])
-        )
-    return stmt.limit(SQL_CANDIDATE_LIMIT)
+        # LIKE 命中排前面（**不排除**未命中的行）
+        like_hit = or_(*[Question.content.like(f"%{word}%") for word in like_words])
+        stmt = stmt.order_by(case((like_hit, 0), else_=1))
+    # 次序键固定，保证同样的输入永远得到同样的候选集（可复现）
+    return stmt.order_by(Question.id).limit(SQL_CANDIDATE_LIMIT)
 
 
 def _row_to_candidate(row: Any, pool: str, score: float) -> GroundingCandidate:
@@ -292,7 +326,16 @@ def search_candidates(
     *,
     pool: str = POOL_TEACHING,
 ) -> List[GroundingCandidate]:
-    """检索候选题（结构化粗筛 + LIKE 精排 + bigram 打分）。
+    """检索候选题（结构化粗筛 + LIKE 加权 + bigram 打分）。
+
+    相关性口径（两条，缺一不可）：
+
+    1. **bigram 覆盖度 > 0**：候选题面必须与检索目标串有共同片段，
+       否则「完全不相关的题」会被当成素材送给模型；
+    2. **同 KP 命中**：``kp_id`` 明确指定时，同知识点的兄弟题**即使
+       文本毫不相干也要保留** —— 「借兄弟题的场景骨架」这条链路
+       靠的就是同 KP 信号（「在括号里填上 > < 或 =」与
+       「在文具店买了 3 支铅笔」没有任何共同片段）。
 
     Args:
         db: 调用方传入的数据库会话。
@@ -315,12 +358,16 @@ def search_candidates(
     if cached is not None:
         return cached
 
+    kp_uuid = _to_uuid(query.kp_id)
+    # 「同 KP」结构化信号：只在归因池 + 明确指定 kp 时成立
+    kp_scoped = pool == POOL_ATTRIBUTION and kp_uuid is not None
+
     try:
         like_words = like_terms(query.text or "", limit=3)
         stmt = _build_candidates_query(
             pool=pool,
             window=window,
-            kp_id=query.kp_id,
+            kp_uuid=kp_uuid,
             question_type=query.question_type,
             difficulty=query.difficulty,
             like_words=like_words,
@@ -340,7 +387,11 @@ def search_candidates(
     candidates: List[GroundingCandidate] = []
     for row in safe_rows:
         score = score_text(q_tokens, bigrams(row.content or ""))
-        candidates.append(_row_to_candidate(row, pool, score))
+        candidate = _row_to_candidate(row, pool, score)
+        # 相关性下限：既没有共同片段、又没命中同 KP 的题一律丢弃
+        if candidate.score <= 0.0 and not kp_scoped:
+            continue
+        candidates.append(candidate)
 
     # 稳定排序：分数降序，同分保持 SQL 返回顺序（可复现）
     candidates.sort(key=lambda item: item.score, reverse=True)
@@ -355,17 +406,47 @@ def search_candidates(
 
 
 def _fetch_kp_description(db: Session, kp_id: Optional[str]) -> str:
-    """按 kp_id 取知识点释义（取不到返回空串）。"""
-    if not kp_id:
+    """按 kp_id 取知识点释义（取不到 / 超纲一律返回空串）。
+
+    ⚠️ **必须做年级校验**（实测发现过的真实泄漏）：
+    题库里存在「小学题挂到初中知识点上」的脏数据 —— 实测构造一条
+    ``grade=3`` 的题指向 ``grade=9`` 的知识点（释义「二次方程的解法与应用」），
+    小学孩子的素材包里就出现了「二次方程」。
+    所以这里除了取释义，还要看一眼**知识点自己的年级**：
+    超过 :data:`PRIMARY_MAX_GRADE` 一律当「取不到」处理（返回空串），
+    由上层继续找别的候选。
+
+    Args:
+        db: 调用方传入的数据库会话。
+        kp_id: 知识点 id（字符串或 UUID）。
+
+    Returns:
+        知识点释义；取不到 / 超纲 → ``""``。
+    """
+    kp_uuid = _to_uuid(kp_id)
+    if kp_uuid is None:
         return ""
     try:
         row = db.execute(
-            select(KnowledgePoint.description).where(KnowledgePoint.id == kp_id)
-        ).scalar_one_or_none()
+            select(KnowledgePoint.description, KnowledgePoint.grade).where(
+                KnowledgePoint.id == kp_uuid
+            )
+        ).first()
     except Exception as exc:
         logger.warning("取知识点释义失败(kp_id=%s): %s", kp_id, exc)
         return ""
-    return (row or "").strip()
+    if row is None:
+        return ""
+    description, kp_grade = row[0], row[1]
+    if kp_grade is not None and kp_grade > PRIMARY_MAX_GRADE:
+        logger.warning(
+            "知识点 %s 年级 %s 超过小学上限 %s，已丢弃",
+            kp_id,
+            kp_grade,
+            PRIMARY_MAX_GRADE,
+        )
+        return ""
+    return (description or "").strip()
 
 
 def _peer_corpus_available(db: Session) -> bool:
@@ -419,14 +500,18 @@ def build_grounding_materials(
             if anchor:
                 break
 
-    # 3) 知识点释义
-    kp_id = query.kp_id
-    if not kp_id:
+    # 3) 知识点释义（**带年级校验**：超纲知识点一律丢弃）
+    kp_description = ""
+    if query.kp_id:
+        kp_description = _fetch_kp_description(db, query.kp_id)
+    if not kp_description:
         for candidate in search_candidates(db, query, pool=POOL_ATTRIBUTION):
-            if candidate.kp_id:
-                kp_id = candidate.kp_id
+            if not candidate.kp_id:
+                continue
+            description = _fetch_kp_description(db, candidate.kp_id)
+            if description:
+                kp_description = description
                 break
-    kp_description = _fetch_kp_description(db, kp_id)
 
     # 4) peer 段：语料表未落 → 空段（不报错）
     peer_sentence = ""
@@ -457,7 +542,10 @@ def render_grounding_segment(db: Session, query: GroundingQuery) -> str:
         渲染文本；无可用素材时返回 ``""``。
     """
     try:
-        if not grounding_enabled():
+        # ⚠️ 必须把 db 传进去：开关要在**调用方的事务内**读，
+        # 否则同一事务里刚改的开关值读不到（旧实现漏传 db，
+        # 走 get_config 的独立连接 + 进程内缓存 → 读到过期值）。
+        if not grounding_enabled(db):
             return ""
         materials = build_grounding_materials(db, query)
         return render_materials_for_prompt(materials)
