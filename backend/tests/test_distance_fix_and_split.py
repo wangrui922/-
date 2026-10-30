@@ -242,13 +242,19 @@ class TestRelabelDevDbDryRun:
             pytest.skip(f"跳过 dev 库断言：{msg}（生产库 0 道 scenario_bank，无生产影响）")
 
         db_path = BACKEND_DIR / "dev.db"
-        # 动态计算期望：对 dev 库 distance 场景题逐条 classify，非行程数即待重贴数
+        # 动态计算期望：与 relabel 脚本同口径——只对「当前仍挂在 KP_WORD_TRAVEL」
+        # 的 distance 题按题干算式二次归类；已重贴（非 travel KP）的题不计
+        # （脚本会 skip_other_kp，故其 planned 不含它们，期望也须一致）。
+        # 这样无论 dev 库处于「未重贴」（planned=69）还是「已幂等重贴」
+        # （planned=0）状态，断言都自洽，且不依赖外部可变状态。
         conn = sqlite3.connect(str(db_path))
         try:
             rows = conn.execute(
-                "SELECT content FROM questions "
-                "WHERE source_doc = 'scenario_bank' "
-                "AND scenario_template LIKE 'distance/%'"
+                "SELECT q.content FROM questions q "
+                "JOIN knowledge_points kp ON kp.id = q.kp_id "
+                "WHERE q.source_doc = 'scenario_bank' "
+                "AND q.scenario_template LIKE 'distance/%' "
+                "AND kp.code = 'KP_WORD_TRAVEL'"
             ).fetchall()
         finally:
             conn.close()
@@ -261,9 +267,9 @@ class TestRelabelDevDbDryRun:
                 expected_dist[form] = expected_dist.get(form, 0) + 1
 
         outcome = rdk.run_relabel(db_path, confirm=False)
-        # 历史存量（老生成器）应为 69；若 dev 库系新生成器重建则动态值仍须自洽
+        # 已重贴（幂等）的库 planned=0，未重贴的库 planned=69；二者皆须与内容归类自洽
         assert outcome.planned == expected_planned, (
-            f"待重贴数应等于非行程题数 {expected_planned}，实际 {outcome.planned}"
+            f"待重贴数应等于仍在 KP_WORD_TRAVEL 的非行程题数 {expected_planned}，实际 {outcome.planned}"
         )
         assert outcome.relabel_distribution == expected_dist, outcome.relabel_distribution
         assert outcome.written == 0, "dry-run 必须零写入"
