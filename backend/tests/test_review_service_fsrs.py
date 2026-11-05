@@ -309,8 +309,13 @@ class TestStats:
             qid = _make_question(s)
             s.commit()
             svc = ReviewService()
-            created = svc.create_card_for_question(str(st.id), str(qid), now=NOW)
-            svc.submit_review(created["id"], rating=3, now=NOW + timedelta(days=1))
+            # ★ get_review_stats 用 datetime.now() 作窗口右端，测试数据必须跟着当前时间走。
+            #   原先整份文件写死 NOW=2026-10-01，30 天窗口在 2026-10-31 之后永久过期，
+            #   导致本用例从 11 月起恒红（2026-11-05 实测 recent_reviews=0）。
+            #   这里只把本用例的基准挪到「两天前」，保留建卡 -> 次日复习的相对关系。
+            stats_now = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=2)
+            created = svc.create_card_for_question(str(st.id), str(qid), now=stats_now)
+            svc.submit_review(created["id"], rating=3, now=stats_now + timedelta(days=1))
 
             stats = svc.get_review_stats(str(st.id), days=30)
             assert stats["total_cards"] == 1
