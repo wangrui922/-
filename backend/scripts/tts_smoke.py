@@ -103,8 +103,9 @@ async def _smoke() -> int:
     settings.tts_fallback_enabled = False
 
     voice = tts_service.default_voice(tts_service.PROVIDER_VOLC)
-    cluster = (settings.tts_volc_cluster or tts_service.VOLC_DEFAULT_CLUSTER).strip()
-    print(f"[信息] provider=volc voice={voice} cluster={cluster} "
+    version = "v1" if (settings.tts_volc_api_version or "v3").strip().lower() == "v1" else "v3"
+    resource_id = (settings.tts_volc_resource_id or "").strip() or tts_service.VOLC_DEFAULT_RESOURCE_ID
+    print(f"[信息] provider=volc version={version} voice={voice} resource_id={resource_id} "
           f"app_id=***{app_id[-4:]} text={SMOKE_TEXT!r}")
 
     try:
@@ -123,9 +124,9 @@ async def _smoke() -> int:
         print("[失败] 合成返回空音频")
         return 1
 
-    # 火山成功码为 0 / 3000（VOLC_SUCCESS_CODES）；synthesize 不回传 code，
-    # 能走到这里即代表 code 命中成功集合，按规范成功码 0 打印。
-    print(f"[ok] provider=volc code=0 bytes={len(audio)} mime={mime}")
+    # v3 正常终止码为 20000000（最后一行 NDJSON），v1 成功码为 0 / 3000；
+    # synthesize 成功返回即代表音频分片已完整拼接，这里只打印产物信息。
+    print(f"[ok] provider=volc bytes={len(audio)} mime={mime}")
 
     _QA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     out_path = _QA_CACHE_DIR / f"tts_volc_smoke_{date.today():%Y%m%d}.mp3"

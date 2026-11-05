@@ -16,6 +16,7 @@
 * ``volc``  —— 火山引擎语音技术 TTS。走 **HTTP 接口 + httpx**（httpx 已是
   本项目的硬依赖），不引入任何需要本地编译的 SDK，Windows 友好；
   SDK（``volcengine-python-sdk``）只是**可选项**，装不装都不影响本模块工作；
+  默认 ``v3``（豆包语音合成模型 2.0，流式 NDJSON），可切 ``v1`` 回退经典小模型；
 * ``piper`` —— 本地离线兜底，**仅声明接口与配置位**，调用即抛
   ``NotImplementedError``，由 ``synthesize`` 自动降级到 ``edge``。
 
@@ -25,8 +26,9 @@
    函数内部；缺依赖只影响对应 provider，**绝不让应用启动失败**；
 2. **失败可降级**：``volc`` / ``piper`` 不可用时，只要 ``tts_fallback_enabled``
    为真就自动回落到 ``edge``；``edge`` 也失败才抛 ``TtsError`` 给上层；
-3. **密钥零硬编码**：app_id / access_token 一律读 config（环境变量），
-   火山 TTS 未单独配置 token 时复用方舟的 ``ARK_API_KEY``。
+3. **密钥零硬编码**：app_id / access_token 一律读 config（环境变量）。
+   ★ 语音应用的 Access Token 与方舟 ``ARK_API_KEY`` **不是一套凭据**，
+   绝不复用——用错会鉴权失败后静默降级 edge，表现为「以为接了火山其实没接」。
 
 使用示例::
 
@@ -39,6 +41,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 import logging
 import re
 import uuid
@@ -76,15 +79,18 @@ VOICE_ALIASES: Dict[str, str] = {
     "xiaoyi": "zh-CN-XiaoyiNeural",  # 温柔女声
 }
 
-#: 前端别名 -> 火山语音音色 ID（BV 开头为平台音色标识，以控制台清单为准）
+#: 前端别名 -> 火山音色 ID。
+#: ★ 豆包语音合成模型 2.0 目前只实测通过一款通用音色
+#:   ``zh_female_vv_uranus_bigtts``（2026-11-05 用户试听确认采用），
+#:   故三个别名统一指向它；后续拿到更多 2.0 音色再在此扩展。
 VOLC_VOICE_ALIASES: Dict[str, str] = {
-    "xiaoxiao": "BV001_streaming",  # 通用女声（甜美，贴近小云朵）
-    "xiaoyi": "BV001_streaming",  # 通用女声
-    "yunxi": "BV002_streaming",  # 通用男声
+    "xiaoxiao": "zh_female_vv_uranus_bigtts",
+    "xiaoyi": "zh_female_vv_uranus_bigtts",
+    "yunxi": "zh_female_vv_uranus_bigtts",
 }
 
-#: 火山 TTS 默认音色（别名未命中且未传 BV* 音色时使用）
-VOLC_DEFAULT_VOICE_TYPE: str = "BV001_streaming"
+#: 火山 TTS 默认音色（别名未命中且未传原生音色 ID 时使用）
+VOLC_DEFAULT_VOICE_TYPE: str = "zh_female_vv_uranus_bigtts"
 
 # ------------------------------------------------------------------ 其它常量
 #: 单次合成的文本上限（超出截断，避免单请求过大）
@@ -93,12 +99,22 @@ MAX_TEXT_LEN: int = 2000
 MIME_MP3: str = "audio/mpeg"
 MIME_WAV: str = "audio/wav"
 
-#: 火山 TTS 返回体中的成功码（3000 = 官方 Success；0 也按成功处理，兼容 v3）
+#: v1 返回体成功码（3000 = 官方 Success；0 也按成功处理）
 VOLC_SUCCESS_CODES: frozenset = frozenset({0, 3000})
 
-#: 火山 TTS 默认接入点（可在环境变量里换成 v3 / 内网网关）
-VOLC_DEFAULT_BASE_URL: str = "https://openspeech.bytedance.com/api/v1/tts"
-VOLC_DEFAULT_CLUSTER: str = "volcano_tts"
+#: v3 流式响应码：分片行 code=0；终止行 code=20000000（"OK"）
+VOLC_V3_CHUNK_CODE: int = 0
+VOLC_V3_DONE_CODE: int = 20000000
+
+#: 火山接入点。v3 = 豆包语音合成模型 2.0 单向流式；v1 = 经典小模型（官方已标不推荐）
+VOLC_V3_DEFAULT_BASE_URL: str = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
+VOLC_V1_DEFAULT_BASE_URL: str = "https://openspeech.bytedance.com/api/v1/tts"
+#: 兼容旧引用（tts_smoke.py 等）：默认指向 v3
+VOLC_DEFAULT_BASE_URL: str = VOLC_V3_DEFAULT_BASE_URL
+VOLC_DEFAULT_CLUSTER: str = "volcano_tts"  # 仅 v1 使用
+#: ★ v3 资源 ID，必须与音色所属资源匹配；2.0 音色固定 seed-tts-2.0
+#:   （2026-11-05 实测：10 个 1.0 bigtts 音色配它全报 55000000，只有 2.0 音色出声）
+VOLC_DEFAULT_RESOURCE_ID: str = "seed-tts-2.0"
 
 #: 火山 encoding -> 响应 mime
 _ENCODING_MIME: Dict[str, str] = {
@@ -203,45 +219,61 @@ class EdgeTtsProvider(TtsProvider):
 class VolcTtsProvider(TtsProvider):
     """火山引擎语音技术 TTS（HTTP 接口 + httpx）。
 
-    为什么用 HTTP 而不是 SDK：
-        SDK（``volcengine-python-sdk``）体积大、版本迭代快，HTTP 接口只用
-        项目已有的 ``httpx``，免编译、Windows 友好，且凭据/路径全走配置。
+    两套协议（``TTS_VOLC_API_VERSION`` 切换，默认 ``v3``）：
 
-    接入参数（均为配置位，见 ``app.core.config.Settings``）：
-        ``TTS_VOLC_APP_ID`` / ``TTS_VOLC_ACCESS_TOKEN``（留空可复用 ``ARK_API_KEY``）
-        / ``TTS_VOLC_CLUSTER`` / ``TTS_VOLC_BASE_URL`` / ``TTS_VOLC_VOICE_TYPE``。
+    * ``v3`` —— **豆包语音合成模型 2.0**，``/api/v3/tts/unidirectional``，
+      ``X-Api-*`` 系列 header，返回 **流式 NDJSON**（逐行一个小 JSON，
+      ``data`` 为 base64 MP3 分片，需逐行解码后按顺序拼字节），
+      末行 ``code=20000000`` 为正常终止；
+    * ``v1`` —— 经典小模型，``/api/v1/tts``，单 JSON + ``data`` base64，
+      官方已标「不推荐」，仅作回退保留。
+
+    实测（2026-11-05，真实凭据穷举 2 资源 ID × 10 音色）：
+        只有 ``resource-id=seed-tts-2.0`` + ``speaker=zh_female_vv_uranus_bigtts``
+        能出声；1.0 的 ``*_moon_bigtts`` / ``*_mars_bigtts`` 音色配它一律报
+        ``55000000 resource ID is mismatched with speaker related resource``。
+        **resource-id 与音色必须同属一套，切勿混用。**
     """
 
     name = PROVIDER_VOLC
 
+    # ---------------------------------------------------------------- 配置读取
+    def _api_version(self) -> str:
+        """规范化协议版本：只认 ``v1``，其余一律按 ``v3`` 处理。"""
+        raw = (settings.tts_volc_api_version or "v3").strip().lower()
+        return "v1" if raw == "v1" else "v3"
+
+    def _base_url(self, version: str) -> str:
+        configured = (settings.tts_volc_base_url or "").strip()
+        if configured:
+            return configured
+        return VOLC_V1_DEFAULT_BASE_URL if version == "v1" else VOLC_V3_DEFAULT_BASE_URL
+
     def _credentials(self) -> Tuple[str, str]:
         """读取火山凭据：``(app_id, access_token)``。
 
-        Returns:
-            ``(app_id, access_token)``，token 缺省时复用方舟的 ``ARK_API_KEY``。
+        ★ 语音应用的 Access Token 与方舟 ``ARK_API_KEY`` **不是一套凭据**，
+        绝不做复用——用错会鉴权失败后静默降级 edge，表现为
+        「以为接了火山、其实一直在用 edge」，极难排查。
 
         Raises:
-            TtsProviderUnavailable: app_id 或 token 均未配置。
+            TtsProviderUnavailable: app_id 或 token 未配置。
         """
         app_id = (settings.tts_volc_app_id or "").strip()
         token = (settings.tts_volc_access_token or "").strip()
-        if not token:
-            # 同一个火山账号下，方舟 Key 也可作为语音接口的 access token
-            logger.warning(
-                "未配 TTS_VOLC_ACCESS_TOKEN，复用方舟 Key 作语音 Token；若鉴权失败请配置该项"
-            )
-            token = (settings.ark_api_key or "").strip()
-
         if not app_id:
             raise TtsProviderUnavailable("TTS_VOLC_APP_ID 未配置，火山 TTS 不可用")
         if not token:
             raise TtsProviderUnavailable(
-                "TTS_VOLC_ACCESS_TOKEN 未配置（也未设置 ARK_API_KEY），火山 TTS 不可用"
+                "TTS_VOLC_ACCESS_TOKEN 未配置（语音应用独立 Token，不可用 ARK_API_KEY 代替），火山 TTS 不可用"
             )
         return app_id, token
 
-    def _build_payload(self, app_id: str, token: str, text: str, voice: str, rate: Optional[str]) -> Dict[str, Any]:
-        """构造火山 TTS 请求体。"""
+    # ---------------------------------------------------------------- 请求构造
+    def _build_v1_payload(
+        self, app_id: str, token: str, text: str, voice: str, rate: Optional[str]
+    ) -> Dict[str, Any]:
+        """构造 v1（经典小模型）请求体。"""
         encoding = (settings.tts_volc_encoding or "mp3").strip().lower() or "mp3"
         return {
             "app": {
@@ -263,6 +295,119 @@ class VolcTtsProvider(TtsProvider):
             },
         }
 
+    def _build_v3_payload(
+        self, app_id: str, text: str, voice: str, rate: Optional[str]
+    ) -> Dict[str, Any]:
+        """构造 v3（豆包语音合成模型 2.0）请求体。
+
+        ``speech_rate`` 仅在显式传了 rate 时下发（实测 -10/0/10 均被接受）；
+        默认不下发该字段，与 2026-11-05 出声探针保持一致。
+        """
+        encoding = (settings.tts_volc_encoding or "mp3").strip().lower() or "mp3"
+        audio_params: Dict[str, Any] = {"format": encoding, "sample_rate": 24000}
+        speech_rate = _rate_to_speech_rate(rate)
+        if speech_rate is not None:
+            audio_params["speech_rate"] = speech_rate
+        return {
+            "user": {"uid": f"ai-math-coach-{app_id[-6:] or 'default'}"},
+            "req_params": {
+                "text": text,
+                "speaker": voice,
+                "audio_params": audio_params,
+            },
+        }
+
+    def _build_headers(self, app_id: str, token: str, version: str) -> Dict[str, str]:
+        """v3 用 ``X-Api-*`` 系列；v1 用 ``Authorization: Bearer;``。"""
+        if version == "v1":
+            return {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer;{token}",
+            }
+        resource_id = (settings.tts_volc_resource_id or "").strip() or VOLC_DEFAULT_RESOURCE_ID
+        return {
+            "Content-Type": "application/json",
+            "X-Api-App-Id": app_id,
+            "X-Api-Access-Key": token,
+            "X-Api-Resource-Id": resource_id,
+            "X-Api-Request-Id": str(uuid.uuid4()),
+        }
+
+    # ---------------------------------------------------------------- 响应解析
+    @staticmethod
+    def _parse_v1_response(data: Any) -> bytes:
+        """v1：单 JSON 对象，``data`` 为完整音频的 base64。"""
+        import base64
+
+        if not isinstance(data, dict):
+            raise TtsError("火山 TTS 返回结构异常：顶层不是 JSON 对象")
+        raw_code = data.get("code")
+        audio_b64 = data.get("data")
+        message = str(data.get("message") or "")
+        code_ok = raw_code is None or (isinstance(raw_code, int) and raw_code in VOLC_SUCCESS_CODES)
+        if not audio_b64 or not isinstance(audio_b64, str):
+            raise TtsError(f"火山 TTS 合成失败：code={raw_code} message={message or '空音频'}")
+        if not code_ok:
+            raise TtsError(f"火山 TTS 合成失败：code={raw_code} message={message}")
+        try:
+            audio = base64.b64decode(audio_b64)
+        except Exception as exc:
+            raise TtsError(f"火山 TTS 音频解码失败: {exc}") from exc
+        if not audio:
+            raise TtsError("火山 TTS 返回空音频")
+        return audio
+
+    @staticmethod
+    def _parse_v3_response(body: str) -> bytes:
+        """v3：流式 NDJSON，逐行取 ``data`` 分片、**逐行解码后按序拼字节**。
+
+        ★ 必须 ``b"".join(base64.b64decode(each) for each in chunks)``。
+          分片各自是独立编码的，若先把 base64 字符串拼起来再解码会解出乱码。
+
+        行形态（2026-11-05 实测，普通句 12 行 / 长句 22 行）：
+            ``{"code":0,"message":"","data":"<base64 分片>"}``   × N
+            ``{"code":20000000,"message":"OK","data":null}``      ← 正常终止
+        """
+        import base64
+
+        chunks: List[str] = []
+        saw_done = False
+        for line in body.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                logger.warning("火山 v3 返回无法解析的行，已跳过: %.80s", line)
+                continue
+            if not isinstance(event, dict):
+                continue
+            code = event.get("code")
+            if code == VOLC_V3_DONE_CODE:
+                saw_done = True
+                continue
+            if code not in (None, VOLC_V3_CHUNK_CODE):
+                raise TtsError(
+                    f"火山 TTS 合成失败：code={code} message={event.get('message') or ''}"
+                )
+            data = event.get("data")
+            if isinstance(data, str) and data:
+                chunks.append(data)
+
+        if not chunks:
+            raise TtsError("火山 TTS v3 未返回任何音频分片（检查 resource-id 与音色是否匹配）")
+        try:
+            audio = b"".join(base64.b64decode(chunk) for chunk in chunks)
+        except Exception as exc:
+            raise TtsError(f"火山 TTS v3 音频解码失败: {exc}") from exc
+        if not audio:
+            raise TtsError("火山 TTS v3 返回空音频")
+        if not saw_done:
+            logger.warning("火山 v3 响应缺少 code=%s 终止行，音频可能不完整", VOLC_V3_DONE_CODE)
+        return audio
+
+    # ---------------------------------------------------------------- 合成入口
     async def synthesize(
         self,
         text: str,
@@ -273,23 +418,23 @@ class VolcTtsProvider(TtsProvider):
         # 先查凭据：配置缺失是最常见也最容易修的问题，先暴露它（比依赖缺失更明确）
         app_id, token = self._credentials()
 
-        # lazy import：httpx 是硬依赖，但同样不在模块顶层 import（与 volc 相关的
-        # 任何依赖缺失都只允许影响本通道，绝不影响应用启动）
+        # lazy import：与 volc 相关的第三方依赖一律函数内 import，
+        # 缺失只影响本通道，绝不影响应用启动
         try:
-            import base64
-
             import httpx  # type: ignore[import-not-found]
         except ImportError as exc:
             raise TtsProviderUnavailable("httpx 未安装，火山 TTS 不可用") from exc
 
+        version = self._api_version()
         resolved_voice = resolve_voice(PROVIDER_VOLC, voice)
-        base_url = (settings.tts_volc_base_url or VOLC_DEFAULT_BASE_URL).strip()
+        base_url = self._base_url(version)
         timeout = float(settings.tts_volc_timeout_sec or 15)
-        payload = self._build_payload(app_id, token, text, resolved_voice, rate)
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer;{token}",
-        }
+        payload = (
+            self._build_v1_payload(app_id, token, text, resolved_voice, rate)
+            if version == "v1"
+            else self._build_v3_payload(app_id, text, resolved_voice, rate)
+        )
+        headers = self._build_headers(app_id, token, version)
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -301,33 +446,14 @@ class VolcTtsProvider(TtsProvider):
             snippet = (response.text or "")[:200]
             raise TtsError(f"火山 TTS 返回 HTTP {response.status_code}: {snippet}")
 
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise TtsError(f"火山 TTS 返回非 JSON 内容: {exc}") from exc
-
-        if not isinstance(data, dict):
-            raise TtsError("火山 TTS 返回结构异常：顶层不是 JSON 对象")
-
-        raw_code = data.get("code")
-        audio_b64 = data.get("data")
-        message = str(data.get("message") or "")
-        # code 缺失但带 data 时按成功处理，兼容不同网关版本
-        code_ok = raw_code is None or (isinstance(raw_code, int) and raw_code in VOLC_SUCCESS_CODES)
-
-        if not audio_b64 or not isinstance(audio_b64, str):
-            raise TtsError(f"火山 TTS 合成失败：code={raw_code} message={message or '空音频'}")
-
-        if not code_ok:
-            raise TtsError(f"火山 TTS 合成失败：code={raw_code} message={message}")
-
-        try:
-            audio = base64.b64decode(audio_b64)
-        except Exception as exc:
-            raise TtsError(f"火山 TTS 音频解码失败: {exc}") from exc
-
-        if not audio:
-            raise TtsError("火山 TTS 返回空音频")
+        if version == "v3":
+            audio = self._parse_v3_response(response.text or "")
+        else:
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise TtsError(f"火山 TTS 返回非 JSON 内容: {exc}") from exc
+            audio = self._parse_v1_response(data)
 
         encoding = (settings.tts_volc_encoding or "mp3").strip().lower()
         return audio, _ENCODING_MIME.get(encoding, MIME_MP3)
@@ -396,7 +522,8 @@ def resolve_voice(provider: str, voice: Optional[str]) -> str:
     if provider == PROVIDER_VOLC:
         if raw.lower() in VOLC_VOICE_ALIASES:
             return VOLC_VOICE_ALIASES[raw.lower()]
-        if raw.upper().startswith("BV"):  # 火山音色 ID 直通
+        # 原生音色 ID 直通：v1 的 BV*、2.0 的 zh_*（实测音色即 zh_ 开头）
+        if raw.upper().startswith("BV") or raw.lower().startswith("zh_"):
             return raw
         return (settings.tts_volc_voice_type or "").strip() or VOLC_DEFAULT_VOICE_TYPE
 
@@ -471,6 +598,17 @@ def _rate_to_speed_ratio(rate: Optional[str]) -> float:
     percent = float(normalized[:-1])
     ratio = round(1.0 + percent / 100.0, 3)
     return min(3.0, max(0.2, ratio))
+
+
+def _rate_to_speech_rate(rate: Optional[str]) -> Optional[int]:
+    """把 ``"+10%"`` 转成 v3 ``speech_rate`` 整数（实测 -10/0/10 均被接受）。
+
+    未传 rate 时返回 ``None``，调用方不下发该字段，与出声探针保持一致。
+    """
+    normalized = normalize_rate(rate)
+    if not normalized:
+        return None
+    return max(-50, min(100, int(round(float(normalized[:-1])))))
 
 
 def normalize_text(text: str) -> str:
@@ -575,20 +713,20 @@ def _edge_status() -> Dict[str, Any]:
 
 
 def _volc_status() -> Dict[str, Any]:
-    """volc 通道自检：需要 httpx + app_id + token（token 可复用 ARK_API_KEY）。"""
+    """volc 通道自检：需要 httpx + app_id + 语音应用专用 access_token。"""
     # 先报凭据问题（最常见、也最容易修），再报依赖问题
     if not (settings.tts_volc_app_id or "").strip():
         return {"name": PROVIDER_VOLC, "available": False, "reason": "TTS_VOLC_APP_ID 未配置"}
-    token = (settings.tts_volc_access_token or "").strip() or (settings.ark_api_key or "").strip()
-    if not token:
+    if not (settings.tts_volc_access_token or "").strip():
         return {
             "name": PROVIDER_VOLC,
             "available": False,
-            "reason": "TTS_VOLC_ACCESS_TOKEN 未配置（也未设置 ARK_API_KEY）",
+            "reason": "TTS_VOLC_ACCESS_TOKEN 未配置（语音应用独立 Token，不可用 ARK_API_KEY 代替）",
         }
     if not _module_installed("httpx"):
         return {"name": PROVIDER_VOLC, "available": False, "reason": "httpx 未安装"}
-    return {"name": PROVIDER_VOLC, "available": True, "reason": "火山引擎语音技术（HTTP 接口）"}
+    version = "v1" if (settings.tts_volc_api_version or "v3").strip().lower() == "v1" else "v3"
+    return {"name": PROVIDER_VOLC, "available": True, "reason": f"火山引擎语音技术（{version} / HTTP 接口）"}
 
 
 def _piper_status() -> Dict[str, Any]:
@@ -624,12 +762,15 @@ def describe() -> Dict[str, Any]:
         包含当前 provider、兜底开关、默认嗓音、文本上限与各通道状态的字典。
     """
     current = resolve_provider_name()
+    volc_version = "v1" if (settings.tts_volc_api_version or "v3").strip().lower() == "v1" else "v3"
     return {
         "provider": current,
         "fallbackEnabled": bool(settings.tts_fallback_enabled),
         "fallbackProvider": FALLBACK_PROVIDER,
         "voice": default_voice(current),
         "maxTextLength": MAX_TEXT_LEN,
+        "volcApiVersion": volc_version,
+        "volcResourceId": (settings.tts_volc_resource_id or "").strip() or VOLC_DEFAULT_RESOURCE_ID,
         "providers": provider_status(),
     }
 
@@ -659,6 +800,10 @@ __all__ = [
     "DEFAULT_VOICE_ALIAS",
     "VOICE_ALIASES",
     "VOLC_VOICE_ALIASES",
+    "VOLC_DEFAULT_VOICE_TYPE",
+    "VOLC_DEFAULT_RESOURCE_ID",
+    "VOLC_V3_DEFAULT_BASE_URL",
+    "VOLC_V1_DEFAULT_BASE_URL",
     "MAX_TEXT_LEN",
     "MIME_MP3",
     "MIME_WAV",

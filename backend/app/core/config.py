@@ -141,14 +141,20 @@ class Settings(BaseSettings):
     tts_voice: str = ""
     # 主 provider 失败时自动降级到 edge（内测期务必保持 true）
     tts_fallback_enabled: bool = True
-    # 火山语音凭据（控制台申请）：留空则 volc 通道不可用并自动降级到 edge
+    # 火山语音凭据（豆包语音控制台「服务接口认证信息」）：留空则 volc 通道不可用并自动降级到 edge
     tts_volc_app_id: str = ""
-    # 火山 access token；留空时复用方舟的 ARK_API_KEY（同一火山账号）
+    # 语音应用独立的 Access Token。★ 与方舟 ARK_API_KEY 不是一套，不可复用：
+    # 用错 token 会鉴权失败后静默降级 edge，表现为「以为接了火山其实还是 edge」。
     tts_volc_access_token: str = ""
-    # 火山接入参数（默认值以控制台为准，可环境变量覆盖）
-    tts_volc_base_url: str = "https://openspeech.bytedance.com/api/v1/tts"
-    tts_volc_cluster: str = "volcano_tts"
-    tts_volc_voice_type: str = "BV001_streaming"
+    # 协议版本：v3 = 豆包语音合成模型 2.0（默认，流式 NDJSON）；v1 = 经典小模型（官方已标不推荐，仅作回退）
+    tts_volc_api_version: str = "v3"
+    # v3 资源 ID，必须与音色所属资源匹配；2.0 音色固定 seed-tts-2.0（2026-11-05 真实凭据实测通过）
+    tts_volc_resource_id: str = "seed-tts-2.0"
+    # 接口地址：留空按 api_version 自动选默认（v3 /api/v3/tts/unidirectional、v1 /api/v1/tts）
+    tts_volc_base_url: str = ""
+    tts_volc_cluster: str = "volcano_tts"  # 仅 v1 使用
+    # 2.0 音色（用户 2026-11-05 试听确认采用，对应试听样本 01_普通讲题.mp3）
+    tts_volc_voice_type: str = "zh_female_vv_uranus_bigtts"
     tts_volc_encoding: str = "mp3"
     tts_volc_timeout_sec: int = 15
     # 本地 piper 兜底（尚未实现，仅占位）

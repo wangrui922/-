@@ -11,7 +11,11 @@
 
 from __future__ import annotations
 
+import base64
 import builtins
+import json
+import sys
+from types import SimpleNamespace
 from typing import Any, Dict, List
 
 import pytest
@@ -33,6 +37,9 @@ def _reset_tts(monkeypatch) -> None:
     monkeypatch.setattr(settings, "tts_voice", "")
     monkeypatch.setattr(settings, "tts_volc_app_id", "")
     monkeypatch.setattr(settings, "tts_volc_access_token", "")
+    monkeypatch.setattr(settings, "tts_volc_api_version", "v3")
+    monkeypatch.setattr(settings, "tts_volc_resource_id", "seed-tts-2.0")
+    monkeypatch.setattr(settings, "tts_volc_base_url", "")
     tts_api._CACHE.clear()
     yield
     tts_api._CACHE.clear()
@@ -111,8 +118,9 @@ def test_resolve_voice_edge_aliases() -> None:
 
 def test_resolve_voice_volc_and_override(monkeypatch) -> None:
     """volc 侧映射到火山音色 ID；BV* 直通；全局 ``tts_voice`` 可覆盖。"""
-    assert tts_service.resolve_voice("volc", "xiaoxiao") == "BV001_streaming"
+    assert tts_service.resolve_voice("volc", "xiaoxiao") == "zh_female_vv_uranus_bigtts"
     assert tts_service.resolve_voice("volc", "BV700_streaming") == "BV700_streaming"
+    assert tts_service.resolve_voice("volc", "zh_male_foo_bigtts") == "zh_male_foo_bigtts"
     assert tts_service.resolve_voice("volc", None) == tts_service.VOLC_DEFAULT_VOICE_TYPE
 
     monkeypatch.setattr(settings, "tts_voice", "zh-CN-YunxiNeural")
@@ -181,15 +189,17 @@ async def test_volc_falls_back_when_token_missing(monkeypatch) -> None:
     assert audio == FAKE_AUDIO
 
 
-async def test_volc_reuses_ark_api_key(monkeypatch) -> None:
-    """未单独配 TTS token 时复用方舟 Key（同一个火山账号）。"""
+async def test_volc_never_reuses_ark_api_key(monkeypatch) -> None:
+    """★ 语音 Token 与方舟 Key 不是一套：缺 TTS_VOLC_ACCESS_TOKEN 必须直接报不可用。
+
+    复用 ARK_API_KEY 会鉴权失败后静默降级 edge，排查极难（2026-11-05 实测确认）。
+    """
     monkeypatch.setattr(settings, "tts_volc_app_id", "app-1")
     monkeypatch.setattr(settings, "tts_volc_access_token", "")
     monkeypatch.setattr(settings, "ark_api_key", "ark-token-xxx")
 
-    app_id, token = tts_service.VolcTtsProvider()._credentials()
-    assert app_id == "app-1"
-    assert token == "ark-token-xxx"
+    with pytest.raises(tts_service.TtsProviderUnavailable, match="TTS_VOLC_ACCESS_TOKEN"):
+        tts_service.VolcTtsProvider()._credentials()
 
 
 async def test_volc_dependency_missing_degrades_to_edge(monkeypatch) -> None:
@@ -405,18 +415,190 @@ def test_get_providers_voice_follows_volc_voice_type(client, monkeypatch) -> Non
     """volc 生效时 voice 跟随 TTS_VOLC_VOICE_TYPE：运营改配置即对前端默认路径生效。
 
     这条正是本次要修的陷阱的反面：前端不再硬编码 'xiaoxiao'（别名命中会
-    优先映射到 BV001_streaming），而是用后端下发的配置值。
+    优先映射到常量默认音色），而是用后端下发的配置值。
     """
     monkeypatch.setattr(settings, "tts_provider", "volc")
     monkeypatch.setattr(settings, "tts_volc_app_id", "app-1")
     monkeypatch.setattr(settings, "tts_volc_access_token", "token-1")
-    monkeypatch.setattr(settings, "tts_volc_voice_type", "BV002_streaming")
+    monkeypatch.setattr(settings, "tts_volc_voice_type", "zh_male_test_bigtts")
 
     r = client.get("/api/tts/providers")
     assert r.status_code == 200
     data = r.json()["data"]
     assert data["provider"] == "volc"
-    assert data["voice"] == "BV002_streaming"
+    assert data["voice"] == "zh_male_test_bigtts"
+
+
+# ------------------------------------------------------------------ V3（豆包语音合成模型 2.0）
+def _install_fake_httpx(monkeypatch, response_text: str, status_code: int = 200) -> List[Dict[str, Any]]:
+    """把 lazy import 的 httpx 换成假实现，返回捕获到的请求参数列表。
+
+    全程不联网、不依赖真实 SDK，与仓库既有「全部 mock」原则一致。
+    """
+    calls: List[Dict[str, Any]] = []
+
+    class _FakeResponse:
+        def __init__(self) -> None:
+            self.status_code = status_code
+            self.text = response_text
+
+        def json(self):
+            return json.loads(response_text)
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> bool:
+            return False
+
+        async def post(self, url, *, json=None, headers=None):
+            calls.append({"url": url, "json": json, "headers": headers})
+            return _FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(AsyncClient=_FakeAsyncClient))
+    return calls
+
+
+def _b64(raw: bytes) -> str:
+    return base64.b64encode(raw).decode("ascii")
+
+
+def _ndjson(*chunks: bytes, done: bool = True) -> str:
+    """按实测形态构造 v3 流式响应：N 行分片 + 1 行终止。"""
+    lines = [json.dumps({"code": 0, "message": "", "data": _b64(c)}) for c in chunks]
+    if done:
+        lines.append(json.dumps({"code": 20000000, "message": "OK", "data": None}))
+    return "\n".join(lines)
+
+
+def test_v3_default_config_matches_probed_combination() -> None:
+    """★ 手算 golden：实测唯一能出声的组合，任何一项被改坏都必须红。
+
+    2026-11-05 用真实凭据穷举 2 个 resource-id × 10 个音色，只有这一对出声。
+    这里断言的是 **Settings 字段默认值**，不是被 fixture 改写后的运行值。
+    """
+    fields = type(settings).model_fields
+    assert fields["tts_volc_api_version"].default == "v3"
+    assert fields["tts_volc_resource_id"].default == "seed-tts-2.0"
+    assert fields["tts_volc_voice_type"].default == "zh_female_vv_uranus_bigtts"
+    assert tts_service.VOLC_DEFAULT_RESOURCE_ID == "seed-tts-2.0"
+    assert tts_service.VOLC_DEFAULT_VOICE_TYPE == "zh_female_vv_uranus_bigtts"
+    assert tts_service.VOLC_V3_DEFAULT_BASE_URL == (
+        "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
+    )
+    assert tts_service.VOLC_V1_DEFAULT_BASE_URL == "https://openspeech.bytedance.com/api/v1/tts"
+    assert tts_service.VOLC_V3_DONE_CODE == 20000000
+
+
+async def test_v3_concatenates_ndjson_chunks(monkeypatch) -> None:
+    """★ golden 真值：分片必须「逐行解码再拼字节」，不能拼 base64 字符串。"""
+    monkeypatch.setattr(settings, "tts_volc_app_id", "1853565468")
+    monkeypatch.setattr(settings, "tts_volc_access_token", "token-x")
+    calls = _install_fake_httpx(monkeypatch, _ndjson(b"AAA", b"BB", b"C"))
+
+    audio, mime = await tts_service.synthesize("你好", provider="volc")
+
+    assert audio == b"AAABBC"  # 手算真值，不依赖被测代码
+    assert mime == "audio/mpeg"
+    assert len(calls) == 1
+    req = calls[0]
+    assert req["url"] == tts_service.VOLC_V3_DEFAULT_BASE_URL
+    assert req["headers"]["X-Api-App-Id"] == "1853565468"
+    assert req["headers"]["X-Api-Access-Key"] == "token-x"
+    assert req["headers"]["X-Api-Resource-Id"] == "seed-tts-2.0"
+    assert req["headers"]["X-Api-Request-Id"]
+    assert req["json"]["req_params"]["speaker"] == "zh_female_vv_uranus_bigtts"
+    assert req["json"]["req_params"]["text"] == "你好"
+    assert req["json"]["req_params"]["audio_params"]["format"] == "mp3"
+
+
+async def test_v3_resource_id_is_configurable(monkeypatch) -> None:
+    """resource-id 必须可配（实测报 55000000 时要能改），不能写死。"""
+    monkeypatch.setattr(settings, "tts_volc_app_id", "app-1")
+    monkeypatch.setattr(settings, "tts_volc_access_token", "token-x")
+    monkeypatch.setattr(settings, "tts_volc_resource_id", "volc.service_type.10029")
+    calls = _install_fake_httpx(monkeypatch, _ndjson(b"OK"))
+
+    audio, _ = await tts_service.synthesize("你好", provider="volc")
+
+    assert audio == b"OK"
+    assert calls[0]["headers"]["X-Api-Resource-Id"] == "volc.service_type.10029"
+
+
+async def test_v3_error_code_raises_instead_of_returning_empty(monkeypatch) -> None:
+    """业务错误码（55000000 = 音色与资源不匹配）必须抛错，不能返回空音频。"""
+    monkeypatch.setattr(settings, "tts_volc_app_id", "app-1")
+    monkeypatch.setattr(settings, "tts_volc_access_token", "token-x")
+    err = json.dumps({"reqid": "", "code": 55000000, "message": "resource ID is mismatched"})
+    _install_fake_httpx(monkeypatch, err)
+
+    with pytest.raises(tts_service.TtsError, match="55000000"):
+        await tts_service.VolcTtsProvider().synthesize("你好")
+
+
+async def test_v3_done_without_chunks_raises(monkeypatch) -> None:
+    """只有终止行、没有分片 -> 明确报错，不返回空字节。"""
+    monkeypatch.setattr(settings, "tts_volc_app_id", "app-1")
+    monkeypatch.setattr(settings, "tts_volc_access_token", "token-x")
+    _install_fake_httpx(monkeypatch, _ndjson(done=True))
+
+    with pytest.raises(tts_service.TtsError, match="未返回任何音频分片"):
+        await tts_service.VolcTtsProvider().synthesize("你好")
+
+
+async def test_v3_http_error_is_surfaced(monkeypatch) -> None:
+    """403 grant 未开通：带 HTTP 状态码与火山原文，便于运维定位。"""
+    monkeypatch.setattr(settings, "tts_volc_app_id", "app-1")
+    monkeypatch.setattr(settings, "tts_volc_access_token", "token-x")
+    _install_fake_httpx(monkeypatch, '{"header":{"code":45000030}}', status_code=403)
+
+    with pytest.raises(tts_service.TtsError, match="HTTP 403"):
+        await tts_service.VolcTtsProvider().synthesize("你好")
+
+
+async def test_v1_fallback_path_still_works(monkeypatch) -> None:
+    """TTS_VOLC_API_VERSION=v1 时走经典小模型单 JSON 协议，保留回退能力。"""
+    monkeypatch.setattr(settings, "tts_volc_app_id", "app-1")
+    monkeypatch.setattr(settings, "tts_volc_access_token", "token-x")
+    monkeypatch.setattr(settings, "tts_volc_api_version", "v1")
+    calls = _install_fake_httpx(monkeypatch, json.dumps({"code": 3000, "data": _b64(b"V1AUDIO")}))
+
+    audio, mime = await tts_service.synthesize("你好", provider="volc")
+
+    assert audio == b"V1AUDIO"
+    assert mime == "audio/mpeg"
+    assert calls[0]["url"] == tts_service.VOLC_V1_DEFAULT_BASE_URL
+    assert calls[0]["headers"]["Authorization"] == "Bearer;token-x"
+    assert calls[0]["json"]["audio"]["voice_type"]
+
+
+async def test_v3_speech_rate_only_when_requested(monkeypatch) -> None:
+    """默认不下发 speech_rate（与出声探针一致）；显式传 rate 才带整数。"""
+    monkeypatch.setattr(settings, "tts_volc_app_id", "app-1")
+    monkeypatch.setattr(settings, "tts_volc_access_token", "token-x")
+    calls = _install_fake_httpx(monkeypatch, _ndjson(b"OK"))
+    await tts_service.synthesize("你好", provider="volc")
+    assert "speech_rate" not in calls[0]["json"]["req_params"]["audio_params"]
+
+    calls2 = _install_fake_httpx(monkeypatch, _ndjson(b"OK"))
+    await tts_service.synthesize("你好", provider="volc", rate="+10%")
+    assert calls2[0]["json"]["req_params"]["audio_params"]["speech_rate"] == 10
+
+
+def test_describe_exposes_volc_runtime_config(monkeypatch) -> None:
+    """自检接口下发协议版本与资源 ID，便于确认线上真的在用 v3。"""
+    monkeypatch.setattr(settings, "tts_provider", "volc")
+    monkeypatch.setattr(settings, "tts_volc_app_id", "app-1")
+    monkeypatch.setattr(settings, "tts_volc_access_token", "token-x")
+
+    desc = tts_service.describe()
+    assert desc["volcApiVersion"] == "v3"
+    assert desc["volcResourceId"] == "seed-tts-2.0"
+    assert desc["voice"] == "zh_female_vv_uranus_bigtts"
 
 
 __all__ = ["FAKE_AUDIO", "FAKE_MIME"]
